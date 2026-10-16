@@ -1,0 +1,14 @@
+# Normalize text to LF in Git and working copies on every platform.
+* text=auto eol=lf
+
+# Preserve binary assets without line-ending conversion.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.ttf binary
+*.woff binary
+*.woff2 binary

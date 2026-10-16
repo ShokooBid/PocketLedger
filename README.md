@@ -61,3 +61,14 @@ Do not import server-only modules, database clients, or secrets from
 
 The mobile app intentionally contains only a minimal launch screen. Navigation,
 screens, and API integration are subsequent issues.
+
+## Contributing and security
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for the supported development baseline,
+branch/PR workflow, local checks, dependency review, and GitHub settings to inspect.
+The repository includes placeholder-only [.env.example](.env.example); the
+current starter does not require an environment file.
+
+Report vulnerabilities privately using [SECURITY.md](SECURITY.md).
+The step-by-step [Issue #3 walkthrough](docs/issue-3-implementation-walkthrough.md)
+explains the repository safeguards and their verification.
