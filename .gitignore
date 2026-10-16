@@ -1,3 +1,4 @@
+# Installed dependencies, build output, and local tool caches
 node_modules/
 .npm-cache/
 dist/
@@ -5,3 +6,34 @@ coverage/
 .expo/
 .expo-shared/
 *.tsbuildinfo
+
+# Environment configuration: examples must contain placeholders only
+.env
+.env.*
+!.env.example
+
+# Credentials, private keys, and signing material (including nested copies)
+.aws/
+.ssh/
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+credentials.json
+service-account*.json
+
+# Local financial data and database backups: use synthetic fixtures elsewhere
+/local-data/
+/backups/
+/secrets/
+*.dump
+*.backup
+
+# Local logs and operating-system files
+*.log
+.DS_Store
+Thumbs.db
+Desktop.ini
