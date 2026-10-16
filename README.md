@@ -23,9 +23,10 @@ automated tests, and GitHub Actions for delivery.
 - npm 10 or later (the repository uses npm workspaces)
 - Expo Go on an Android/iOS device or an Android emulator/iOS simulator to run the
   mobile app
+- Docker Desktop or Rancher Desktop for the local PostgreSQL service
 
-No database, cloud account, or credentials are required for this workspace setup.
-Docker and PostgreSQL will be introduced in Issue #4.
+Docker is required only for the local database. No cloud account or production
+credentials are required.
 
 ### Install
 
@@ -61,6 +62,40 @@ Do not import server-only modules, database clients, or secrets from
 
 The mobile app intentionally contains only a minimal launch screen. Navigation,
 screens, and API integration are subsequent issues.
+
+## Local PostgreSQL
+
+Issue #4 provides a development-only PostgreSQL container. It is not a
+production deployment, does not add Prisma or application database access, and
+does not load the configuration into the API yet.
+
+From the repository root in PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+# Edit .env and replace POSTGRES_PASSWORD with a unique local password.
+docker compose up -d db
+docker compose ps
+```
+
+`Copy-Item` creates your local configuration file; it is manually created, not
+generated, and Git ignores it. `up -d` downloads the PostgreSQL image if needed
+and starts the `db` service in the background. `ps` should eventually show the
+service as `healthy`; the health check waits for PostgreSQL to accept
+connections. The database is reachable only from this computer at
+`localhost:<POSTGRES_PORT>` (default `5432`).
+
+Use `docker compose restart db` to restart PostgreSQL without deleting its data.
+Use `docker compose stop db` to stop it and `docker compose up -d db` to resume
+it. The named volume retains data across those commands.
+
+> **Warning:** `docker compose down --volumes` deletes the local PostgreSQL
+> volume and permanently erases its database data. Do this only when you intend
+> to reset local development data; it cannot be undone unless you made a backup.
+
+See the [Issue #4 walkthrough](docs/issue-4-implementation-walkthrough.md) for
+installation choices, each command's purpose, connection details, and a safe
+reset procedure.
 
 ## Contributing and security
 
