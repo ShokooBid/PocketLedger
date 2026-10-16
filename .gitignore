@@ -1,0 +1,7 @@
+node_modules/
+.npm-cache/
+dist/
+coverage/
+.expo/
+.expo-shared/
+*.tsbuildinfo

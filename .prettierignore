@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+.expo/
+.expo-shared/
+docs/
+package-lock.json
