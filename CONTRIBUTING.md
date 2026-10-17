@@ -23,10 +23,11 @@ npm ci
 and `package-lock.json` to agree. Use `npm install` when deliberately changing
 dependencies, and review both the manifest and lockfile diff afterward.
 
-The current bootstrap needs no credentials or environment file. `.env.example`
-contains commented placeholders for later tickets; copying it does not configure
-the API or automatically load environment variables. Future backend secrets must
-stay on the server. Values prefixed with `EXPO_PUBLIC_` are client-visible.
+The API/mobile bootstrap needs no credentials or environment file. The local
+PostgreSQL service uses an ignored `.env` copied from `.env.example`; replace its
+password placeholder before starting the database. The API does not load this
+file yet. Future backend secrets must stay on the server. Values prefixed with
+`EXPO_PUBLIC_` are client-visible.
 
 ## Branch, commit, and pull-request workflow
 
@@ -81,6 +82,7 @@ npm run format:check
 npm run lint
 npm run typecheck
 npm run test
+npm run test:integration
 npm run build --workspace=@pocketledger/api
 npm run build --workspace=@pocketledger/shared
 git diff --check
@@ -88,9 +90,60 @@ git diff --check
 
 Use `npm run format` to apply formatting, then inspect the changes. `docs/` is
 currently excluded from Prettier; review Markdown links and layout manually.
-The test runner currently permits zero tests. Say that explicitly in a PR rather
-than presenting it as tested product behavior. GitHub Actions CI belongs to
-Issue #5; no CI workflow or deployment is configured by this ticket.
+The test runners currently permit zero tests. Say that explicitly in a PR rather
+than presenting it as tested product behavior. The API integration command is
+wired into CI, but its actual suite is pending API implementation. Put future
+integration tests in `apps/api/tests/integration/**/*.test.ts`; the API unit-test
+command excludes this directory. Use only a disposable test database and
+synthetic records. Remove `passWithNoTests` when each suite gains real tests.
+
+## GitHub Actions and required checks
+
+[Quality checks](.github/workflows/quality.yml) runs for pull requests targeting
+`main` and pushes to `main`, including documentation-only changes. Its single
+job has the stable check name **`quality`**. It installs the lockfile with
+`npm ci`, then runs formatting, lint, type checks, unit tests, the API integration
+command, and the API/shared builds. Each command must exit successfully; a failed
+step fails the job and skips later normal steps. Native Android/iOS builds and
+device testing remain separate from these TypeScript build checks.
+
+CI reads Node from `.nvmrc` and verifies npm 10.9.3. It caches only npm's download
+cache using `package-lock.json`, not `node_modules`, `.env`, or database storage.
+The temporary PostgreSQL 16 service uses disposable CI-only credentials and is
+removed with the job. Your local Compose database and `.env` are never used.
+No production credentials, cloud account, Expo account, or repository secrets
+are required. The workflow token has only `contents: read`, checkout does not
+persist its credentials, and actions are pinned to reviewed full commit SHAs.
+
+The only uploaded artifact is `quality-check-summary`, retained for seven days.
+Its allowlisted `checks.json` contains step outcomes and a test-coverage caveat;
+it does not contain test stdout, raw logs, financial records, environment values,
+database dumps, or the workspace. Keep test logs synthetic and free of secrets,
+because Actions still displays command output. A green bootstrap test command
+does not mean application behavior has test coverage.
+
+After you push the branch and create its PR, inspect the `quality` check. Verify
+a deliberate formatter/lint/type/test failure is red, remove that temporary
+change, then verify the final revision is green. See the
+[Issue #5 walkthrough](docs/issue-5-implementation-walkthrough.md) for the exact
+failure exercise and handoff checklist. Commits, pushes, and PR creation remain
+the contributor's responsibility.
+
+In repository Settings > Branches (or Rules > Rulesets), inspect existing rules
+for `main` before editing them. If your plan and permissions support enforcement,
+require a pull request and the **`quality`** status check from GitHub Actions
+before merging; select it after its first run makes it available. Preserve any
+existing protections. After merge, verify that the push to `main` also runs CI.
+If protection is unavailable on the private repository, record that limitation
+in the PR and manually enforce a green check. Workflow YAML alone does not
+enable branch protection. These repository settings and the live failure
+exercise must be verified on GitHub before calling Issue #5 fully validated.
+
+During Issue #5 inspection on 2026-10-17, GitHub reported `main` as unprotected
+and rejected ruleset access with an instruction to upgrade the private
+repository's plan or make it public. Enforcement is therefore unavailable on
+the current plan. Keep the repository private and manually require a green
+`quality` check; revisit settings if the plan changes.
 
 Run `npm run dev:api` and `npm run dev:mobile` in separate terminals. The root
 `dev` command runs workspace scripts sequentially; it does not launch both

@@ -49,16 +49,17 @@ Do not import server-only modules, database clients, or secrets from
 
 ### Commands
 
-| Command                | Purpose                                            |
-| ---------------------- | -------------------------------------------------- |
-| `npm run dev:mobile`   | Start the Expo development server.                 |
-| `npm run dev:api`      | Run the API workspace bootstrap in watch mode.     |
-| `npm run dev`          | Run every available workspace development command. |
-| `npm run format`       | Format supported files with Prettier.              |
-| `npm run format:check` | Verify formatting without changing files.          |
-| `npm run lint`         | Lint the repository.                               |
-| `npm run typecheck`    | Type-check each workspace.                         |
-| `npm run test`         | Run each workspace's test command.                 |
+| Command                    | Purpose                                            |
+| -------------------------- | -------------------------------------------------- |
+| `npm run dev:mobile`       | Start the Expo development server.                 |
+| `npm run dev:api`          | Run the API workspace bootstrap in watch mode.     |
+| `npm run dev`              | Run every available workspace development command. |
+| `npm run format`           | Format supported files with Prettier.              |
+| `npm run format:check`     | Verify formatting without changing files.          |
+| `npm run lint`             | Lint the repository.                               |
+| `npm run typecheck`        | Type-check each workspace.                         |
+| `npm run test`             | Run each workspace's test command.                 |
+| `npm run test:integration` | Run the API integration command (suite pending).   |
 
 The mobile app intentionally contains only a minimal launch screen. Navigation,
 screens, and API integration are subsequent issues.
@@ -101,8 +102,15 @@ reset procedure.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the supported development baseline,
 branch/PR workflow, local checks, dependency review, and GitHub settings to inspect.
-The repository includes placeholder-only [.env.example](.env.example); the
-current starter does not require an environment file.
+The repository includes [.env.example](.env.example) for local PostgreSQL;
+the API/mobile bootstrap does not require an environment file.
+
+GitHub Actions runs the **`quality`** check on pull requests to `main` and pushes
+to `main`: locked install, formatting, lint, type checks, unit/integration test
+commands, and API/shared builds. Tests currently permit zero tests; the API
+integration suite will arrive with API implementation. See the
+[Issue #5 walkthrough](docs/issue-5-implementation-walkthrough.md) for how CI
+works and the [required-check setup](CONTRIBUTING.md#github-actions-and-required-checks).
 
 Report vulnerabilities privately using [SECURITY.md](SECURITY.md).
 The step-by-step [Issue #3 walkthrough](docs/issue-3-implementation-walkthrough.md)
