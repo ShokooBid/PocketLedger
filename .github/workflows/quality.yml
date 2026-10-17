@@ -1,0 +1,113 @@
+name: Quality checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: "true"
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pocketledger_ci
+          POSTGRES_PASSWORD: disposable_ci_password
+          POSTGRES_DB: pocketledger_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U pocketledger_ci -d pocketledger_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js and npm download cache
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Verify npm baseline
+        run: test "$(npm --version)" = "10.9.3"
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Check formatting
+        id: format
+        run: npm run format:check
+
+      - name: Lint
+        id: lint
+        run: npm run lint
+
+      - name: Type-check workspaces
+        id: typecheck
+        run: npm run typecheck
+
+      - name: Run unit tests (bootstrap currently permits zero tests)
+        id: unit
+        run: npm run test
+
+      - name: Run API integration tests (suite pending API implementation)
+        id: integration
+        run: npm run test:integration
+        env:
+          DATABASE_URL: postgresql://pocketledger_ci:disposable_ci_password@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/pocketledger_test
+
+      - name: Build API
+        id: api_build
+        run: npm run build --workspace=@pocketledger/api
+
+      - name: Build shared package
+        id: shared_build
+        run: npm run build --workspace=@pocketledger/shared
+
+      # Generate a fixed-schema status report, never raw logs or environment data.
+      - name: Write non-sensitive check summary
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/quality-report"
+          cat > "$RUNNER_TEMP/quality-report/checks.json" <<'JSON'
+          {
+            "format": "${{ steps.format.outcome }}",
+            "lint": "${{ steps.lint.outcome }}",
+            "typecheck": "${{ steps.typecheck.outcome }}",
+            "unit": "${{ steps.unit.outcome }}",
+            "integration": "${{ steps.integration.outcome }}",
+            "apiBuild": "${{ steps.api_build.outcome }}",
+            "sharedBuild": "${{ steps.shared_build.outcome }}",
+            "testCoverageNote": "Bootstrap permits zero tests; API integration suite is pending."
+          }
+          JSON
+
+      - name: Upload check summary only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quality-check-summary
+          path: ${{ runner.temp }}/quality-report/checks.json
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false
