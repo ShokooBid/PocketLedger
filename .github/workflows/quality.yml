@@ -53,6 +53,12 @@ jobs:
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Validate schema and generate Prisma Client
+        id: prisma
+        run: |
+          npm run db:validate --workspace=@pocketledger/api
+          npm run db:generate --workspace=@pocketledger/api
+
       - name: Check formatting
         id: format
         run: npm run format:check
@@ -69,11 +75,11 @@ jobs:
         id: unit
         run: npm run test
 
-      - name: Run API integration tests (suite pending API implementation)
+      - name: Test migrations and database ownership in an isolated database
         id: integration
         run: npm run test:integration
         env:
-          DATABASE_URL: postgresql://pocketledger_ci:disposable_ci_password@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/pocketledger_test
+          TEST_DATABASE_URL: postgresql://pocketledger_ci:disposable_ci_password@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/pocketledger_test
 
       - name: Build API
         id: api_build
@@ -91,6 +97,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/quality-report"
           cat > "$RUNNER_TEMP/quality-report/checks.json" <<'JSON'
           {
+            "prisma": "${{ steps.prisma.outcome }}",
             "format": "${{ steps.format.outcome }}",
             "lint": "${{ steps.lint.outcome }}",
             "typecheck": "${{ steps.typecheck.outcome }}",
@@ -98,7 +105,7 @@ jobs:
             "integration": "${{ steps.integration.outcome }}",
             "apiBuild": "${{ steps.api_build.outcome }}",
             "sharedBuild": "${{ steps.shared_build.outcome }}",
-            "testCoverageNote": "Bootstrap permits zero tests; API integration suite is pending."
+            "testCoverageNote": "Database migration and ownership integration tests run; unit suites still permit zero tests. API routes are not implemented."
           }
           JSON
 

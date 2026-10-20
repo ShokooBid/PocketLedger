@@ -1,4 +1,5 @@
 node_modules/
+apps/api/src/generated/prisma/
 dist/
 coverage/
 .expo/

@@ -1,0 +1,2 @@
+# Hand-written provider lock for the migration history; commit this file.
+provider = "postgresql"

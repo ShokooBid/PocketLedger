@@ -1,0 +1,142 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TransactionDirection {
+  income
+  expense
+}
+
+enum ImportStatus {
+  pending
+  confirmed
+  failed
+}
+
+enum AuthProvider {
+  google
+}
+
+model User {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email           String         @unique @db.VarChar(254)
+  // Null for Google-only accounts; never invent a password for social login.
+  passwordHash    String?        @db.Text
+  emailVerifiedAt DateTime?      @db.Timestamptz(3)
+  disabledAt      DateTime?      @db.Timestamptz(3)
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime       @default(now()) @updatedAt @db.Timestamptz(3)
+  categories      Category[]
+  transactions    Transaction[]
+  imports         Import[]
+  identities      AuthIdentity[]
+  sessions        Session[]
+}
+
+model AuthIdentity {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String       @db.Uuid
+  provider        AuthProvider
+  // Google's verified, case-sensitive `sub`, not an email or client-supplied ID.
+  providerSubject String       @db.VarChar(255)
+  createdAt       DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime     @default(now()) @updatedAt @db.Timestamptz(3)
+  user            User         @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([provider, providerSubject])
+  @@unique([userId, provider])
+}
+
+// One login on one device; also the revocation boundary for its refresh family.
+model Session {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String         @db.Uuid
+  expiresAt     DateTime       @db.Timestamptz(3)
+  revokedAt     DateTime?      @db.Timestamptz(3)
+  lastUsedAt    DateTime?      @db.Timestamptz(3)
+  createdAt     DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime       @default(now()) @updatedAt @db.Timestamptz(3)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  refreshTokens RefreshToken[]
+
+  @@index([userId, revokedAt, expiresAt])
+  @@index([expiresAt])
+}
+
+// Retain consumed hashes until the session expires to detect rotation replay.
+model RefreshToken {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId  String    @db.Uuid
+  tokenHash  String    @unique @db.VarChar(64)
+  expiresAt  DateTime  @db.Timestamptz(3)
+  consumedAt DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+  session    Session   @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([sessionId])
+  @@index([expiresAt])
+}
+
+model Category {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String        @db.Uuid
+  name         String        @db.VarChar(100)
+  isDefault    Boolean       @default(false)
+  archivedAt   DateTime?     @db.Timestamptz(3)
+  createdAt    DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime      @default(now()) @updatedAt @db.Timestamptz(3)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  transactions Transaction[]
+
+  // A composite target lets the transaction foreign key enforce ownership.
+  @@unique([id, userId])
+  @@unique([userId, name])
+  @@index([userId, archivedAt])
+}
+
+model Transaction {
+  id          String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String               @db.Uuid
+  categoryId  String               @db.Uuid
+  importId    String?              @db.Uuid
+  direction   TransactionDirection
+  // Positive magnitude; direction carries the sign. SQL adds a CHECK (> 0).
+  amountMinor Int
+  // SQL checks uppercase three-letter syntax; API validates ISO membership.
+  currency    String               @db.VarChar(3)
+  date        DateTime             @db.Date
+  merchant    String               @db.VarChar(200)
+  note        String?              @db.VarChar(2000)
+  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime             @default(now()) @updatedAt @db.Timestamptz(3)
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  category    Category             @relation(fields: [categoryId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict)
+  import      Import?              @relation(fields: [importId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([userId, date(sort: Desc), id(sort: Desc)])
+  @@index([userId, categoryId, date(sort: Desc), id(sort: Desc)])
+  @@index([userId, importId])
+}
+
+// Metadata only. CSV parsing, preview storage and confirmation arrive later.
+model Import {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String        @db.Uuid
+  status       ImportStatus  @default(pending)
+  confirmedAt  DateTime?     @db.Timestamptz(3)
+  createdAt    DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime      @default(now()) @updatedAt @db.Timestamptz(3)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  transactions Transaction[]
+
+  @@unique([id, userId])
+  @@index([userId, createdAt(sort: Desc), id(sort: Desc)])
+}

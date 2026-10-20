@@ -104,14 +104,28 @@ Expo mobile app  ── HTTPS/JSON ──>  Fastify REST API  ──>  PostgreSQ
 
 ## Authentication and sessions
 
-- The MVP uses first-party email/password authentication. Passwords are hashed
-  with a modern adaptive password hash; raw passwords are never stored or logged.
-- Access tokens are short-lived. Refresh tokens are stored server-side only as
-  hashes, rotated on use, revocable on logout, and treated as credentials.
+- The MVP supports both first-party email/password and Google sign-in. This
+  decision was expanded on 2026-10-19. Both methods establish PocketLedger-owned
+  sessions and resolve to the same stable user ID; finance ownership is unchanged.
+- Passwords use a modern adaptive hash (planned: Argon2id). A Google-only user
+  has a null password hash. Null, malformed, or disabled credentials fail closed.
+- Google identity is identified by verified provider plus subject, never email
+  alone. The server validates the provider proof and login challenge. Linking
+  requires recent proof of the existing account and the new Google identity;
+  matching email addresses never automatically link or merge accounts.
+- Access tokens are short-lived. A session is a per-device revocation boundary.
+  Random refresh tokens are stored server-side only as hashes. Rotation consumes
+  the old record atomically and retains its hash for replay detection; reuse
+  revokes that session. Closing the app does not end the session.
 - Mobile tokens live only in platform-secure storage, never ordinary async/local
   storage, source control, analytics payloads, screenshots, or logs.
 - Authentication endpoints are rate-limited and return generic credential errors
   that do not reveal whether an account exists.
+- The schema stores users, external identities, sessions, and refresh-token
+  history. It does not implement authentication: API validation, token rotation,
+  expiry/revocation enforcement, and mobile restoration are subsequent issues.
+- See [Authentication plan](authentication-plan.md) for session lifetimes,
+  provider setup, linking rules, implementation order, and release requirements.
 
 ## AI and automation boundary
 
