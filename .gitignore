@@ -1,5 +1,6 @@
 # Installed dependencies, build output, and local tool caches
 node_modules/
+apps/api/src/generated/prisma/
 .npm-cache/
 dist/
 coverage/

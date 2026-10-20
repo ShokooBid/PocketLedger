@@ -1,0 +1,20 @@
+# Separate project, no persistent volume, and no use of the development .env.
+name: pocketledger-tests
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pocketledger_test
+      POSTGRES_PASSWORD: disposable_test_password
+      POSTGRES_DB: pocketledger_test
+    ports:
+      - "127.0.0.1:${TEST_POSTGRES_PORT:-55432}:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U pocketledger_test -d pocketledger_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 20

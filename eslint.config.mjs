@@ -7,6 +7,7 @@ export default tseslint.config(
     ignores: [
       "**/dist/**",
       "**/node_modules/**",
+      "apps/api/src/generated/prisma/**",
       "**/.expo/**",
       "**/coverage/**"
     ]

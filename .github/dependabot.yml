@@ -23,6 +23,10 @@ updates:
       prefix: "chore"
       include: "scope"
     groups:
+      prisma:
+        patterns:
+          - "prisma"
+          - "@prisma/*"
       expo-stack:
         patterns:
           - "expo"

@@ -3,6 +3,9 @@
 PocketLedger is a privacy-conscious personal-finance mobile application. Its first
 release lets an authenticated user organize categories, manually record income and
 expenses, review a dashboard, and import a CSV statement after previewing it.
+The planned MVP supports email/password and Google sign-in with persistent mobile
+sessions. The database foundation is present; authentication endpoints and mobile
+login are subsequent work. See the [authentication plan](docs/authentication-plan.md).
 
 The project is intentionally being designed before implementation. The current
 decisions and product boundaries are documented here:
@@ -34,6 +37,7 @@ From the repository root:
 
 ```sh
 npm install
+npm run db:generate --workspace=@pocketledger/api
 ```
 
 ### Workspace layout
@@ -59,16 +63,16 @@ Do not import server-only modules, database clients, or secrets from
 | `npm run lint`             | Lint the repository.                               |
 | `npm run typecheck`        | Type-check each workspace.                         |
 | `npm run test`             | Run each workspace's test command.                 |
-| `npm run test:integration` | Run the API integration command (suite pending).   |
+| `npm run test:integration` | Test migrations and ownership on a disposable DB.  |
 
 The mobile app intentionally contains only a minimal launch screen. Navigation,
 screens, and API integration are subsequent issues.
 
 ## Local PostgreSQL
 
-Issue #4 provides a development-only PostgreSQL container. It is not a
-production deployment, does not add Prisma or application database access, and
-does not load the configuration into the API yet.
+Issue #4 provides a development-only PostgreSQL container. Issue #6 adds the
+Prisma schema, migrations, synthetic seeds, and a database client factory.
+The API entry point remains a bootstrap; routes and authentication come later.
 
 From the repository root in PowerShell:
 
@@ -98,17 +102,66 @@ See the [Issue #4 walkthrough](docs/issue-4-implementation-walkthrough.md) for
 installation choices, each command's purpose, connection details, and a safe
 reset procedure.
 
+## Prisma and database tests
+
+The hand-written schema is `apps/api/prisma/schema.prisma`. The generated
+Prisma Client stays ignored in `apps/api/src/generated/prisma/`; regenerate it
+after installing dependencies or changing the schema. Migration SQL is tracked.
+
+Add `DATABASE_URL` to your existing ignored `.env` using `.env.example` as a
+reference; do not overwrite an existing `.env`. Match your local PostgreSQL
+credentials and URL-encode reserved characters in the password. To apply the
+reviewed migration to your development database when ready:
+
+```powershell
+npm run db:validate --workspace=@pocketledger/api
+npm run db:generate --workspace=@pocketledger/api
+npm run db:deploy --workspace=@pocketledger/api
+npm run db:status --workspace=@pocketledger/api
+```
+
+`db:deploy` changes the database named by `DATABASE_URL`; inspect that target
+first. It applies existing migrations without resetting data. Optional seeds
+require `$env:ALLOW_SYNTHETIC_SEED = 'true'` followed by
+`npm run db:seed --workspace=@pocketledger/api`; then remove the flag with
+`Remove-Item Env:ALLOW_SYNTHETIC_SEED`. Seeds contain fictional records and a
+disabled account, not a working login.
+
+There are two migrations: the original finance schema, then an additive
+authentication upgrade with `AuthIdentity`, `Session`, and `RefreshToken`.
+Google-only users may have no password. The upgrade preserves existing finance
+records; it does not create working login endpoints or sessions. New demo seeds
+also set `disabledAt`, and never seed provider credentials or usable tokens.
+
+Run integration tests against a separate disposable PostgreSQL service:
+
+```powershell
+docker compose -f compose.test.yaml up -d --wait
+$env:TEST_DATABASE_URL = 'postgresql://pocketledger_test:disposable_test_password@127.0.0.1:55432/pocketledger_test'
+npm run test:integration
+```
+
+**Warning:** each test run creates and then deletes its own randomly named
+synthetic database. `docker compose -f compose.test.yaml down` removes the
+test container and all of its temporary data. The development Compose service
+and its named volume are separate and are not touched. Tests require the explicit
+`TEST_DATABASE_URL`; they never fall back to `DATABASE_URL`.
+
+See the [Issue #6 walkthrough](docs/issue-6-implementation-walkthrough.md) for
+the ownership constraints, schema choices, generated files, and commands.
+
 ## Contributing and security
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the supported development baseline,
 branch/PR workflow, local checks, dependency review, and GitHub settings to inspect.
-The repository includes [.env.example](.env.example) for local PostgreSQL;
-the API/mobile bootstrap does not require an environment file.
+The repository includes [.env.example](.env.example) for local PostgreSQL and
+Prisma CLI commands; the API/mobile bootstrap does not require an environment file.
 
 GitHub Actions runs the **`quality`** check on pull requests to `main` and pushes
 to `main`: locked install, formatting, lint, type checks, unit/integration test
-commands, and API/shared builds. Tests currently permit zero tests; the API
-integration suite will arrive with API implementation. See the
+commands, Prisma validation/generation, and API/shared builds. Database integration
+tests apply migrations from zero and test ownership; unit suites still permit
+zero tests, and API routes are not implemented. See the
 [Issue #5 walkthrough](docs/issue-5-implementation-walkthrough.md) for how CI
 works and the [required-check setup](CONTRIBUTING.md#github-actions-and-required-checks).
 

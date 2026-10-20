@@ -8,6 +8,9 @@ configuration. It intentionally excludes bank connections, third-party AI
 providers, receipt uploads, and voice processing because those features are not
 part of the MVP.
 
+Google sign-in is an additional identity-provider trust boundary as of 2026-10-19.
+Only identity information crosses it; financial records are not sent to Google.
+
 Protected assets include transaction data, categories, account identity, password
 hashes, sessions, refresh tokens, database credentials, and operational logs.
 
@@ -16,6 +19,9 @@ hashes, sessions, refresh tokens, database credentials, and operational logs.
 | Threat | Primary mitigation | Residual risk / verification |
 | --- | --- | --- |
 | Account takeover through password guessing or credential stuffing | Adaptive password hashing, strength rules, generic login failures, per-account/IP rate limits, short-lived access tokens, refresh-token rotation and revocation | Users may reuse compromised passwords. Test rate limits, generic errors, rotation, expiry, and logout revocation. |
+| Forged or replayed Google login proof | Verify signature, issuer, configured audience/authorized presenter, expiry and one-time nonce challenge on the server using a maintained library; use the provider subject as identity | Test wrong client, expiry, signature, nonce reuse, cancellation, unavailable keys, and provider outages. A decoded JWT is not a verified JWT. |
+| Account takeover through automatic email linking | Require recent proof of the existing account and fresh Google proof before an explicit link; uniquely constrain provider/subject; never move a linked subject between users | Test matching-email collisions, unverified email claims, concurrent linking, and subjects already attached to another user. Recovery and automatic merging are deferred. |
+| Stolen refresh token, replay, or parallel refresh | Store only hashes; consume once in an atomic transaction; retain consumed hashes until session expiry; revoke the session on reuse; mobile single-flight refresh | Test racing refresh requests and lost responses. A connection failure must not erase secure credentials or repeatedly replay a consumed token. |
 | Stolen/lost device or leaked mobile token | Store tokens only in OS secure storage; use short-lived access tokens; give users a logout/session-revocation path; never expose tokens in diagnostics | A device compromised at the OS level can access an active session. Keep session lifetime bounded and document the limit. |
 | Cross-user data read or write (IDOR) | Derive identity from the authenticated session; scope every database query by owner; validate category ownership server-side; integration-test with two users | An untested new endpoint can regress isolation. Require authorization tests for every resource route and code review of ownership filters. |
 | Secret, token, or financial-data leakage through source control, logs, analytics, or errors | Use `.env` files outside version control, `.env.example` without secrets, structured-log redaction, safe error envelope, and no raw request-body/auth-header logging | An operator with production infrastructure access remains privileged. Restrict access and review logs/configuration before release. |
@@ -37,3 +43,7 @@ hashes, sessions, refresh tokens, database credentials, and operational logs.
 - Review this document whenever a trust boundary changes, especially before adding
   file/image uploads, bank access, multi-user sharing, AI providers, MCP tools,
   or a production environment.
+- The new authentication tables provide integrity and storage only. Tests of
+  schema constraints do not prove login, account linking, refresh replay rejection,
+  revocation, or per-user session authorization. Those must be implemented and
+  tested in Issues #7, #11, #16, #20, and #21 per [the authentication plan](authentication-plan.md).

@@ -12,6 +12,12 @@ tracking and statement import are useful, understandable, and dependable.
 
 - Register, sign in, refresh a session, sign out, and view basic account/privacy
   information.
+- Support email/password and Google sign-in, with persistent mobile sessions
+  across app restarts. Google-only accounts do not require a PocketLedger password.
+- Allow explicitly linking Google to an existing account after proving both
+  identities. Do not automatically merge accounts with matching email addresses.
+- Restore sessions from secure storage, rotate refresh tokens, and revoke the
+  current session on logout. Expired/revoked sessions require sign-in again.
 - Isolate each user's records. A user can only create, read, update, archive, or
   delete their own data.
 - Explain that PocketLedger does not connect to a bank in the MVP.
@@ -76,6 +82,10 @@ record income and expenses, organize them with categories, review a correct
 dashboard and history, import a supported CSV after previewing it, and retain
 exclusive access to their records. Core flows must have automated tests,
 documented error behavior, and no known critical privacy or authorization gap.
+Email/password and Google onboarding, safe account linking, and session restoration
+must be verified on supported development builds; Google cancellation or provider
+failure must leave email/password sign-in usable. See the
+[authentication plan](authentication-plan.md) for the implementation sequence.
 
 ## Deferred-feature rules
 

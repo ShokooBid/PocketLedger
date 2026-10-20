@@ -14,6 +14,12 @@
     "packages/*"
   ],
   "scripts": {
+    "db:generate": "npm run db:generate --workspace=@pocketledger/api",
+    "db:validate": "npm run db:validate --workspace=@pocketledger/api",
+    "db:migrate": "npm run db:migrate --workspace=@pocketledger/api",
+    "db:deploy": "npm run db:deploy --workspace=@pocketledger/api",
+    "db:status": "npm run db:status --workspace=@pocketledger/api",
+    "db:seed": "npm run db:seed --workspace=@pocketledger/api",
     "dev": "npm run dev --workspaces --if-present",
     "dev:api": "npm run dev --workspace=@pocketledger/api",
     "dev:mobile": "npm run dev --workspace=@pocketledger/mobile",
