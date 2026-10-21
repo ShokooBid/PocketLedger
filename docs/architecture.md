@@ -121,9 +121,9 @@ Expo mobile app  ── HTTPS/JSON ──>  Fastify REST API  ──>  PostgreSQ
   storage, source control, analytics payloads, screenshots, or logs.
 - Authentication endpoints are rate-limited and return generic credential errors
   that do not reveal whether an account exists.
-- The schema stores users, external identities, sessions, and refresh-token
-  history. It does not implement authentication: API validation, token rotation,
-  expiry/revocation enforcement, and mobile restoration are subsequent issues.
+- The backend implements password/Google proofs, explicit linking, server-checked
+  access, refresh rotation and revocation. Google challenges are persisted and
+  consumed once. Mobile secure restoration remains Issue #11.
 - See [Authentication plan](authentication-plan.md) for session lifetimes,
   provider setup, linking rules, implementation order, and release requirements.
 

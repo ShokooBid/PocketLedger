@@ -71,7 +71,7 @@ jobs:
         id: typecheck
         run: npm run typecheck
 
-      - name: Run unit tests (bootstrap currently permits zero tests)
+      - name: Run unit tests (mobile/shared still permit zero tests)
         id: unit
         run: npm run test
 
@@ -89,6 +89,19 @@ jobs:
         id: shared_build
         run: npm run build --workspace=@pocketledger/shared
 
+      - name: Generate OpenAPI from route schemas
+        id: openapi
+        run: npm run openapi --workspace=@pocketledger/api
+
+      - name: Upload generated public API contract
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pocketledger-openapi
+          path: apps/api/dist/openapi.json
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false
+
       # Generate a fixed-schema status report, never raw logs or environment data.
       - name: Write non-sensitive check summary
         if: ${{ always() }}
@@ -105,7 +118,8 @@ jobs:
             "integration": "${{ steps.integration.outcome }}",
             "apiBuild": "${{ steps.api_build.outcome }}",
             "sharedBuild": "${{ steps.shared_build.outcome }}",
-            "testCoverageNote": "Database migration and ownership integration tests run; unit suites still permit zero tests. API routes are not implemented."
+            "openapi": "${{ steps.openapi.outcome }}",
+            "testCoverageNote": "API foundation/auth unit and database integration tests run with synthetic identities and local provider keys. Mobile/shared still permit zero tests. Native Google/device flows are separate."
           }
           JSON
 

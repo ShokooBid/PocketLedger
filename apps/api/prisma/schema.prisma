@@ -56,18 +56,35 @@ model AuthIdentity {
 
 // One login on one device; also the revocation boundary for its refresh family.
 model Session {
-  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId        String         @db.Uuid
-  expiresAt     DateTime       @db.Timestamptz(3)
-  revokedAt     DateTime?      @db.Timestamptz(3)
-  lastUsedAt    DateTime?      @db.Timestamptz(3)
-  createdAt     DateTime       @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime       @default(now()) @updatedAt @db.Timestamptz(3)
-  user          User           @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  refreshTokens RefreshToken[]
+  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String          @db.Uuid
+  expiresAt         DateTime        @db.Timestamptz(3)
+  revokedAt         DateTime?       @db.Timestamptz(3)
+  lastUsedAt        DateTime?       @db.Timestamptz(3)
+  reauthenticatedAt DateTime?       @db.Timestamptz(3)
+  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime        @default(now()) @updatedAt @db.Timestamptz(3)
+  user              User            @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  refreshTokens     RefreshToken[]
+  challenges        AuthChallenge[]
 
   @@index([userId, revokedAt, expiresAt])
   @@index([expiresAt])
+}
+
+// One-time Google proof binding. Link/reauth challenges belong to one session.
+model AuthChallenge {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nonceHash  String    @unique @db.VarChar(64)
+  purpose    String    @db.VarChar(20)
+  sessionId  String?   @db.Uuid
+  expiresAt  DateTime  @db.Timestamptz(3)
+  consumedAt DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  session    Session?  @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([expiresAt])
+  @@index([sessionId])
 }
 
 // Retain consumed hashes until the session expires to detect rotation replay.

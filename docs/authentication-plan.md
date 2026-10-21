@@ -4,6 +4,13 @@ Accepted on 2026-10-19 at the user's request. This extends the original
 email/password-only MVP. It changes planning and database foundations now;
 login endpoints and mobile sign-in are not implemented in Issue #6.
 
+Implementation update (Issue #7, 2026-10-20): backend password/Google login,
+challenges, explicit linking, session checks/rotation/revocation and cleanup are
+implemented with the prerequisite Issue #8 foundation. Mobile work remains #11.
+See [the walkthrough](issue-7-implementation-walkthrough.md) for current routes,
+configuration, tests and manual provider setup. Earlier future-tense text records
+the accepted plan; this update describes the implemented backend boundary.
+
 ## User experience
 
 The sign-in screen offers email/password and Continue with Google. Both lead to
@@ -92,7 +99,7 @@ Initial policy: access tokens last **15 minutes**, sessions have a **30-day abso
 lifetime**, and expire after **7 days without successful refresh**. Keep these
 server-configurable; refresh never extends the absolute session lifetime. Token
 expiry must not exceed session expiry. `lastUsedAt ?? createdAt` supplies the
-inactivity anchor. These are planned defaults, not running configuration yet.
+inactivity anchor. These defaults are now implemented as server configuration.
 
 Access-token claims include PocketLedger user ID and session ID, issuer, audience,
 issued time and expiry. Protected routes validate them and check session ownership,

@@ -149,7 +149,7 @@ describe("initial migration and database ownership", () => {
     const result = await sql.query(
       'SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL'
     );
-    expect(result.rows).toHaveLength(2);
+    expect(result.rows).toHaveLength(3);
     expect(await prisma("migrate", "status")).toContain("up to date");
   });
 
