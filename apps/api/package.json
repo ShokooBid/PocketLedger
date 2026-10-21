@@ -7,6 +7,8 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
+    "openapi": "tsx src/openapi.ts",
+    "auth:cleanup": "tsx src/cleanup.ts",
     "lint": "eslint src --max-warnings=0",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
@@ -19,9 +21,17 @@
     "db:seed": "prisma db seed"
   },
   "dependencies": {
+    "@fastify/cors": "^11.3.1",
+    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/swagger": "^9.9.2",
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
-    "pg": "^8.16.3"
+    "argon2": "^0.44.0",
+    "fastify": "^5.12.7",
+    "fastify-type-provider-zod": "^6.1.0",
+    "jose": "^6.2.13",
+    "pg": "^8.16.3",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

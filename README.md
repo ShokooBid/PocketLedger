@@ -4,10 +4,11 @@ PocketLedger is a privacy-conscious personal-finance mobile application. Its fir
 release lets an authenticated user organize categories, manually record income and
 expenses, review a dashboard, and import a CSV statement after previewing it.
 The planned MVP supports email/password and Google sign-in with persistent mobile
-sessions. The database foundation is present; authentication endpoints and mobile
-login are subsequent work. See the [authentication plan](docs/authentication-plan.md).
+sessions. The backend implements both methods and session rotation; mobile login
+and secure restoration remain Issue #11. See the [authentication plan](docs/authentication-plan.md)
+and [implementation walkthrough](docs/issue-7-implementation-walkthrough.md).
 
-The project is intentionally being designed before implementation. The current
+The project is implemented incrementally from an accepted design. The current
 decisions and product boundaries are documented here:
 
 - [Architecture and API conventions](docs/architecture.md)
@@ -44,7 +45,7 @@ npm run db:generate --workspace=@pocketledger/api
 
 ```text
 apps/mobile       Expo + React Native app
-apps/api          Node.js API workspace (Fastify is introduced in Issue #8)
+apps/api          Fastify API, authentication service, Prisma schema and tests
 packages/shared   Portable shared types, schemas, and utilities
 ```
 
@@ -56,7 +57,7 @@ Do not import server-only modules, database clients, or secrets from
 | Command                    | Purpose                                            |
 | -------------------------- | -------------------------------------------------- |
 | `npm run dev:mobile`       | Start the Expo development server.                 |
-| `npm run dev:api`          | Run the API workspace bootstrap in watch mode.     |
+| `npm run dev:api`          | Run the API in watch mode (needs process env).     |
 | `npm run dev`              | Run every available workspace development command. |
 | `npm run format`           | Format supported files with Prettier.              |
 | `npm run format:check`     | Verify formatting without changing files.          |
@@ -72,7 +73,7 @@ screens, and API integration are subsequent issues.
 
 Issue #4 provides a development-only PostgreSQL container. Issue #6 adds the
 Prisma schema, migrations, synthetic seeds, and a database client factory.
-The API entry point remains a bootstrap; routes and authentication come later.
+The API now exposes health and authentication routes. Finance routes come later.
 
 From the repository root in PowerShell:
 
@@ -127,10 +128,11 @@ require `$env:ALLOW_SYNTHETIC_SEED = 'true'` followed by
 `Remove-Item Env:ALLOW_SYNTHETIC_SEED`. Seeds contain fictional records and a
 disabled account, not a working login.
 
-There are two migrations: the original finance schema, then an additive
-authentication upgrade with `AuthIdentity`, `Session`, and `RefreshToken`.
+There are three migrations: the original finance schema, the additive
+authentication upgrade with `AuthIdentity`, `Session`, and `RefreshToken`, then
+Google nonce challenges, recent-reauthentication state and normalized email uniqueness.
 Google-only users may have no password. The upgrade preserves existing finance
-records; it does not create working login endpoints or sessions. New demo seeds
+records. Demo seeds
 also set `disabledAt`, and never seed provider credentials or usable tokens.
 
 Run integration tests against a separate disposable PostgreSQL service:
@@ -154,17 +156,53 @@ the ownership constraints, schema choices, generated files, and commands.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the supported development baseline,
 branch/PR workflow, local checks, dependency review, and GitHub settings to inspect.
-The repository includes [.env.example](.env.example) for local PostgreSQL and
-Prisma CLI commands; the API/mobile bootstrap does not require an environment file.
+The repository includes [.env.example](.env.example) for PostgreSQL and API setup.
+The mobile bootstrap requires no credentials. The API requires validated configuration.
 
 GitHub Actions runs the **`quality`** check on pull requests to `main` and pushes
 to `main`: locked install, formatting, lint, type checks, unit/integration test
 commands, Prisma validation/generation, and API/shared builds. Database integration
-tests apply migrations from zero and test ownership; unit suites still permit
-zero tests, and API routes are not implemented. See the
+tests apply migrations from zero and test ownership and authentication. API unit
+tests verify contracts, safe errors/logs, rate limiting and local Google signatures;
+mobile/shared suites still permit zero tests. Generated OpenAPI is a separate CI
+artifact. See the
 [Issue #5 walkthrough](docs/issue-5-implementation-walkthrough.md) for how CI
 works and the [required-check setup](CONTRIBUTING.md#github-actions-and-required-checks).
 
 Report vulnerabilities privately using [SECURITY.md](SECURITY.md).
 The step-by-step [Issue #3 walkthrough](docs/issue-3-implementation-walkthrough.md)
 explains the repository safeguards and their verification.
+
+## Run the authentication API
+
+Preserve your existing `.env`; manually add the API settings from `.env.example`.
+Generate a local signing secret with
+`node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"`
+and paste the result into `ACCESS_TOKEN_SECRET` in that ignored file. Never commit
+or share it. Google IDs may stay empty while testing email/password.
+
+The third migration is additive. Review its normalized-email index before applying
+it; legacy email collisions stop deployment rather than merge accounts. This task
+does **not** apply it to your development database. When you choose to apply it,
+inspect your target and run `npm run db:deploy`. Do not reset the database.
+
+From the repository root, explicitly load the ignored configuration:
+
+```powershell
+node --env-file=.env --import tsx apps/api/src/index.ts
+# Or, after npm run build --workspace=@pocketledger/api:
+node --env-file=.env apps/api/dist/index.js
+```
+
+`GET /health` is public. Register/login at `/v1/auth/register` and `/v1/auth/login`
+with JSON `{ "email": "learner@example.invalid", "password": "synthetic long passphrase" }`.
+Use the returned access token as `Authorization: Bearer <accessToken>` for
+`GET /v1/me`. Use `/v1/auth/refresh` with `{ "refreshToken": "<refreshToken>" }`
+once per token; persist its replacement securely. `/v1/auth/logout` accepts
+`{}` for the current session or `{ "allSessions": true }` for all devices.
+Use synthetic identities only; the optional disabled seed is not a login account.
+
+`npm run openapi --workspace=@pocketledger/api` writes the generated contract to
+`apps/api/dist/openapi.json` without database or Google credentials.
+See the [walkthrough](docs/issue-7-implementation-walkthrough.md) for Google
+proof/linking requests, lifetimes, maintenance, limitations and command explanations.

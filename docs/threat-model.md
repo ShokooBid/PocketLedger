@@ -43,7 +43,12 @@ hashes, sessions, refresh tokens, database credentials, and operational logs.
 - Review this document whenever a trust boundary changes, especially before adding
   file/image uploads, bank access, multi-user sharing, AI providers, MCP tools,
   or a production environment.
-- The new authentication tables provide integrity and storage only. Tests of
-  schema constraints do not prove login, account linking, refresh replay rejection,
-  revocation, or per-user session authorization. Those must be implemented and
-  tested in Issues #7, #11, #16, #20, and #21 per [the authentication plan](authentication-plan.md).
+- Issue #7 implements backend proof verification, linking, server-checked sessions,
+  atomic rotation, replay revocation and dependency-ordered cleanup. Tests use
+  synthetic identities and local provider keys. Native Google setup, secure mobile
+  storage/restoration and device behavior remain Issues #11/#21/#22. Future finance
+  routes must still prove owner scoping per endpoint; authentication alone is not
+  authorization for a client-supplied resource ID.
+- Rate limiting is currently process-local (per IP and normalized password account).
+  Deploying multiple API workers requires a shared limiter. Proxy trust defaults
+  off; configure trusted ingress deliberately before deploying behind a proxy.

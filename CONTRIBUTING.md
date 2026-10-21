@@ -24,11 +24,14 @@ npm run db:generate --workspace=@pocketledger/api
 and `package-lock.json` to agree. Use `npm install` when deliberately changing
 dependencies, and review both the manifest and lockfile diff afterward.
 
-The API/mobile bootstrap needs no credentials or environment file. The local
+The mobile bootstrap needs no credentials or environment file. The API requires
+validated database and signing configuration; see README's authentication setup.
+The local
 PostgreSQL service uses an ignored `.env` copied from `.env.example`; replace its
 password placeholder before starting the database. Prisma CLI explicitly reads
 the root `.env`; set `DATABASE_URL` using the template without overwriting existing
-configuration. The API bootstrap does not load this file. Backend secrets stay
+configuration. The API loads it only when explicitly started with `--env-file`.
+Backend secrets stay
 on the server. Values prefixed with
 `EXPO_PUBLIC_` are client-visible.
 
@@ -93,16 +96,16 @@ git diff --check
 
 Use `npm run format` to apply formatting, then inspect the changes. `docs/` is
 currently excluded from Prettier; review Markdown links and layout manually.
-Unit test runners currently permit zero tests. Say that explicitly in a PR rather
-than presenting it as tested product behavior. The API integration suite tests
-migrations from zero, ownership constraints, and synthetic seeding. Start the
+Mobile/shared unit runners still permit zero tests; API tests require real cases.
+Say that explicitly in a PR. The API integration suite tests migrations from zero,
+ownership constraints, synthetic seeding and authentication behavior. Start the
 separate test service and set `TEST_DATABASE_URL` as described in
 [README](README.md#prisma-and-database-tests) before running it locally. It creates
 and deletes only a randomly named database inside that disposable service. Put future
 integration tests in `apps/api/tests/integration/**/*.test.ts`; the API unit-test
 command excludes this directory. Use only a disposable test database and
-synthetic records. Integration tests no longer permit zero tests; remove
-`passWithNoTests` from unit suites when those gain real tests. Prisma Client
+synthetic records. Integration and API unit tests do not permit zero tests; remove
+`passWithNoTests` from remaining suites when those gain real tests. Prisma Client
 generation must run before type checks or builds; do not commit generated client
 files. Type checks include database tests, seed scripts, and Prisma configuration.
 
@@ -125,12 +128,14 @@ No production credentials, cloud account, Expo account, or repository secrets
 are required. The workflow token has only `contents: read`, checkout does not
 persist its credentials, and actions are pinned to reviewed full commit SHAs.
 
-The only uploaded artifact is `quality-check-summary`, retained for seven days.
+The `quality-check-summary` artifact is retained for seven days.
 Its allowlisted `checks.json` contains step outcomes and a test-coverage caveat;
 it does not contain test stdout, raw logs, financial records, environment values,
-database dumps, or the workspace. Keep test logs synthetic and free of secrets,
+database dumps, or the workspace. A separate `pocketledger-openapi` artifact
+contains only the generated public route contract. Keep test logs synthetic and free of secrets,
 because Actions still displays command output. Database integration coverage does
-not imply API route or authentication coverage; those features are not implemented.
+not imply native/mobile flow coverage. API auth is covered with synthetic identities
+and local signing keys; native Google sign-in is tested separately in Issue #11.
 
 After you push the branch and create its PR, inspect the `quality` check. Verify
 a deliberate formatter/lint/type/test failure is red, remove that temporary
