@@ -4,5 +4,6 @@ dist/
 coverage/
 .expo/
 .expo-shared/
+apps/mobile/expo-env.d.ts
 docs/
 package-lock.json

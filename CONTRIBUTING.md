@@ -96,9 +96,12 @@ git diff --check
 
 Use `npm run format` to apply formatting, then inspect the changes. `docs/` is
 currently excluded from Prettier; review Markdown links and layout manually.
-Mobile/shared unit runners still permit zero tests; API tests require real cases.
-Say that explicitly in a PR. The API integration suite tests migrations from zero,
-ownership constraints, synthetic seeding and authentication behavior. Start the
+The shared unit runner still permits zero tests; API and mobile tests require real
+cases. Mobile uses Jest with Expo's preset; API/shared use Vitest. Mobile type checks
+generate ignored route declarations first, so clean checkouts and CI validate the
+same navigation contracts. Say which tests ran in a PR. The API integration suite
+tests migrations from zero, ownership constraints, synthetic seeding and
+authentication behavior. Start the
 separate test service and set `TEST_DATABASE_URL` as described in
 [README](README.md#prisma-and-database-tests) before running it locally. It creates
 and deletes only a randomly named database inside that disposable service. Put future

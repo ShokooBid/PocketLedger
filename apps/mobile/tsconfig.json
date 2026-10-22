@@ -7,6 +7,6 @@
     "noEmit": true,
     "types": ["react", "react-native"]
   },
-  "include": ["App.tsx", "**/*.ts", "**/*.tsx"],
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
   "exclude": ["node_modules"]
 }

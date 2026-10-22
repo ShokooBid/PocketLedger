@@ -66,8 +66,23 @@ Do not import server-only modules, database clients, or secrets from
 | `npm run test`             | Run each workspace's test command.                 |
 | `npm run test:integration` | Test migrations and ownership on a disposable DB.  |
 
-The mobile app intentionally contains only a minimal launch screen. Navigation,
-screens, and API integration are subsequent issues.
+The mobile shell uses Expo Router with a signed-out preview and explicitly labeled
+demo navigation for dashboard, transactions, categories, CSV import, and settings.
+Email/password and Google buttons explain that sign-in is not connected. The demo
+does not authenticate you, collect credentials, or persist a session. Real mobile
+authentication and API integration remain Issue #11.
+
+Run `npm run dev:mobile` and open the QR link in an SDK-compatible Expo Go app.
+From `apps/mobile`, `npm run android` opens an available Android target,
+`npm run ios` needs a macOS iOS simulator, and `npm run web` opens the web preview.
+Each demo screen offers loading/empty/error previews; Settings also offers a
+rendering-error recovery exercise and a demo exit button.
+
+`npm run typecheck --workspace=@pocketledger/mobile` generates ignored Expo route
+types before checking strict TypeScript, including negative navigation assertions.
+`npm run test --workspace=@pocketledger/mobile` runs Expo/Jest screen and navigation
+tests and requires tests to exist. See the [Issue #9 walkthrough](docs/issue-9-implementation-walkthrough.md)
+for file responsibilities, commands, learning notes, and device-verification limits.
 
 ## Local PostgreSQL
 
@@ -164,7 +179,8 @@ to `main`: locked install, formatting, lint, type checks, unit/integration test
 commands, Prisma validation/generation, and API/shared builds. Database integration
 tests apply migrations from zero and test ownership and authentication. API unit
 tests verify contracts, safe errors/logs, rate limiting and local Google signatures;
-mobile/shared suites still permit zero tests. Generated OpenAPI is a separate CI
+mobile tests cover the shell and navigation; the shared suite still permits zero
+tests. Generated OpenAPI is a separate CI
 artifact. See the
 [Issue #5 walkthrough](docs/issue-5-implementation-walkthrough.md) for how CI
 works and the [required-check setup](CONTRIBUTING.md#github-actions-and-required-checks).
