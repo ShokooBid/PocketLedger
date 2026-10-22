@@ -6,6 +6,7 @@ dist/
 coverage/
 .expo/
 .expo-shared/
+/docs
 *.tsbuildinfo
 
 # Environment configuration: examples must contain placeholders only
