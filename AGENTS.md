@@ -12,4 +12,5 @@
 - Inspect changed files for obvious mistakes. Report which checks ran and their results; state clearly if a check could not run.
 
 ## Efficient workflow
+
 - Inspect the code, callers, tests, and configuration needed to understand the change; expand the search when behavior or dependencies are unclear. Keep command output and final reports concise without omitting important findings.
