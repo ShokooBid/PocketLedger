@@ -79,8 +79,8 @@ function prisma(...args: string[]) {
 
 // Raw SQL intentionally bypasses Prisma's relation validation.
 async function insertTransaction(
-  owner = userA,
-  category = categoryA,
+  owner: string = userA,
+  category: string = categoryA,
   source: string | null = null
 ) {
   return sql.query(
@@ -149,7 +149,7 @@ describe("initial migration and database ownership", () => {
     const result = await sql.query(
       'SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL'
     );
-    expect(result.rows).toHaveLength(3);
+    expect(result.rows).toHaveLength(4);
     expect(await prisma("migrate", "status")).toContain("up to date");
   });
 
@@ -266,9 +266,12 @@ describe("initial migration and database ownership", () => {
   });
 
   it("archives a category without losing historical associations", async () => {
-    const result = await insertTransaction();
+    const category = await db.category.create({
+      data: { userId: userA, name: "Archive history" }
+    });
+    const result = await insertTransaction(userA, category.id);
     await db.category.update({
-      where: { id: categoryA },
+      where: { id: category.id },
       data: { archivedAt: new Date() }
     });
     const record = await db.transaction.findUniqueOrThrow({
@@ -542,6 +545,39 @@ describe("authentication storage (service behavior is implemented in Issue #7)",
         "INSERT INTO \"Transaction\" (\"userId\", \"categoryId\", direction, \"amountMinor\", currency, date, merchant) VALUES ($1, $2, 'expense', 1234, 'USD', '2026-01-01', 'Synthetic preserved merchant')",
         [userA, categoryA]
       );
+      // An old exact-name schema can contain newly conflicting active names.
+      // The new migration must fail atomically rather than merge historic IDs.
+      const collisionId = randomUUID();
+      await upgrade.query(
+        'INSERT INTO "Category" (id, "userId", name) VALUES ($1, $2, $3)',
+        [collisionId, userA, " synthetic  PRESERVED category "]
+      );
+      await expect(
+        upgrade.query(
+          await readFile(
+            new URL(
+              "../../prisma/migrations/20261022000000_categories/migration.sql",
+              import.meta.url
+            ),
+            "utf8"
+          )
+        )
+      ).rejects.toMatchObject({ code: "23505" });
+      await upgrade.query("ROLLBACK");
+      expect(
+        (
+          await upgrade.query(
+            `SELECT indexname FROM pg_indexes WHERE indexname = 'Category_userId_name_key'`
+          )
+        ).rows
+      ).toHaveLength(1);
+      expect(
+        (await upgrade.query('SELECT id FROM "Category"')).rows
+      ).toHaveLength(2);
+      // This is a disposable fixture; resolve its synthetic collision explicitly.
+      await upgrade.query('DELETE FROM "Category" WHERE id = $1', [
+        collisionId
+      ]);
       await runPrisma(
         upgradeUrl.toString(),
         "migrate",

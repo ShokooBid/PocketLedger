@@ -17,7 +17,8 @@ async function openShell(initialUrl = "/") {
 }
 
 async function press(name: string) {
-  await fireEvent.press(screen.getByRole("button", { name }));
+  const button = await screen.findByRole("button", { name });
+  await fireEvent.press(button);
 }
 
 async function enterDemo() {
@@ -99,6 +100,34 @@ describe("session navigation", () => {
     await act(() => router.push("/transactions"));
     expect(shell.getPathname()).toBe("/sign-in");
   });
+
+  it("keeps demo categories across navigation and discards them after exit", async () => {
+    await openShell();
+    await enterDemo();
+    await fireEvent.press(
+      screen.getByRole("link", { name: "Manage categories" })
+    );
+    await press("Add category");
+    await fireEvent.changeText(
+      screen.getByLabelText("Category name"),
+      "Synthetic demo category"
+    );
+    await press("Save category");
+    expect(await screen.findByText("Synthetic demo category")).toBeVisible();
+    await press("Back to dashboard");
+    await fireEvent.press(
+      screen.getByRole("link", { name: "Manage categories" })
+    );
+    expect(await screen.findByText("Synthetic demo category")).toBeVisible();
+    await press("Back to dashboard");
+    await fireEvent.press(screen.getByRole("link", { name: "Open settings" }));
+    await press("Exit demo and return to sign in");
+    await enterDemo();
+    await fireEvent.press(
+      screen.getByRole("link", { name: "Manage categories" })
+    );
+    expect(screen.queryByText("Synthetic demo category")).toBeNull();
+  });
 });
 
 describe("placeholder screens", () => {
@@ -118,7 +147,7 @@ describe("placeholder screens", () => {
         screen.getByRole("header", { name: `${title} screen` })
       ).toBeVisible();
       expect(screen.getByText(/Demo only/)).toBeVisible();
-      expect(screen.getByText("Nothing here yet")).toBeVisible();
+      expect(await screen.findByText("Nothing here yet")).toBeVisible();
       await press("Preview loading state");
       expect(screen.getByLabelText(/Loading preview\./)).toHaveProp(
         "accessibilityState",
@@ -127,7 +156,7 @@ describe("placeholder screens", () => {
       await press("Preview error state");
       expect(screen.getByRole("alert")).toBeVisible();
       await press("Try again");
-      expect(screen.getByText("Nothing here yet")).toBeVisible();
+      expect(await screen.findByText("Nothing here yet")).toBeVisible();
       if (link) {
         await press("Back to dashboard");
         expect(
