@@ -18,6 +18,8 @@ import type { Config } from "./config.js";
 import { ApiError } from "./errors.js";
 import type { AuthService } from "./auth/service.js";
 import { errorSchema, registerAuthRoutes } from "./auth/routes.js";
+import { registerCategoryRoutes } from "./categories/routes.js";
+import type { CategoryService } from "./categories/service.js";
 
 export async function buildApp(
   config: Config,
@@ -25,6 +27,7 @@ export async function buildApp(
   options: {
     logger?: FastifyServerOptions["logger"];
     rateLimitMax?: number;
+    categories?: CategoryService;
   } = {}
 ) {
   const app = Fastify({
@@ -123,7 +126,7 @@ export async function buildApp(
           false
         );
     },
-    methods: ["GET", "POST", "OPTIONS"],
+    methods: ["GET", "POST", "PATCH", "OPTIONS"],
     allowedHeaders: ["authorization", "content-type"],
     exposedHeaders: ["x-request-id"],
     credentials: false
@@ -158,5 +161,6 @@ export async function buildApp(
     async () => ({ status: "ok" as const })
   );
   registerAuthRoutes(app, auth);
+  if (options.categories) registerCategoryRoutes(app, options.categories);
   return app;
 }

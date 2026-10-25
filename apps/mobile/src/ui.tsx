@@ -21,11 +21,13 @@ export function Button({
   label,
   onPress,
   hint,
+  disabled = false,
   selected = false
 }: {
   label: string;
   onPress: () => void;
   hint?: string;
+  disabled?: boolean;
   selected?: boolean;
 }) {
   return (
@@ -33,9 +35,13 @@ export function Button({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={hint}
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, ...(disabled ? { disabled } : {}) }}
+      disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.button, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.button,
+        (pressed || disabled) && styles.pressed
+      ]}
     >
       <Text style={styles.buttonText}>{label}</Text>
     </Pressable>

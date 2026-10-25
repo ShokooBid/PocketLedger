@@ -115,7 +115,7 @@ model Category {
 
   // A composite target lets the transaction foreign key enforce ownership.
   @@unique([id, userId])
-  @@unique([userId, name])
+  // Active normalized-name uniqueness lives in the hand-written partial index.
   @@index([userId, archivedAt])
 }
 

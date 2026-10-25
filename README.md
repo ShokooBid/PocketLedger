@@ -68,7 +68,10 @@ Do not import server-only modules, database clients, or secrets from
 
 The mobile shell uses Expo Router with a signed-out preview and explicitly labeled
 demo navigation for dashboard, transactions, categories, CSV import, and settings.
-Email/password and Google buttons explain that sign-in is not connected. The demo
+Categories now offers add/edit/archive management using temporary in-memory demo
+data. Archive requires confirmation; archived rows remain available in the archive
+view. This demo makes no API requests. Email/password and Google buttons explain
+that sign-in is not connected. The demo
 does not authenticate you, collect credentials, or persist a session. Real mobile
 authentication and API integration remain Issue #11.
 
@@ -88,7 +91,8 @@ for file responsibilities, commands, learning notes, and device-verification lim
 
 Issue #4 provides a development-only PostgreSQL container. Issue #6 adds the
 Prisma schema, migrations, synthetic seeds, and a database client factory.
-The API now exposes health and authentication routes. Finance routes come later.
+The API exposes health, authentication and owner-protected category routes.
+Transaction and other finance routes come later.
 
 From the repository root in PowerShell:
 
@@ -143,9 +147,10 @@ require `$env:ALLOW_SYNTHETIC_SEED = 'true'` followed by
 `Remove-Item Env:ALLOW_SYNTHETIC_SEED`. Seeds contain fictional records and a
 disabled account, not a working login.
 
-There are three migrations: the original finance schema, the additive
+There are four migrations: the original finance schema, the additive
 authentication upgrade with `AuthIdentity`, `Session`, and `RefreshToken`, then
-Google nonce challenges, recent-reauthentication state and normalized email uniqueness.
+Google nonce challenges, recent-reauthentication state and normalized email uniqueness,
+then active category-name uniqueness and archived-category assignment protection.
 Google-only users may have no password. The upgrade preserves existing finance
 records. Demo seeds
 also set `disabledAt`, and never seed provider credentials or usable tokens.
@@ -222,3 +227,36 @@ Use synthetic identities only; the optional disabled seed is not a login account
 `apps/api/dist/openapi.json` without database or Google credentials.
 See the [walkthrough](docs/issue-7-implementation-walkthrough.md) for Google
 proof/linking requests, lifetimes, maintenance, limitations and command explanations.
+
+## Category management (Issue #10)
+
+All category routes require a real PocketLedger bearer token. The server derives
+the owner from that session; request bodies never accept `userId`.
+
+| Method and path                   | Behavior                                                                                                                                             |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/categories`              | Active owned categories. `status=archived` or `all` includes history; `limit` is 1–100 (default 50); pass `nextCursor` as `after` for the next page. |
+| `GET /v1/categories/:id`          | Owned category, including archived; foreign and missing IDs both return 404.                                                                         |
+| `POST /v1/categories`             | Create with `{ "name": "Groceries" }`; returns 201.                                                                                                  |
+| `PATCH /v1/categories/:id`        | Rename an active category with `{ "name": "Food" }`.                                                                                                 |
+| `POST /v1/categories/:id/archive` | Send `{}` after confirmation; repeated archive preserves its timestamp.                                                                              |
+
+Names collapse ASCII whitespace and trim it, preserving display case. Active
+duplicates compare ASCII letters without case, within one owner. Non-ASCII
+letters, accents and Unicode normalization forms remain distinct. Names must
+contain visible text, have 1–100 UTF-16 units after normalization, and contain no
+control/format/surrogate characters; raw input is bounded at 1000 units.
+Duplicates return 409 `CATEGORY_NAME_CONFLICT`; archived renames return 409
+`CATEGORY_ARCHIVED`; invalid inputs return 422. No delete or restore route exists.
+
+Archiving retains the ID and historical transaction association, hides it from
+the active selection list, and frees its name for a new category with a different
+ID. A database trigger rejects new transaction assignments to archived categories.
+History reads must include archived associations; historical renames are not
+snapshotted (renaming an active category changes its displayed name on history).
+
+The fourth migration is hand-written and stops atomically on legacy active-name
+collisions. Review them explicitly; do not merge IDs or reset data to deploy.
+Neither the third nor fourth migration was applied to the development database
+as part of this implementation. See the detailed [Issue #10 walkthrough](docs/issue-10-implementation-walkthrough.md)
+for the dependency sequence, files, commands, tests and migration review.
