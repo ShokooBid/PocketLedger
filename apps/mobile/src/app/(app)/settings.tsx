@@ -1,14 +1,30 @@
 import { useState } from "react";
 import { PlaceholderScreen } from "../../placeholder-screen";
 import { useSession } from "../../session";
-import { Button } from "../../ui";
+import { Body, Button, Screen } from "../../ui";
 
 export { ErrorBoundary } from "../../error-boundary";
 
 export default function SettingsScreen() {
-  const { exitDemo } = useSession();
+  const { session, controller, exitDemo } = useSession();
   const [shouldFail, setShouldFail] = useState(false);
   if (shouldFail) throw new Error("Synthetic rendering failure.");
+  if (session.status === "authenticated")
+    return (
+      <Screen title="Settings" back>
+        <Body>Signed in as {session.user.email}</Body>
+        <Body>
+          PocketLedger does not connect to a bank. This device keeps session
+          credentials in platform secure storage.
+        </Body>
+        <Button
+          label="Sign out"
+          onPress={() => {
+            void controller.logout();
+          }}
+        />
+      </Screen>
+    );
 
   return (
     <PlaceholderScreen

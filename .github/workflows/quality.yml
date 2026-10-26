@@ -75,7 +75,7 @@ jobs:
         id: unit
         run: npm run test
 
-      - name: Test migrations and database ownership in an isolated database
+      - name: Test API and mobile contracts in isolated databases
         id: integration
         run: npm run test:integration
         env:
@@ -119,7 +119,7 @@ jobs:
             "apiBuild": "${{ steps.api_build.outcome }}",
             "sharedBuild": "${{ steps.shared_build.outcome }}",
             "openapi": "${{ steps.openapi.outcome }}",
-            "testCoverageNote": "API foundation/auth and database tests use synthetic identities and local provider keys. Mobile shell/navigation tests use mocked native modules; shared still permits zero tests. Native Google/device flows are separate."
+            "testCoverageNote": "API and mobile category integration tests use disposable PostgreSQL and synthetic accounts. Mobile session/storage/provider/UI unit tests mock native boundaries; shared still permits zero tests. Real Google/device flows require development builds."
           }
           JSON
 

@@ -27,7 +27,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "test": "npm run test --workspaces --if-present",
-    "test:integration": "npm run test:integration --workspace=@pocketledger/api",
+    "test:integration": "npm run test:integration --workspace=@pocketledger/api && npm run test:integration --workspace=@pocketledger/mobile",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "overrides": {

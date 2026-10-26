@@ -24,7 +24,9 @@ npm run db:generate --workspace=@pocketledger/api
 and `package-lock.json` to agree. Use `npm install` when deliberately changing
 dependencies, and review both the manifest and lockfile diff afterward.
 
-The mobile bootstrap needs no credentials or environment file. The API requires
+The mobile demo needs no credentials or environment file. Real mobile authentication
+requires the public configuration described in README and a native development
+build for Google. The API requires
 validated database and signing configuration; see README's authentication setup.
 The local
 PostgreSQL service uses an ignored `.env` copied from `.env.example`; replace its
@@ -47,7 +49,7 @@ git pull --ff-only origin main
 git switch -c chore/issue-3-repository-standards
 ```
 
-Choose a fresh branch name per issue: `feat/issue-11-categories`,
+Choose a fresh branch name per issue: `feat/issue-11-mobile-auth`,
 `fix/issue-12-amount-validation`, `docs/issue-1-architecture`, or
 `chore/issue-3-repository-standards`.
 
@@ -104,7 +106,10 @@ tests migrations from zero, ownership constraints, synthetic seeding and
 authentication behavior. Start the
 separate test service and set `TEST_DATABASE_URL` as described in
 [README](README.md#prisma-and-database-tests) before running it locally. It creates
-and deletes only a randomly named database inside that disposable service. Put future
+and deletes only randomly named databases inside that disposable service. The mobile
+integration suite also runs its actual session/client/category adapter against
+Fastify and a disposable database; native storage/provider boundaries are mocked
+separately in Jest. Put future
 integration tests in `apps/api/tests/integration/**/*.test.ts`; the API unit-test
 command excludes this directory. Use only a disposable test database and
 synthetic records. Integration and API unit tests do not permit zero tests; remove

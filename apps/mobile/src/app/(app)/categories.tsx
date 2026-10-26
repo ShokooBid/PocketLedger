@@ -1,17 +1,27 @@
 import { PlaceholderScreen } from "../../placeholder-screen";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import {
-  CategoryManagement,
-  useDemoCategories
-} from "../../category-management";
+import { CategoryManagement } from "../../category-management";
+import { useCategories } from "../../category-context";
+import { useSession } from "../../session";
 import { parsePreviewState, previewHref } from "../../navigation";
 import { Body, Button, Screen } from "../../ui";
 
 export default function CategoriesScreen() {
   const { state } = useLocalSearchParams();
   const preview = parsePreviewState(state);
-  const source = useDemoCategories();
+  const source = useCategories();
+  const { session } = useSession();
   const router = useRouter();
+  if (session.status === "authenticated")
+    return (
+      <Screen title="Categories" back>
+        <Body>
+          Manage your categories. Archived categories remain available for
+          history.
+        </Body>
+        <CategoryManagement source={source} demo={false} />
+      </Screen>
+    );
   if (preview === "empty")
     return (
       <Screen title="Categories" back>

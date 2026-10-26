@@ -3,45 +3,42 @@ import {
   useContext,
   useEffect,
   useState,
+  useSyncExternalStore,
   type PropsWithChildren
 } from "react";
+import { createRuntimeSession } from "./auth/runtime";
+import type { SessionController } from "./auth/session-controller";
+export type { SessionState as ShellSession } from "./auth/session-controller";
 
-// This is navigation state, never proof of authentication.
-export type ShellSession =
-  | { status: "restoring" }
-  | { status: "signed-out" }
-  | { status: "authenticated"; mode: "demo" };
-
-const SessionContext = createContext<{
-  session: ShellSession;
-  enterDemo: () => void;
-  exitDemo: () => void;
-} | null>(null);
-
-export function SessionProvider({ children }: PropsWithChildren) {
-  const [session, setSession] = useState<ShellSession>({ status: "restoring" });
-
+const SessionContext = createContext<SessionController | null>(null);
+export function SessionProvider({
+  children,
+  controller
+}: PropsWithChildren<{ controller?: SessionController }>) {
+  const [sessionController] = useState(
+    () => controller ?? createRuntimeSession()
+  );
   useEffect(() => {
-    // No credentials exist in this shell. Issue #11 replaces this with secure
-    // restoration and server validation, including an explicit retry state.
-    setSession({ status: "signed-out" });
-  }, []);
-
+    void sessionController.restore();
+  }, [sessionController]);
   return (
-    <SessionContext.Provider
-      value={{
-        session,
-        enterDemo: () => setSession({ status: "authenticated", mode: "demo" }),
-        exitDemo: () => setSession({ status: "signed-out" })
-      }}
-    >
+    <SessionContext.Provider value={sessionController}>
       {children}
     </SessionContext.Provider>
   );
 }
-
 export function useSession() {
-  const context = useContext(SessionContext);
-  if (!context) throw new Error("SessionProvider is required.");
-  return context;
+  const controller = useContext(SessionContext);
+  if (!controller) throw new Error("SessionProvider is required.");
+  const session = useSyncExternalStore(
+    controller.subscribe,
+    controller.getSnapshot,
+    controller.getSnapshot
+  );
+  return {
+    session,
+    controller,
+    enterDemo: controller.enterDemo,
+    exitDemo: controller.exitDemo
+  };
 }

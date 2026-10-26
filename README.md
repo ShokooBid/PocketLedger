@@ -3,9 +3,10 @@
 PocketLedger is a privacy-conscious personal-finance mobile application. Its first
 release lets an authenticated user organize categories, manually record income and
 expenses, review a dashboard, and import a CSV statement after previewing it.
-The planned MVP supports email/password and Google sign-in with persistent mobile
-sessions. The backend implements both methods and session rotation; mobile login
-and secure restoration remain Issue #11. See the [authentication plan](docs/authentication-plan.md)
+The mobile app supports email/password and native Google sign-in with persistent
+PocketLedger sessions in platform secure storage. Categories use the authenticated
+API after session verification. Native Google/device acceptance still needs OAuth
+setup and a development build. See the [authentication plan](docs/authentication-plan.md)
 and [implementation walkthrough](docs/issue-7-implementation-walkthrough.md).
 
 The project is implemented incrementally from an accepted design. The current
@@ -25,12 +26,12 @@ automated tests, and GitHub Actions for delivery.
 
 - Node.js 22.13 or later
 - npm 10 or later (the repository uses npm workspaces)
-- Expo Go on an Android/iOS device or an Android emulator/iOS simulator to run the
-  mobile app
+- An Expo development build on an Android/iOS device or emulator/simulator for
+  authentication; Expo Go and web remain available for the isolated demo
 - Docker Desktop or Rancher Desktop for the local PostgreSQL service
 
-Docker is required only for the local database. No cloud account or production
-credentials are required.
+Docker is required only for the local database. Demo and email/password development
+need no cloud account or production credentials. Google needs the OAuth setup below.
 
 ### Install
 
@@ -66,16 +67,20 @@ Do not import server-only modules, database clients, or secrets from
 | `npm run test`             | Run each workspace's test command.                 |
 | `npm run test:integration` | Test migrations and ownership on a disposable DB.  |
 
-The mobile shell uses Expo Router with a signed-out preview and explicitly labeled
-demo navigation for dashboard, transactions, categories, CSV import, and settings.
-Categories now offers add/edit/archive management using temporary in-memory demo
-data. Archive requires confirmation; archived rows remain available in the archive
-view. This demo makes no API requests. Email/password and Google buttons explain
-that sign-in is not connected. The demo
-does not authenticate you, collect credentials, or persist a session. Real mobile
-authentication and API integration remain Issue #11.
+The mobile app verifies saved credentials before rendering protected navigation.
+Native sign-in connects category list/add/edit/archive to the owner-scoped API.
+Category lists traverse every page, including archived history. Logout clears
+device credentials and revokes the server session when reachable. Transient
+failures preserve credentials; an uncertain refresh requires explicit sign-in
+recovery rather than replaying a possibly consumed token.
 
-Run `npm run dev:mobile` and open the QR link in an SDK-compatible Expo Go app.
+The separately labeled demo uses temporary in-memory categories and makes no API
+requests. Dashboard, transactions and import remain screen previews in both modes.
+Web is demo-only. Archive requires confirmation and preserves history.
+
+Run `npm run dev:mobile` for the development client. Use
+`npm run dev --workspace=@pocketledger/mobile -- --go` for an SDK-compatible Expo Go
+demo (native Google is unavailable there).
 From `apps/mobile`, `npm run android` opens an available Android target,
 `npm run ios` needs a macOS iOS simulator, and `npm run web` opens the web preview.
 Each demo screen offers loading/empty/error previews; Settings also offers a
@@ -177,14 +182,15 @@ the ownership constraints, schema choices, generated files, and commands.
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the supported development baseline,
 branch/PR workflow, local checks, dependency review, and GitHub settings to inspect.
 The repository includes [.env.example](.env.example) for PostgreSQL and API setup.
-The mobile bootstrap requires no credentials. The API requires validated configuration.
+The demo requires no credentials. Native authentication needs public API/OAuth
+configuration; the API requires validated server configuration.
 
 GitHub Actions runs the **`quality`** check on pull requests to `main` and pushes
 to `main`: locked install, formatting, lint, type checks, unit/integration test
 commands, Prisma validation/generation, and API/shared builds. Database integration
 tests apply migrations from zero and test ownership and authentication. API unit
 tests verify contracts, safe errors/logs, rate limiting and local Google signatures;
-mobile tests cover the shell and navigation; the shared suite still permits zero
+mobile tests cover sessions, client boundaries, category UI and navigation; the shared suite still permits zero
 tests. Generated OpenAPI is a separate CI
 artifact. See the
 [Issue #5 walkthrough](docs/issue-5-implementation-walkthrough.md) for how CI
@@ -260,3 +266,50 @@ collisions. Review them explicitly; do not merge IDs or reset data to deploy.
 Neither the third nor fourth migration was applied to the development database
 as part of this implementation. See the detailed [Issue #10 walkthrough](docs/issue-10-implementation-walkthrough.md)
 for the dependency sequence, files, commands, tests and migration review.
+
+## Native sign-in and live categories
+
+Use `apps/mobile/.env.example` as a reference for a new ignored
+`apps/mobile/.env.local`; preserve existing files. Set `EXPO_PUBLIC_API_URL` to an
+API origin with no path, query or credentials. Production requires HTTPS. For an
+Android development build using synthetic data on a private LAN, you may explicitly
+set `EXPO_PUBLIC_ALLOW_LOCAL_HTTP=true` and use `http://<computer-LAN-IP>:3000`.
+Rebuild after changing native configuration. A phone's `localhost` is the phone.
+Use HTTPS for iOS device testing.
+
+Email/password works without Google configuration once the API and its reviewed
+migrations are ready. Account creation requires a 12–128 character password.
+Use synthetic test identities and records.
+
+Google additionally requires a Google Cloud project, an OAuth consent screen with
+your test account, a Web OAuth client ID, and an Android OAuth client registered for
+`com.shokoobid.pocketledger` and the development build's SHA-1 signing fingerprint.
+Set `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`; configure that Web ID in the backend's
+`GOOGLE_CLIENT_IDS` and the applicable native/Web authorized presenter IDs in
+`GOOGLE_PRESENTER_IDS`. For iOS register the same bundle identifier and set
+`EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`. Client IDs are public; client secrets and signing
+keys must stay out of the app. No Google project is created by this implementation.
+
+The selected `react-native-nitro-google-signin` package uses Android Credential
+Manager. The app passes the server's fresh challenge nonce into explicit native
+sign-in and exchanges the proof for PocketLedger credentials.
+
+With Android Studio/SDK, Java and USB debugging configured, run from `apps/mobile`:
+
+```powershell
+npx expo run:android --device
+# After the development binary is installed:
+npm run dev -- --dev-client
+```
+
+Alternatively, after configuring an Expo/EAS account and public build environment,
+`npx eas-cli build --platform android --profile development` builds an installable
+APK using `eas.json`. Cloud builds and account/project creation are manual steps.
+iOS native builds require macOS/Xcode or EAS and Apple provisioning.
+Native Google login cannot run in Expo Go. See the [Issue #11 walkthrough](docs/issue-11-implementation-walkthrough.md)
+for signing fingerprints, restart/logout tests, file responsibilities and limits.
+
+`npm run test:integration` now runs API database tests followed by the real portable
+mobile client against Fastify and disposable PostgreSQL. It uses only
+`TEST_DATABASE_URL`, never the development database. These tests verify the live
+contracts; OS storage and provider/device behavior still need native verification.

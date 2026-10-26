@@ -1,4 +1,11 @@
-import { afterEach, describe, expect, it, jest } from "@jest/globals";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest
+} from "@jest/globals";
 import {
   act,
   fireEvent,
@@ -8,17 +15,43 @@ import {
 import { router } from "expo-router";
 import { parsePreviewState } from "../src/navigation";
 import * as sessionModule from "../src/session";
+import * as runtime from "../src/auth/runtime";
+import {
+  alice,
+  bob,
+  deferred,
+  harness,
+  response,
+  stored
+} from "./auth-fixtures";
 
 let shell: Awaited<ReturnType<typeof renderRouter>>;
 
+beforeEach(() => {
+  jest
+    .spyOn(runtime, "createRuntimeSession")
+    .mockImplementation(() => harness(null).controller);
+});
+
 async function openShell(initialUrl = "/") {
-  shell = await renderRouter("./src/app", { initialUrl });
+  shell = renderRouter("./src/app", { initialUrl });
+  await act(async () => {
+    await Promise.resolve();
+  });
   return shell;
 }
 
 async function press(name: string) {
   const button = await screen.findByRole("button", { name });
-  await fireEvent.press(button);
+  await act(async () => {
+    fireEvent.press(button);
+  });
+}
+
+async function tap(element: Parameters<typeof fireEvent.press>[0]) {
+  await act(async () => {
+    fireEvent.press(element);
+  });
 }
 
 async function enterDemo() {
@@ -33,9 +66,103 @@ afterEach(() => {
 });
 
 describe("session navigation", () => {
+  it("keeps protected data hidden during an outage and retries verification", async () => {
+    const h = harness();
+    h.fetcher.mockRejectedValueOnce(new Error("private transport error"));
+    h.fetcher
+      .mockResolvedValueOnce(response(alice))
+      .mockResolvedValueOnce(response({ items: [], nextCursor: null }));
+    jest.mocked(runtime.createRuntimeSession).mockReturnValue(h.controller);
+    await openShell("/categories");
+    expect(
+      screen.getByRole("header", { name: "Session unavailable screen" })
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("header", { name: "Categories screen" })
+    ).toBeNull();
+    await press("Try again");
+    expect(
+      await screen.findByRole("header", { name: "Categories screen" })
+    ).toBeVisible();
+    expect(h.store.clear).not.toHaveBeenCalled();
+  });
+
+  it("connects categories only after login and clears visible data and pending reads on account change", async () => {
+    const originalUrl = process.env.EXPO_PUBLIC_API_URL;
+    process.env.EXPO_PUBLIC_API_URL = "https://api.example.invalid";
+    const h = harness(null);
+    jest.mocked(runtime.createRuntimeSession).mockReturnValue(h.controller);
+    let owner = alice;
+    const category = {
+      id: "20000000-0000-4000-8000-000000000001",
+      name: "Alice private category",
+      isDefault: false,
+      archivedAt: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z"
+    };
+    h.fetcher.mockImplementation(async (url, options) => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/v1/auth/login") {
+        const body = JSON.parse(String(options?.body)) as { email: string };
+        owner = body.email === bob.email ? bob : alice;
+        return response(stored(owner.id).credentials);
+      }
+      if (path === "/v1/me") return response(owner);
+      if (path === "/v1/auth/logout") return response({ ok: true });
+      return response({
+        items: owner.id === alice.id ? [category] : [],
+        nextCursor: null
+      });
+    });
+    try {
+      await openShell();
+      await fireEvent.changeText(
+        screen.getByLabelText("Email address"),
+        alice.email
+      );
+      await fireEvent.changeText(
+        screen.getByLabelText("Password"),
+        "synthetic password"
+      );
+      await press("Sign in with email");
+      await screen.findByRole("header", { name: "Dashboard screen" });
+      await tap(screen.getByRole("link", { name: "Manage categories" }));
+      expect(await screen.findByText(category.name)).toBeVisible();
+      expect(screen.queryByText(/Demo only/)).toBeNull();
+      await press("Back to dashboard");
+      await tap(screen.getByRole("link", { name: "Open settings" }));
+      await press("Sign out");
+      await screen.findByRole("header", { name: "Sign in screen" });
+      await fireEvent.changeText(
+        screen.getByLabelText("Email address"),
+        bob.email
+      );
+      await fireEvent.changeText(
+        screen.getByLabelText("Password"),
+        "synthetic password"
+      );
+      await press("Sign in with email");
+      await screen.findByRole("header", { name: "Dashboard screen" });
+      const pending = deferred<Response>();
+      h.fetcher.mockReturnValueOnce(pending.promise);
+      await tap(screen.getByRole("link", { name: "Manage categories" }));
+      expect(await screen.findByText("Loading categories")).toBeVisible();
+      expect(screen.queryByText(category.name)).toBeNull();
+      await act(async () => {
+        pending.resolve(response({ items: [], nextCursor: null }));
+      });
+      expect(await screen.findByText("Add your first category.")).toBeVisible();
+    } finally {
+      if (originalUrl === undefined) delete process.env.EXPO_PUBLIC_API_URL;
+      else process.env.EXPO_PUBLIC_API_URL = originalUrl;
+    }
+  });
+
   it("shows restoration without exposing either navigation flow", async () => {
     jest.spyOn(sessionModule, "useSession").mockReturnValue({
       session: { status: "restoring" },
+      controller: harness(null).controller,
       enterDemo: jest.fn(),
       exitDemo: jest.fn()
     });
@@ -49,28 +176,25 @@ describe("session navigation", () => {
     ).toBeNull();
   });
 
-  it("starts signed out and keeps both login placeholders honest", async () => {
+  it("starts signed out with native authentication unavailable when unconfigured", async () => {
     await openShell();
     expect(shell.getPathname()).toBe("/sign-in");
-    expect(screen.getByLabelText("Email address (preview only)")).toHaveProp(
+    expect(screen.getByLabelText("Email address")).toHaveProp(
       "editable",
       false
     );
-    expect(screen.getByLabelText("Password (preview only)")).toHaveProp(
+    expect(screen.getByLabelText("Password")).toHaveProp(
       "secureTextEntry",
       true
     );
-    expect(screen.getByLabelText("Password (preview only)")).toHaveProp(
-      "editable",
-      false
-    );
-    await press("Sign in with email (preview only)");
+    expect(screen.getByLabelText("Password")).toHaveProp("editable", false);
     expect(
-      screen.getByText(/Email and password sign-in is not connected/)
-    ).toBeVisible();
+      screen.getByRole("button", { name: "Sign in with email" })
+    ).toBeDisabled();
     expect(shell.getPathname()).toBe("/sign-in");
-    await press("Continue with Google (preview only)");
-    expect(screen.getByText(/Google sign-in is not connected/)).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Continue with Google" })
+    ).toBeDisabled();
     expect(shell.getPathname()).toBe("/sign-in");
   });
 
@@ -88,12 +212,10 @@ describe("session navigation", () => {
   it("enters the demo explicitly and removes protected history on exit", async () => {
     await openShell();
     await enterDemo();
-    await fireEvent.press(
-      screen.getByRole("link", { name: "View transactions" })
-    );
+    await tap(screen.getByRole("link", { name: "View transactions" }));
     await act(() => router.back());
     expect(shell.getPathname()).toBe("/");
-    await fireEvent.press(screen.getByRole("link", { name: "Open settings" }));
+    await tap(screen.getByRole("link", { name: "Open settings" }));
     await press("Exit demo and return to sign in");
     expect(shell.getPathname()).toBe("/sign-in");
     expect(router.canGoBack()).toBe(false);
@@ -104,9 +226,7 @@ describe("session navigation", () => {
   it("keeps demo categories across navigation and discards them after exit", async () => {
     await openShell();
     await enterDemo();
-    await fireEvent.press(
-      screen.getByRole("link", { name: "Manage categories" })
-    );
+    await tap(screen.getByRole("link", { name: "Manage categories" }));
     await press("Add category");
     await fireEvent.changeText(
       screen.getByLabelText("Category name"),
@@ -115,17 +235,13 @@ describe("session navigation", () => {
     await press("Save category");
     expect(await screen.findByText("Synthetic demo category")).toBeVisible();
     await press("Back to dashboard");
-    await fireEvent.press(
-      screen.getByRole("link", { name: "Manage categories" })
-    );
+    await tap(screen.getByRole("link", { name: "Manage categories" }));
     expect(await screen.findByText("Synthetic demo category")).toBeVisible();
     await press("Back to dashboard");
-    await fireEvent.press(screen.getByRole("link", { name: "Open settings" }));
+    await tap(screen.getByRole("link", { name: "Open settings" }));
     await press("Exit demo and return to sign in");
     await enterDemo();
-    await fireEvent.press(
-      screen.getByRole("link", { name: "Manage categories" })
-    );
+    await tap(screen.getByRole("link", { name: "Manage categories" }));
     expect(screen.queryByText("Synthetic demo category")).toBeNull();
   });
 });
@@ -142,7 +258,7 @@ describe("placeholder screens", () => {
     async (title, link) => {
       await openShell();
       await enterDemo();
-      if (link) await fireEvent.press(screen.getByRole("link", { name: link }));
+      if (link) await tap(screen.getByRole("link", { name: link }));
       expect(
         screen.getByRole("header", { name: `${title} screen` })
       ).toBeVisible();
@@ -179,7 +295,7 @@ describe("placeholder screens", () => {
   it("catches a real render failure and remounts a usable Settings screen", async () => {
     await openShell();
     await enterDemo();
-    await fireEvent.press(screen.getByRole("link", { name: "Open settings" }));
+    await tap(screen.getByRole("link", { name: "Open settings" }));
     // React's expected development diagnostic contains only the synthetic error.
     const diagnostic = jest
       .spyOn(console, "error")
@@ -203,9 +319,7 @@ describe("placeholder screens", () => {
     expect(
       screen.getByRole("header", { name: "Page not found screen" })
     ).toBeVisible();
-    await fireEvent.press(
-      screen.getByRole("link", { name: "Return to start" })
-    );
+    await tap(screen.getByRole("link", { name: "Return to start" }));
     expect(shell.getPathname()).toBe("/sign-in");
   });
 });
