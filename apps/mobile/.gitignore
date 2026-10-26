@@ -4,3 +4,8 @@
 
 expo-env.d.ts
 # @end expo-cli
+# Generated native projects and local Google configuration.
+/android/
+/ios/
+/google-services.json
+/GoogleService-Info.plist

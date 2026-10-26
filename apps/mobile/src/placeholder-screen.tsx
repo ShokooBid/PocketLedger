@@ -6,6 +6,7 @@ import {
   type PlaceholderPath
 } from "./navigation";
 import { Body, Button, Screen, StateNotice } from "./ui";
+import { useSession } from "./session";
 
 export function PlaceholderScreen({
   title,
@@ -22,12 +23,15 @@ export function PlaceholderScreen({
   const { state } = useLocalSearchParams();
   const preview = parsePreviewState(state);
   const router = useRouter();
+  const { session } = useSession();
   const reset = () => router.replace(previewHref(path, "empty"));
 
   return (
     <Screen title={title} back={path !== "/"}>
       <Body>
-        Demo only — you are not signed in. No financial data is loaded.
+        {session.status === "demo"
+          ? "Demo only — you are not signed in. No financial data is loaded."
+          : "This screen is a preview. Category management is connected; other finance features are coming later."}
       </Body>
       <Body>{description}</Body>
       {preview === null ? (

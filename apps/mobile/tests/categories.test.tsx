@@ -9,6 +9,7 @@ import {
 import { CategoryManagement } from "../src/category-management";
 import {
   createDemoCategorySource,
+  CategoryFailure,
   type CategorySource
 } from "../src/category-data";
 
@@ -159,6 +160,25 @@ describe("category management", () => {
     expect(screen.getByText("Categories unavailable")).toBeVisible();
     await press("Try again");
     expect(screen.getByText("Saved once")).toBeVisible();
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires a read after an ambiguous API write before offering another submission", async () => {
+    const demo = createDemoCategorySource();
+    const create = jest
+      .fn<CategorySource["create"]>()
+      .mockImplementation(async (value) => {
+        await demo.create(value); // The server committed but the response was lost.
+        throw new CategoryFailure("uncertain");
+      });
+    await open({ ...demo, create });
+    await add("Saved remotely");
+    expect(screen.queryByRole("button", { name: "Save category" })).toBeNull();
+    expect(
+      screen.getByText(/Reload the list before making another change/)
+    ).toBeVisible();
+    await press("Try again");
+    expect(screen.getByText("Saved remotely")).toBeVisible();
     expect(create).toHaveBeenCalledTimes(1);
   });
 

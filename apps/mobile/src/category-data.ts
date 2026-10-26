@@ -13,7 +13,9 @@ export interface CategorySource {
   archive(id: string): Promise<void>;
 }
 export class CategoryFailure extends Error {
-  constructor(public code: "validation" | "duplicate" | "unavailable") {
+  constructor(
+    public code: "validation" | "duplicate" | "unavailable" | "uncertain"
+  ) {
     super(code);
   }
 }
@@ -23,6 +25,8 @@ export function categoryFailureMessage(error: unknown) {
       return "Use a visible category name of 1–100 characters without control characters.";
     if (error.code === "duplicate")
       return "An active category already uses this name.";
+    if (error.code === "uncertain")
+      return "The change could not be confirmed. Reload the list before making another change.";
     return "This category is unavailable. Reload the list.";
   }
   return "Categories could not be updated or loaded. Try again.";

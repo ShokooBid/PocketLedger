@@ -1,35 +1,20 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type PropsWithChildren
-} from "react";
+import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import {
-  createDemoCategorySource,
+  CategoryFailure,
   categoryFailureMessage,
   type Category,
   type CategorySource
 } from "./category-data";
 import { Body, Button, Field, StateNotice } from "./ui";
 
-const DemoCategories = createContext<CategorySource | null>(null);
-// Mounted only inside the demo branch. Navigation retains data; exiting drops it.
-export function DemoCategoriesProvider({ children }: PropsWithChildren) {
-  const [source] = useState(createDemoCategorySource);
-  return (
-    <DemoCategories.Provider value={source}>{children}</DemoCategories.Provider>
-  );
-}
-export function useDemoCategories() {
-  const source = useContext(DemoCategories);
-  if (!source) throw new Error("DemoCategoriesProvider is required.");
-  return source;
-}
-
-export function CategoryManagement({ source }: { source: CategorySource }) {
+export function CategoryManagement({
+  source,
+  demo = true
+}: {
+  source: CategorySource;
+  demo?: boolean;
+}) {
   const [rows, setRows] = useState<Category[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading"
@@ -108,7 +93,14 @@ export function CategoryManagement({ source }: { source: CategorySource }) {
         setError(categoryFailureMessage(failure));
         // A write may have succeeded before reloading failed. Do not offer a
         // blind write retry against stale data; reload is the recovery action.
-        if (written) setStatus("error");
+        if (
+          written ||
+          (failure instanceof CategoryFailure && failure.code === "uncertain")
+        ) {
+          setEditor(null);
+          setConfirmation(null);
+          setStatus("error");
+        }
       }
     } finally {
       locked.current = false;
@@ -129,7 +121,7 @@ export function CategoryManagement({ source }: { source: CategorySource }) {
       <StateNotice
         kind="error"
         title="Categories unavailable"
-        message="The list could not be loaded. Try again."
+        message={error ?? "The list could not be loaded. Try again."}
         onRetry={() => {
           void reload();
         }}
@@ -236,8 +228,8 @@ export function CategoryManagement({ source }: { source: CategorySource }) {
               title="Nothing here yet"
               message={
                 showArchived
-                  ? "There are no archived demo categories."
-                  : "Add your first demo category."
+                  ? `There are no archived ${demo ? "demo " : ""}categories.`
+                  : `Add your first ${demo ? "demo " : ""}category.`
               }
             />
           )}

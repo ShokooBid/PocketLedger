@@ -1,14 +1,20 @@
 import { Stack } from "expo-router";
-import { DemoCategoriesProvider } from "../../category-management";
+import { CategoriesProvider } from "../../category-context";
+import { useSession } from "../../session";
 
 export { ErrorBoundary } from "../../error-boundary";
 
 export const unstable_settings = { anchor: "index" };
 
 export default function AppLayout() {
+  const { session } = useSession();
+  if (session.status !== "demo" && session.status !== "authenticated")
+    return null;
   return (
-    <DemoCategoriesProvider>
+    <CategoriesProvider
+      key={session.status === "demo" ? "demo" : session.generation}
+    >
       <Stack screenOptions={{ headerShown: false }} />
-    </DemoCategoriesProvider>
+    </CategoriesProvider>
   );
 }
