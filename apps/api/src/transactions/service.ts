@@ -18,7 +18,7 @@ const invalidCategory = () =>
     "INVALID_CATEGORY",
     "Choose an active category belonging to your account."
   );
-const serialize = (row: Transaction) => ({
+export const serializeTransaction = (row: Transaction) => ({
   id: row.id,
   categoryId: row.categoryId,
   direction: row.direction,
@@ -71,7 +71,7 @@ export function createTransactionService(db: PrismaClient) {
         orderBy: [{ date: "desc" }, { id: "desc" }],
         take: query.limit + 1
       });
-      const items = rows.slice(0, query.limit).map(serialize);
+      const items = rows.slice(0, query.limit).map(serializeTransaction);
       const last = items.at(-1);
       return {
         items,
@@ -82,12 +82,12 @@ export function createTransactionService(db: PrismaClient) {
     async get(userId: string, id: string) {
       const row = await db.transaction.findFirst({ where: { id, userId } });
       if (!row) throw unavailable();
-      return serialize(row);
+      return serializeTransaction(row);
     },
     async create(userId: string, input: TransactionInput) {
       return db.$transaction(async (tx) => {
         await checkCategory(tx, userId, input.categoryId);
-        return serialize(
+        return serializeTransaction(
           await tx.transaction.create({
             data: { ...input, userId, date: new Date(input.date) }
           })
@@ -119,7 +119,7 @@ export function createTransactionService(db: PrismaClient) {
           ...(input.note !== undefined ? { note: input.note } : {}),
           ...(input.date !== undefined ? { date: new Date(input.date) } : {})
         };
-        return serialize(
+        return serializeTransaction(
           await tx.transaction.update({ where: { id, userId }, data })
         );
       });
