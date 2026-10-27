@@ -1,12 +1,20 @@
-import { PlaceholderScreen } from "../../placeholder-screen";
+import { Screen } from "../../ui";
+import { useCategories } from "../../category-context";
+import { useTransactions } from "../../transaction-context";
+import { TransactionManagement } from "../../transaction-management";
+import { useSession } from "../../session";
 
 export default function TransactionsScreen() {
+  const source = useTransactions();
+  const categories = useCategories();
+  const { session } = useSession();
   return (
-    <PlaceholderScreen
-      title="Transactions"
-      path="/transactions"
-      description="Record and review income and expenses here in a later update."
-      emptyMessage="There are no demo transactions. Adding and editing records is not connected yet."
-    />
+    <Screen title="Transactions" back>
+      <TransactionManagement
+        source={source}
+        categories={categories}
+        demo={session.status === "demo"}
+      />
+    </Screen>
   );
 }

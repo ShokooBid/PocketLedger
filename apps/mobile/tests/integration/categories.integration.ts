@@ -5,6 +5,13 @@ import { randomUUID } from "node:crypto";
 import { buildApp } from "../../../api/src/app.js";
 import { createAuthService } from "../../../api/src/auth/service.js";
 import { createCategoryService } from "../../../api/src/categories/service.js";
+import { createTransactionService } from "../../../api/src/transactions/service.js";
+import { createApiTransactionSource } from "../../src/transaction-api";
+import {
+  draftInput,
+  currencyExponents,
+  type Currency
+} from "../../src/transaction-data";
 import { testConfig } from "../../../api/tests/fixtures.js";
 import { disposableDatabase } from "../../../api/tests/support/disposable.js";
 import { createSessionController } from "../../src/auth/session-controller";
@@ -23,7 +30,7 @@ const fetcher: FetchRequest = async (input, options) => {
   requests.push(`${options?.method ?? "GET"} ${url.pathname}`);
   const headers = Object.fromEntries(new Headers(options?.headers).entries());
   const result = await app.inject({
-    method: (options?.method ?? "GET") as "GET" | "POST" | "PATCH",
+    method: (options?.method ?? "GET") as "GET" | "POST" | "PATCH" | "DELETE",
     url: url.pathname + url.search,
     headers,
     ...(typeof options?.body === "string" ? { payload: options.body } : {})
@@ -70,7 +77,8 @@ beforeAll(async () => {
   app = await buildApp(config, auth, {
     logger: false,
     rateLimitMax: 10000,
-    categories: createCategoryService(db)
+    categories: createCategoryService(db),
+    transactions: createTransactionService(db)
   });
 });
 afterAll(async () => {
@@ -82,6 +90,59 @@ afterAll(async () => {
 });
 
 describe("authenticated mobile category flow", () => {
+  it("submits exact mobile amounts, filters, edits and deletes through verified sessions", async () => {
+    const d = device();
+    await d.controller.restore();
+    await d.controller.signIn(
+      "register",
+      `${randomUUID()}@example.invalid`,
+      "synthetic mobile passphrase"
+    );
+    await d.source().create("Transaction category");
+    const category = (await d.source().list())[0]!;
+    const state = d.controller.getSnapshot();
+    if (state.status !== "authenticated") throw new Error("No session");
+    const source = createApiTransactionSource(
+      d.controller.client(state.generation)
+    );
+    for (const currency of Object.keys(currencyExponents) as Currency[]) {
+      const exponent = currencyExponents[currency];
+      const input = draftInput({
+        direction: "expense",
+        amount: exponent ? `1.${"0".repeat(exponent - 1)}1` : "1",
+        currency,
+        date: "2024-02-29",
+        categoryId: category.id,
+        merchant: "Synthetic client shop",
+        note: ""
+      });
+      const row = await source.create(input);
+      expect(row.amountMinor).toBe(
+        exponent === 3 ? 1001 : exponent === 2 ? 101 : 1
+      );
+      expect(
+        (await db.transaction.findUniqueOrThrow({ where: { id: row.id } }))
+          .amountMinor
+      ).toBe(row.amountMinor);
+      expect(
+        (
+          await source.list({
+            from: "2024-02-29",
+            to: "2024-02-29",
+            direction: "expense",
+            categoryId: category.id
+          })
+        ).items.some((item) => item.id === row.id)
+      ).toBe(true);
+      expect(
+        (await source.update(row.id, { ...input, amountMinor: 2 })).amountMinor
+      ).toBe(2);
+      await source.remove(row.id);
+    }
+    expect((await source.list({})).items).toEqual([]);
+    await d.controller.logout();
+    await expect(source.list({})).rejects.toMatchObject({ kind: "cancelled" });
+  });
   it("creates, validates, paginates, renames and archives while preserving history", async () => {
     const d = device();
     await d.controller.restore();

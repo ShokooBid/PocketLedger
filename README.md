@@ -75,7 +75,8 @@ failures preserve credentials; an uncertain refresh requires explicit sign-in
 recovery rather than replaying a possibly consumed token.
 
 The separately labeled demo uses temporary in-memory categories and makes no API
-requests. Dashboard, transactions and import remain screen previews in both modes.
+requests. Transactions support add/edit/delete and filtered history in both modes.
+Dashboard and import remain screen previews.
 Web is demo-only. Archive requires confirmation and preserves history.
 
 Run `npm run dev:mobile` for the development client. Use
@@ -96,8 +97,8 @@ for file responsibilities, commands, learning notes, and device-verification lim
 
 Issue #4 provides a development-only PostgreSQL container. Issue #6 adds the
 Prisma schema, migrations, synthetic seeds, and a database client factory.
-The API exposes health, authentication and owner-protected category routes.
-Transaction and other finance routes come later.
+The API exposes health, authentication, owner-protected categories and transaction CRUD.
+Dashboard and import APIs come later.
 
 From the repository root in PowerShell:
 
@@ -313,3 +314,41 @@ for signing fingerprints, restart/logout tests, file responsibilities and limits
 mobile client against Fastify and disposable PostgreSQL. It uses only
 `TEST_DATABASE_URL`, never the development database. These tests verify the live
 contracts; OS storage and provider/device behavior still need native verification.
+
+## Transactions (Issue #12)
+
+Verified sessions can list, add, edit and delete income/expenses. Demo transactions
+stay in memory for the current demo session. Dashboard and CSV import remain previews.
+No new migration is required; the existing category/history migration must be deployed
+before running this feature against a development database.
+
+| Method and path               | Contract                                                                                                               |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/transactions`        | Owned rows, newest calendar date first, then UUID descending. `limit` 1-100, default 50. Pass `nextCursor` as `after`. |
+| `GET /v1/transactions/:id`    | Owned row; foreign/missing IDs both return 404.                                                                        |
+| `POST /v1/transactions`       | Create; returns 201 with the saved row.                                                                                |
+| `PATCH /v1/transactions/:id`  | Partial update with at least one field; omitted fields stay unchanged.                                                 |
+| `DELETE /v1/transactions/:id` | Delete owned row; returns `{ "ok": true }`. Mobile asks for confirmation.                                              |
+
+Create fields: `direction` (`income`/`expense`), positive `amountMinor` integer
+(1-2147483647), `currency`, `date` (`YYYY-MM-DD`, real calendar day, years 0001-9999),
+`categoryId`, `merchant`, and optional nullable `note`. Merchant requires visible
+text and at most 200 UTF-16 units; note allows 2000. Text is preserved, with control,
+format and unpaired surrogate characters rejected. No owner/import fields are accepted.
+Supported currencies are USD, EUR, GBP, INR (two decimal places), JPY (zero), and
+KWD (three). Other codes are rejected. Decimal input is converted by concatenating
+digits and checking the resulting integer; no floating-point monetary construction.
+
+List filters combine with AND: `direction`, `categoryId`, and inclusive `from`/`to`.
+Supply both dates or neither; a range may span at most 366 days. Pagination uses
+`YYYY-MM-DD_UUID` sort boundaries and is live, not a snapshot: editing dates during
+paging can move rows. Refresh to reconcile concurrent changes. Archived categories
+remain readable; retaining an existing historical association during an edit is
+allowed, while a new/different assignment requires an active owned category.
+
+Failed submissions retain form values. Pending submissions are locked. An ambiguous
+write requires reloading and reviewing saved rows before explicitly enabling another
+write; there are no automatic network write retries or idempotency keys. A confirmed
+save appears immediately, even if the subsequent list reload fails. Logout/account
+changes unmount transaction data alongside category data. Routine API logs contain
+no transaction bodies, IDs, date/category queries or credentials.

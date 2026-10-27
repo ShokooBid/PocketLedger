@@ -1,5 +1,6 @@
 import { Stack } from "expo-router";
 import { CategoriesProvider } from "../../category-context";
+import { TransactionsProvider } from "../../transaction-context";
 import { useSession } from "../../session";
 
 export { ErrorBoundary } from "../../error-boundary";
@@ -14,7 +15,9 @@ export default function AppLayout() {
     <CategoriesProvider
       key={session.status === "demo" ? "demo" : session.generation}
     >
-      <Stack screenOptions={{ headerShown: false }} />
+      <TransactionsProvider>
+        <Stack screenOptions={{ headerShown: false }} />
+      </TransactionsProvider>
     </CategoriesProvider>
   );
 }

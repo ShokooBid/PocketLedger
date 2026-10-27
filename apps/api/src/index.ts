@@ -5,13 +5,15 @@ import { createDatabaseClient } from "./database.js";
 import { googleVerifier } from "./auth/google.js";
 import { createAuthService } from "./auth/service.js";
 import { createCategoryService } from "./categories/service.js";
+import { createTransactionService } from "./transactions/service.js";
 
 // Explicit environment only; no implicit .env loading or configuration dumps.
 const config = readConfig(process.env);
 const db = createDatabaseClient(config.databaseUrl);
 const auth = await createAuthService(db, config, googleVerifier(config));
 const app = await buildApp(config, auth, {
-  categories: createCategoryService(db)
+  categories: createCategoryService(db),
+  transactions: createTransactionService(db)
 });
 app.addHook("onClose", async () => {
   await db.$disconnect();
