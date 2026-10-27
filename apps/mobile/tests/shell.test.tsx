@@ -34,7 +34,7 @@ beforeEach(() => {
 });
 
 async function openShell(initialUrl = "/") {
-  shell = renderRouter("./src/app", { initialUrl });
+  shell = await renderRouter("./src/app", { initialUrl });
   await act(async () => {
     await Promise.resolve();
   });
