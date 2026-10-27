@@ -49,14 +49,13 @@ async function fixture(count = 3) {
   await categories.create("Work");
   const source = createDemoTransactionSource(categories);
   for (let n = 1; n <= count; n++) {
-    const {
-      id: _id,
-      createdAt: _created,
-      updatedAt: _updated,
-      ...input
-    } = row(n);
+    const { categoryId, amountMinor, currency, merchant, note } = row(n);
     await source.create({
-      ...input,
+      categoryId,
+      amountMinor,
+      currency,
+      merchant,
+      note,
       direction: n === 2 ? "income" : "expense",
       date: n === 2 ? "2026-10-02" : "2026-10-01"
     });
