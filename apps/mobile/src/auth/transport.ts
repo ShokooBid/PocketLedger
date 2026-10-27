@@ -53,7 +53,7 @@ export function failureMessage(error: unknown): string {
 
 export interface Transport {
   send<T>(
-    method: "GET" | "POST" | "PATCH",
+    method: "GET" | "POST" | "PATCH" | "DELETE",
     path: string,
     schema: z.ZodType<T>,
     body?: unknown,

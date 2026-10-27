@@ -249,7 +249,6 @@ describe("session navigation", () => {
 describe("placeholder screens", () => {
   it.each([
     ["Dashboard", null],
-    ["Transactions", "View transactions"],
     ["Categories", "Manage categories"],
     ["CSV import", "Preview CSV import"],
     ["Settings", "Open settings"]
@@ -285,7 +284,7 @@ describe("placeholder screens", () => {
   it("rejects an external invalid query and recovers without echoing it", async () => {
     await openShell();
     await enterDemo();
-    await act(() => router.push("/transactions?state=unexpected-value"));
+    await act(() => router.push("/import?state=unexpected-value"));
     expect(screen.getByText("Invalid preview state")).toBeVisible();
     expect(screen.queryByText(/unexpected-value/)).toBeNull();
     await press("Try again");

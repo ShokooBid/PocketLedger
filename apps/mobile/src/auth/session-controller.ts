@@ -125,7 +125,7 @@ export function createSessionController(
     }
   }
   async function request<T>(
-    method: "GET" | "POST" | "PATCH",
+    method: "GET" | "POST" | "PATCH" | "DELETE",
     path: string,
     schema: z.ZodType<T>,
     body?: unknown,
