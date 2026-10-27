@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import type { Category, CategorySource } from "./category-data";
 import { Body, Button, Field, StateNotice } from "./ui";
+import { ClientFailure } from "./auth/transport";
+import { appendTransactionPage, matchesFilter, reconcileTransactions } from "./transaction-history";
 import {
   amountText,
   validDateFilter,
@@ -31,11 +33,15 @@ function newDraft(): TransactionDraft {
 export function TransactionManagement({
   source,
   categories,
-  demo = false
+  demo = false,
+  detailId,
+  onOpenDetail
 }: {
   source: TransactionSource;
   categories: CategorySource;
   demo?: boolean;
+  detailId?: string;
+  onOpenDetail?: (id:string)=>void;
 }) {
   const [rows, setRows] = useState<Transaction[]>([]);
   const [choices, setChoices] = useState<Category[]>([]);
@@ -53,16 +59,49 @@ export function TransactionManagement({
   const [reviewed, setReviewed] = useState(false);
   const lock = useRef(false);
   const mounted = useRef(false);
+  const revision = useRef(0);
+  const appliedRef = useRef(applied);
+  appliedRef.current = applied;
+  const [loadingMore,setLoadingMore] = useState(false);
+  const [retryFilter,setRetryFilter] = useState<TransactionFilter|null>(null);
+  const [deleted,setDeleted] = useState(false);
+
+  useEffect(()=>source.subscribe(change=>{
+    if(detailId && (change.type === "saved" ? change.row.id : change.id)!==detailId) return;
+    revision.current++;
+    if(detailId) {
+      if(change.type === "saved" && change.row.id===detailId) setRows([change.row]);
+      if(change.type === "deleted" && change.id===detailId) {
+        setRows([]);setDeleted(true);setDraft(null);setEditing(null);setDeleting(null);
+      }
+    } else {
+      setRows(previous=>reconcileTransactions(previous,change,appliedRef.current));
+      // Local edits can move dates across the cursor. Keep the loaded history,
+      // but require a fresh first page before continuing this pagination chain.
+      if(change.type === "saved") {setAfter(null);setNotice("History changed. Reload to continue paging.");}
+    }
+  }),[source,detailId]);
+
+  const read=useCallback(async (filter:TransactionFilter, cursor?:string) => {
+    if(!detailId) return source.list(filter,cursor);
+    try {return {items:[await source.get(detailId)],nextCursor:null};}
+    catch(error) {
+      if(error instanceof ClientFailure && error.kind === "unavailable") return {items:[],nextCursor:null};
+      throw error;
+    }
+  },[source,detailId]);
 
   useEffect(() => {
     mounted.current = true;
     let active = true;
     lock.current = true;
     setBusy(true);
-    Promise.all([source.list({}), categories.list()])
+    const version=revision.current;
+    Promise.all([read({}), categories.list()])
       .then(([page, items]) => {
         if (!active) return;
-        setRows(page.items);
+        if(version!==revision.current) {setChoices(items);setReady(true);return;}
+        setRows(appendTransactionPage([],page));
         setAfter(page.nextCursor);
         setChoices(items);
         setReady(true);
@@ -83,7 +122,7 @@ export function TransactionManagement({
       active = false;
       mounted.current = false;
     };
-  }, [source, categories]);
+  }, [read, categories]);
 
   async function load(nextFilter: TransactionFilter, more = false) {
     if (lock.current) return;
@@ -95,39 +134,37 @@ export function TransactionManagement({
     }
     lock.current = true;
     setBusy(true);
+    setLoadingMore(more);
     setError(null);
+    const version=revision.current;
     try {
       const [page, items] = await Promise.all([
-        source.list(nextFilter, more ? (after ?? undefined) : undefined),
+        read(nextFilter, more ? (after ?? undefined) : undefined),
         categories.list()
       ]);
       if (!mounted.current) return;
-      if (more && page.nextCursor === after) throw new Error("pagination");
-      setRows((previous) =>
-        more
-          ? [
-              ...previous,
-              ...page.items.filter(
-                (row) => !previous.some((old) => old.id === row.id)
-              )
-            ]
-          : page.items
-      );
+      if(version!==revision.current) {setError("Transactions changed while loading. Reload to see the latest history.");return;}
+      const merged=appendTransactionPage(more ? rows : [],page,more ? after ?? undefined : undefined);
+      setRows(merged);
       setAfter(page.nextCursor);
       setChoices(items);
       setApplied(nextFilter);
+      setFilter(nextFilter);
+      setRetryFilter(null);
       setReady(true);
       if (uncertain && !more) setReviewed(true);
     } catch {
       if (mounted.current) {
         setError(
-          "Transactions could not be loaded. Check your connection and reload."
+          more ? "More transactions could not be loaded. Your current rows are unchanged. Try Load more transactions again." : "Transactions could not be loaded. Check your connection and reload."
         );
-        setReady(false);
+        if(!more) setReady(false);
+        setRetryFilter(nextFilter);
       }
     } finally {
       lock.current = false;
       if (mounted.current) setBusy(false);
+      if (mounted.current) setLoadingMore(false);
     }
   }
   async function mutate(remove = false) {
@@ -161,31 +198,13 @@ export function TransactionManagement({
           ? await source.update(editing.id, input!)
           : await source.create(input!);
         if (!mounted.current) return;
-        // Show the confirmed response immediately, even outside the old filters.
-        setRows([saved]);
+        // Keep the current filters and loaded rows. The confirmed response is
+        // authoritative; edits that leave the filter disappear from history.
+        setRows(previous=>detailId ? [saved] : reconcileTransactions(previous,{type:"saved",row:saved},applied));
         setAfter(null);
-        setFilter({});
-        setApplied({});
         setDraft(null);
         setEditing(null);
-        setNotice("Transaction saved.");
-        try {
-          const page = await source.list({});
-          if (!mounted.current) return;
-          setRows(
-            page.items.some((row) => row.id === saved.id)
-              ? page.items
-              : [saved, ...page.items]
-          );
-          setAfter(page.nextCursor);
-        } catch {
-          if (mounted.current) {
-            setReady(false);
-            setError(
-              "Transaction saved, but the list could not be refreshed. Reload the list; do not submit the saved transaction again."
-            );
-          }
-        }
+        setNotice(detailId || matchesFilter(saved,applied) ? "Transaction saved. Reload history to continue paging." : "Transaction saved. It no longer matches the active filters; clear filters to find it.");
       }
     } catch (failure) {
       if (!mounted.current) return;
@@ -228,7 +247,7 @@ export function TransactionManagement({
         </Body>
       )}
       {busy && (
-        <StateNotice kind="loading" title="Working" message="Please wait." />
+        <StateNotice kind="loading" title={loadingMore ? "Loading more transactions" : "Working"} message={loadingMore ? "Your current history stays visible." : "Please wait."} />
       )}
       {error && (
         <StateNotice
@@ -241,7 +260,7 @@ export function TransactionManagement({
       <Button
         label="Reload transactions and categories"
         disabled={busy}
-        onPress={() => void load(uncertain ? {} : applied)}
+        onPress={() => void load(uncertain ? {} : retryFilter ?? applied)}
       />
       {uncertain && (
         <>
@@ -261,6 +280,8 @@ export function TransactionManagement({
           />
         </>
       )}
+      {!detailId && <>
+      <Body>{Object.values(applied).some(Boolean) ? `Active filters: ${applied.from ?? "any date"}${applied.to ? ` to ${applied.to}` : ""}, ${applied.direction ?? "all directions"}, ${choices.find(category=>category.id===applied.categoryId)?.name ?? "all categories"}.` : "Showing all transactions."}</Body>
       <Field
         label="From date filter (YYYY-MM-DD)"
         value={filter.from ?? ""}
@@ -315,11 +336,13 @@ export function TransactionManagement({
         disabled={busy || uncertain}
         onPress={() => void load(filter)}
       />
+      <Button label="Clear filters" disabled={busy || uncertain} onPress={()=>void load({})} />
       <Button
         label="Add transaction"
         disabled={disabled}
         onPress={() => edit()}
       />
+      </>}
       {draft && (
         <View>
           <Body>{editing ? "Edit transaction" : "New transaction"}</Body>
@@ -407,7 +430,7 @@ export function TransactionManagement({
           />
         </View>
       )}
-      {ready && !rows.length && <Body>No transactions match this view.</Body>}
+      {ready && !rows.length && <Body>{detailId ? deleted ? "Transaction deleted. Return to history to continue." : "This transaction is unavailable. It may have been deleted or may not belong to this account." : "No transactions match this view."}</Body>}
       {rows.map((row) => (
         <View key={row.id}>
           <Body>
@@ -420,6 +443,8 @@ export function TransactionManagement({
               "Category unavailable"}
           </Body>
           {row.note && <Body>{row.note}</Body>}
+          {detailId && <><Body>Created: {row.createdAt}</Body><Body>Last updated: {row.updatedAt}</Body></>}
+          {!detailId && onOpenDetail && <Button label={`View details for ${row.merchant}`} disabled={disabled} onPress={()=>onOpenDetail(row.id)} />}
           <Button
             label={`Edit ${row.merchant}`}
             disabled={disabled}

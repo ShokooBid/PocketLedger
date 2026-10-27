@@ -18,8 +18,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       [
         "expo-build-properties",
         {
-          android: { usesCleartextTraffic: localHttp },
-          ios: { enableSceneSupport: true }
+          android: { usesCleartextTraffic: localHttp }
         }
       ],
       // Android uses an explicit web client ID. iOS also needs its reversed URL scheme.

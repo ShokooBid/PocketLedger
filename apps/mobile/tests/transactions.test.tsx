@@ -101,7 +101,7 @@ describe("exact amount conversion", () => {
   });
 });
 describe("transaction management", () => {
-  it("keeps a confirmed save visible when the follow-up read fails and never replays the write", async () => {
+  it("keeps a confirmed save visible without depending on another read or replaying the write", async () => {
     let create: ReturnType<typeof jest.fn<TransactionSource["create"]>>;
     await setup((source) => {
       create = jest.fn(source.create);
@@ -119,9 +119,11 @@ describe("transaction management", () => {
     await press("Save transaction");
     expect(screen.getByText(/1.01 USD/)).toBeVisible();
     expect(screen.queryByLabelText("Amount")).toBeNull();
+    await press("Reload transactions and categories");
+    expect(screen.getByText(/1.01 USD/)).toBeVisible();
     expect(screen.getByRole("alert")).toHaveProp(
       "accessibilityLabel",
-      expect.stringContaining("Transaction saved, but")
+      expect.stringContaining("Transactions could not be loaded")
     );
     await press("Reload transactions and categories");
     expect(create!).toHaveBeenCalledTimes(1);

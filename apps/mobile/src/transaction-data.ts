@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CategorySource } from "./category-data";
 import { ClientFailure } from "./auth/transport";
+import { observeTransactions, type TransactionChange } from "./transaction-history";
 
 // Client projection of the documented API policy, independent of native UI.
 export const currencyExponents = {
@@ -69,6 +70,8 @@ export function validDateFilter({ from, to }: TransactionFilter): boolean {
   );
 }
 export interface TransactionSource {
+  get(id:string):Promise<Transaction>;
+  subscribe(listener:(change:TransactionChange)=>void):()=>void;
   list(filter: TransactionFilter, after?: string): Promise<TransactionPage>;
   create(input: TransactionInput): Promise<Transaction>;
   update(id: string, input: TransactionInput): Promise<Transaction>;
@@ -147,7 +150,12 @@ export function createDemoTransactionSource(
     )
       throw new ClientFailure("validation");
   }
-  return {
+  return observeTransactions({
+    async get(id) {
+      const row=rows.find(row=>row.id===id);
+      if(!row) throw new ClientFailure("unavailable");
+      return {...row};
+    },
     async list(filter, after) {
       const sorted = rows
         .filter(
@@ -195,5 +203,5 @@ export function createDemoTransactionSource(
         throw new ClientFailure("unavailable");
       rows = rows.filter((row) => row.id !== id);
     }
-  };
+  });
 }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Transport } from "./auth/transport";
+import { observeTransactions } from "./transaction-history";
 import {
   pageSchema,
   transactionSchema,
@@ -9,7 +10,8 @@ import {
 export function createApiTransactionSource(
   client: Transport
 ): TransactionSource {
-  return {
+  return observeTransactions({
+    get:id=>client.send("GET",`/v1/transactions/${encodeURIComponent(id)}`,transactionSchema),
     list(filter, after) {
       const query = Object.entries({
         ...filter,
@@ -37,5 +39,5 @@ export function createApiTransactionSource(
         z.object({ ok: z.literal(true) })
       );
     }
-  };
+  });
 }

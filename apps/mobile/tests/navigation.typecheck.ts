@@ -5,6 +5,7 @@ import { previewHref } from "../src/navigation";
 // An unused @ts-expect-error fails tsc if route safety is accidentally lost.
 export function checkNavigationTypes() {
   router.push("/transactions");
+  router.push({pathname:"/transactions/[id]",params:{id:"00000000-0000-4000-8000-000000000001"}});
   router.push(previewHref("/categories", "loading"));
   const settings = { pathname: "/settings" } satisfies Href;
   router.push(settings);
