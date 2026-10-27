@@ -97,8 +97,8 @@ for file responsibilities, commands, learning notes, and device-verification lim
 
 Issue #4 provides a development-only PostgreSQL container. Issue #6 adds the
 Prisma schema, migrations, synthetic seeds, and a database client factory.
-The API exposes health, authentication, owner-protected categories and transaction CRUD.
-Dashboard and import APIs come later.
+The API exposes health, authentication, owner-protected categories, transaction CRUD,
+and date-range dashboard summaries. The import API comes later.
 
 From the repository root in PowerShell:
 
@@ -352,3 +352,40 @@ write; there are no automatic network write retries or idempotency keys. A confi
 save appears immediately, even if the subsequent list reload fails. Logout/account
 changes unmount transaction data alongside category data. Routine API logs contain
 no transaction bodies, IDs, date/category queries or credentials.
+
+## Dashboard summary API (Issue #14)
+
+`GET /v1/dashboard/summary?from=2026-10-01&to=2026-10-31&currency=USD`
+requires a real PocketLedger bearer session. The mobile dashboard remains a preview;
+this issue implements its backend API.
+
+Required `from` and `to` are inclusive `YYYY-MM-DD` calendar dates (years 0001-9999),
+ordered and at most 366 days apart, matching the history endpoint's bound.
+Both endpoints are included, so the maximum is 367 included calendar dates.
+For a monthly summary, send the month's first and last dates. These are dates in
+the user's intended accounting calendar: the API does not shift them using the
+server timezone, UTC offsets or daylight-saving rules. Audit timestamps do not
+determine inclusion. No `timezone` parameter or implicit current month is accepted.
+
+Required `currency` selects one supported currency (USD/EUR/GBP/INR/JPY/KWD).
+All totals, categories and recent rows use that currency and period. There is no
+conversion or mixed-currency grand total. Optional `recentLimit` is 1-20 (default 5).
+Unknown query fields, including `userId`, are rejected with 422.
+
+The response contains `from`, `to`, `currency`, `incomeMinor`, `expensesMinor`,
+`netMinor`, `categoryBreakdown`, and `recentTransactions`. Income and expenses are
+nonnegative integer minor units; net is income minus expenses and can be negative.
+Each category entry has `categoryId`, `categoryName`, and those three totals.
+Only categories with matching transactions appear, including archived categories;
+names are current, not historical snapshots. Categories sort by UUID ascending.
+Recent rows use the existing transaction response shape, sorted by date descending
+then UUID descending. Totals cover every match regardless of `recentLimit`.
+
+Empty periods return zero totals and empty arrays. Reads share one database snapshot.
+Aggregates use exact integers and return 422 `SUMMARY_AMOUNT_OUT_OF_RANGE` if any
+total exceeds JavaScript's safe integer range; amounts are never silently rounded.
+The existing owner/date/ID index supports these queries; no migration is added.
+Responses remain `Cache-Control: no-store`, and logs exclude financial payloads.
+
+See the [detailed Issue #14 walkthrough](docs/issue-14-implementation-walkthrough.md)
+for the workflow, file responsibilities, SQL, interview concepts and checks.

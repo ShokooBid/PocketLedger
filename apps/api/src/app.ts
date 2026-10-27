@@ -22,6 +22,8 @@ import { registerCategoryRoutes } from "./categories/routes.js";
 import type { CategoryService } from "./categories/service.js";
 import type { TransactionService } from "./transactions/service.js";
 import { registerTransactionRoutes } from "./transactions/routes.js";
+import type { DashboardService } from "./dashboard/service.js";
+import { registerDashboardRoutes } from "./dashboard/routes.js";
 
 export async function buildApp(
   config: Config,
@@ -31,6 +33,7 @@ export async function buildApp(
     rateLimitMax?: number;
     categories?: CategoryService;
     transactions?: TransactionService;
+    dashboard?: DashboardService;
   } = {}
 ) {
   const app = Fastify({
@@ -167,5 +170,6 @@ export async function buildApp(
   if (options.categories) registerCategoryRoutes(app, options.categories);
   if (options.transactions)
     registerTransactionRoutes(app, options.transactions);
+  if (options.dashboard) registerDashboardRoutes(app, options.dashboard);
   return app;
 }
