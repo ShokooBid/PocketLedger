@@ -11,7 +11,12 @@ export function createApiTransactionSource(
   client: Transport
 ): TransactionSource {
   return observeTransactions({
-    get:id=>client.send("GET",`/v1/transactions/${encodeURIComponent(id)}`,transactionSchema),
+    get: (id) =>
+      client.send(
+        "GET",
+        `/v1/transactions/${encodeURIComponent(id)}`,
+        transactionSchema
+      ),
     list(filter, after) {
       const query = Object.entries({
         ...filter,
