@@ -30,6 +30,7 @@ export function createSessionController(
   let refreshFlight: Promise<void> | undefined;
   let authFlight: Promise<void> | undefined;
   let clearRequired = false;
+  let linking = false;
   let writes = Promise.resolve();
   const listeners = new Set<() => void>();
   const publish = (value: SessionState) => {
@@ -129,7 +130,8 @@ export function createSessionController(
     path: string,
     schema: z.ZodType<T>,
     body?: unknown,
-    generation = epoch
+    generation = epoch,
+    retryUnauthorized = true
   ): Promise<T> {
     current(generation);
     if (!saved) throw new ClientFailure("invalid");
@@ -146,6 +148,9 @@ export function createSessionController(
         current(generation);
         if (!(error instanceof ClientFailure) || error.kind !== "invalid")
           throw error;
+        // Proof failures also return 401. Never replay a one-use proof or
+        // mistake a wrong password for a definitively invalid session.
+        if (!retryUnauthorized) throw error;
         // A late 401 for an old access token shares the completed rotation too.
         if (saved!.credentials.accessToken === access) {
           if (refreshed) {
@@ -308,7 +313,76 @@ export function createSessionController(
             : new ClientFailure("provider");
         }
       }),
-    logout: () =>
+    async refreshAccount() {
+      if (state.status !== "authenticated") throw new ClientFailure("invalid");
+      await validate(state.generation);
+    },
+    async linkGoogle(password: string): Promise<"linked" | "cancelled"> {
+      if (linking) throw new ClientFailure("conflict");
+      if (
+        state.status !== "authenticated" ||
+        !state.user.methods.password ||
+        state.user.methods.google
+      )
+        throw new ClientFailure("invalid");
+      if (!password.length || password.length > 128)
+        throw new ClientFailure("validation");
+      const generation = state.generation;
+      linking = true;
+      try {
+        await request(
+          "POST",
+          "/v1/auth/reauthenticate",
+          okSchema,
+          { password },
+          generation,
+          false
+        );
+        const challenge = await request(
+          "POST",
+          "/v1/auth/google/challenges",
+          challengeSchema,
+          { purpose: "link" },
+          generation,
+          false
+        );
+        const idToken = await googleProof(challenge.nonce);
+        current(generation);
+        if (!idToken) return "cancelled";
+        await request(
+          "POST",
+          "/v1/auth/google/link",
+          okSchema,
+          {
+            challengeId: challenge.challengeId,
+            nonce: challenge.nonce,
+            idToken
+          },
+          generation,
+          false
+        );
+        current(generation);
+        if (state.status !== "authenticated")
+          throw new ClientFailure("cancelled");
+        // The write is confirmed. Retain the same user, session and ledger even
+        // if a later account read fails. Never replace credentials with Google.
+        publish({
+          ...state,
+          user: {
+            ...state.user,
+            methods: { ...state.user.methods, google: true }
+          }
+        });
+        return "linked";
+      } catch (error) {
+        throw error instanceof ClientFailure
+          ? error
+          : new ClientFailure("provider");
+      } finally {
+        linking = false;
+      }
+    },
+    logout: (allSessions = false) =>
       exclusive(async () => {
         const previous = saved;
         ++epoch; // All previously issued readers/adapters become unusable immediately.
@@ -323,7 +397,7 @@ export function createSessionController(
           return;
         }
         clearRequired = false;
-        let revoked = !previous;
+        let revoked = !previous && !allSessions;
         if (previous) {
           try {
             let access = previous.credentials.accessToken;
@@ -332,7 +406,7 @@ export function createSessionController(
                 "POST",
                 "/v1/auth/logout",
                 okSchema,
-                {},
+                { allSessions },
                 access
               );
             } catch (error) {
@@ -353,7 +427,7 @@ export function createSessionController(
                 "POST",
                 "/v1/auth/logout",
                 okSchema,
-                {},
+                { allSessions },
                 access
               );
             }
@@ -365,8 +439,12 @@ export function createSessionController(
         publish({
           status: "signed-out",
           notice: revoked
-            ? "Signed out."
-            : "Signed out on this device. Server revocation could not be confirmed; the old session remains bounded by server expiry."
+            ? allSessions
+              ? "Signed out on all devices."
+              : "Signed out."
+            : allSessions
+              ? "Signed out on this device. Sign-out on all devices could not be confirmed; other sessions may remain active."
+              : "Signed out on this device. Server revocation could not be confirmed; the old session remains bounded by server expiry."
         });
       }),
     enterDemo() {

@@ -5,11 +5,13 @@ import { TransactionManagement } from "../../transaction-management";
 import { useSession } from "../../session";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { calendarDate, currencySchema } from "../../transaction-data";
+import { usePreferences } from "../../preferences";
 
 export default function TransactionsScreen() {
   const source = useTransactions();
   const categories = useCategories();
   const { session } = useSession();
+  const { defaultCurrency } = usePreferences();
   const router = useRouter();
   const { action, date, currency } = useLocalSearchParams();
   const parsedDate = calendarDate.safeParse(date);
@@ -37,6 +39,7 @@ export default function TransactionsScreen() {
             : "history"
         }
         {...(initialCreate ? { initialCreate } : {})}
+        defaultCurrency={defaultCurrency}
         source={source}
         categories={categories}
         demo={session.status === "demo"}

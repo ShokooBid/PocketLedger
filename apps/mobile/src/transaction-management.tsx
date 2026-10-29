@@ -39,6 +39,7 @@ export function TransactionManagement({
   categories,
   demo = false,
   initialCreate,
+  defaultCurrency = "USD",
   detailId,
   onOpenDetail
 }: {
@@ -46,6 +47,7 @@ export function TransactionManagement({
   categories: CategorySource;
   demo?: boolean;
   initialCreate?: { date: string; currency: Currency };
+  defaultCurrency?: Currency;
   detailId?: string;
   onOpenDetail?: (id: string) => void;
 }) {
@@ -294,7 +296,7 @@ export function TransactionManagement({
             merchant: row.merchant,
             note: row.note ?? ""
           }
-        : newDraft()
+        : { ...newDraft(), currency: defaultCurrency }
     );
   }
   const disabled = busy || uncertain || !ready;

@@ -13,6 +13,138 @@ import {
 } from "./auth-fixtures";
 
 describe("verified mobile sessions", () => {
+  it("reauthenticates before a fresh link proof and preserves the owner/session", async () => {
+    const h = harness();
+    await h.controller.restore();
+    h.fetcher.mockClear();
+    const challenge = {
+      challengeId: "20000000-0000-4000-8000-000000000001",
+      nonce: "n".repeat(43),
+      expiresAt: "2026-10-26T12:05:00Z"
+    };
+    h.fetcher
+      .mockResolvedValueOnce(response({ ok: true }))
+      .mockResolvedValueOnce(response(challenge))
+      .mockResolvedValueOnce(response({ ok: true }));
+    const before = h.controller.getSnapshot();
+    expect(await h.controller.linkGoogle("synthetic password")).toBe("linked");
+    expect(
+      h.fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)
+    ).toEqual([
+      "/v1/auth/reauthenticate",
+      "/v1/auth/google/challenges",
+      "/v1/auth/google/link"
+    ]);
+    expect(h.proof).toHaveBeenCalledWith(challenge.nonce);
+    expect(JSON.parse(String(h.fetcher.mock.calls[1]?.[1]?.body))).toEqual({
+      purpose: "link"
+    });
+    expect(JSON.parse(String(h.fetcher.mock.calls[2]?.[1]?.body))).toEqual({
+      challengeId: challenge.challengeId,
+      nonce: challenge.nonce,
+      idToken: "synthetic-provider-proof"
+    });
+    expect(h.controller.getSnapshot()).toMatchObject({
+      ...before,
+      user: { ...alice, methods: { password: true, google: true } }
+    });
+    expect(h.disk()).toEqual(stored());
+  });
+  it("does not retry proof 401s, rotate tokens, or destroy a valid session", async () => {
+    for (const failAtLink of [false, true]) {
+      const h = harness();
+      await h.controller.restore();
+      h.fetcher.mockClear();
+      if (failAtLink)
+        h.fetcher
+          .mockResolvedValueOnce(response({ ok: true }))
+          .mockResolvedValueOnce(
+            response({
+              challengeId: "20000000-0000-4000-8000-000000000001",
+              nonce: "n".repeat(43),
+              expiresAt: "2026-10-26T12:05:00Z"
+            })
+          );
+      h.fetcher.mockResolvedValueOnce(response({}, 401));
+      await expect(
+        h.controller.linkGoogle("wrong or rejected proof")
+      ).rejects.toMatchObject({ kind: "invalid" });
+      expect(h.fetcher).toHaveBeenCalledTimes(failAtLink ? 3 : 1);
+      expect(h.store.clear).not.toHaveBeenCalled();
+      expect(h.store.write).not.toHaveBeenCalled();
+      expect(h.controller.getSnapshot()).toMatchObject({
+        status: "authenticated",
+        user: alice
+      });
+    }
+  });
+  it("does not link after provider cancellation or logout while provider UI is pending", async () => {
+    for (const logout of [false, true]) {
+      const h = harness();
+      await h.controller.restore();
+      h.fetcher.mockClear();
+      h.fetcher
+        .mockResolvedValueOnce(response({ ok: true }))
+        .mockResolvedValueOnce(
+          response({
+            challengeId: "20000000-0000-4000-8000-000000000001",
+            nonce: "n".repeat(43),
+            expiresAt: "2026-10-26T12:05:00Z"
+          })
+        );
+      const provider = deferred<string | null>();
+      const started = deferred<void>();
+      h.proof.mockImplementationOnce(() => {
+        started.resolve();
+        return provider.promise;
+      });
+      const link = h.controller.linkGoogle("synthetic password");
+      const cancelled = logout
+        ? expect(link).rejects.toMatchObject({ kind: "cancelled" })
+        : null;
+      await started.promise;
+      if (logout) {
+        h.fetcher.mockResolvedValueOnce(response({ ok: true }));
+        await h.controller.logout();
+      }
+      provider.resolve(logout ? "late-proof" : null);
+      if (cancelled) await cancelled;
+      else expect(await link).toBe("cancelled");
+      expect(
+        h.fetcher.mock.calls.some(([url]) =>
+          String(url).endsWith("/google/link")
+        )
+      ).toBe(false);
+    }
+  });
+  it("carries all-device scope through expired-access logout recovery and reports outages honestly", async () => {
+    for (const offline of [false, true]) {
+      const h = harness();
+      await h.controller.restore();
+      h.fetcher.mockClear();
+      if (offline) h.fetcher.mockRejectedValueOnce(new Error("offline"));
+      else
+        h.fetcher
+          .mockResolvedValueOnce(response({}, 401))
+          .mockResolvedValueOnce(response(stored("replacement").credentials))
+          .mockResolvedValueOnce(response({ ok: true }));
+      await h.controller.logout(true);
+      expect(h.disk()).toBeNull();
+      const calls = h.fetcher.mock.calls.filter(([url]) =>
+        String(url).endsWith("/logout")
+      );
+      for (const [, options] of calls)
+        expect(JSON.parse(String(options?.body))).toEqual({
+          allSessions: true
+        });
+      expect(h.controller.getSnapshot()).toMatchObject({
+        status: "signed-out",
+        notice: expect.stringContaining(
+          offline ? "could not be confirmed" : "Signed out on all devices."
+        )
+      });
+    }
+  });
   it("keeps navigation pending until the stored session is verified", async () => {
     const h = harness();
     const pending = deferred<Response>();
