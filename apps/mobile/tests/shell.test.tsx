@@ -364,13 +364,68 @@ describe("session navigation", () => {
       screen.getByRole("header", { name: "Dashboard screen" })
     ).toBeVisible();
   });
+
+  it("applies the session currency to dashboard/new forms and resets it when leaving demo", async () => {
+    await openShell();
+    await enterDemo();
+    await tap(screen.getByRole("link", { name: "Open settings" }));
+    await press("Default currency KWD");
+    await press("Privacy and data retention");
+    expect(
+      await screen.findByRole("header", {
+        name: "Privacy and data retention screen"
+      })
+    ).toBeVisible();
+    expect(screen.getByText(/no automatic retention expiry/)).toBeVisible();
+    await press("Back to Settings");
+    expect(screen.getByText("Default currency: KWD")).toBeVisible();
+    await press("Back to dashboard");
+    expect(
+      await screen.findByLabelText("Net balanced. KWD 0.000")
+    ).toBeVisible();
+    await tap(screen.getByRole("link", { name: "View transactions" }));
+    await press("Add transaction");
+    expect(screen.getByRole("button", { name: "Currency KWD" })).toHaveProp(
+      "accessibilityState",
+      expect.objectContaining({ selected: true })
+    );
+    await press("Back to dashboard");
+    await tap(screen.getByRole("link", { name: "Open settings" }));
+    await press("Exit demo and return to sign in");
+    await enterDemo();
+    expect(
+      await screen.findByLabelText("Net balanced. USD 0.00")
+    ).toBeVisible();
+  });
+
+  it("signs out all devices from Settings, clears navigation and displays unconfirmed revocation honestly", async () => {
+    const h = harness();
+    jest.mocked(runtime.createRuntimeSession).mockReturnValue(h.controller);
+    h.fetcher.mockImplementation(async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/v1/me") return response(alice);
+      if (path === "/v1/auth/logout") throw new Error("offline");
+      return response({ items: [], nextCursor: null });
+    });
+    await openShell("/settings");
+    expect(screen.getByText("Google: not linked")).toBeVisible();
+    await press("Sign out on all devices");
+    await press("Confirm sign out on all devices");
+    expect(
+      await screen.findByRole("header", { name: "Sign in screen" })
+    ).toBeVisible();
+    expect(
+      screen.getByText(/Sign-out on all devices could not be confirmed/)
+    ).toBeVisible();
+    expect(h.disk()).toBeNull();
+    expect(router.canGoBack()).toBe(false);
+  });
 });
 
 describe("placeholder screens", () => {
   it.each([
     ["Categories", "Manage categories"],
-    ["CSV import", "Preview CSV import"],
-    ["Settings", "Open settings"]
+    ["CSV import", "Preview CSV import"]
   ])(
     "provides a labeled %s screen and recoverable state previews",
     async (title, link) => {

@@ -1,44 +1,36 @@
 import { useState } from "react";
-import { PlaceholderScreen } from "../../placeholder-screen";
 import { useSession } from "../../session";
-import { Body, Button, Screen } from "../../ui";
+import { Button, Screen } from "../../ui";
+import Constants from "expo-constants";
+import { useRouter } from "expo-router";
+import { usePreferences } from "../../preferences";
+import { Settings } from "../../settings";
 
 export { ErrorBoundary } from "../../error-boundary";
 
 export default function SettingsScreen() {
   const { session, controller, exitDemo } = useSession();
   const [shouldFail, setShouldFail] = useState(false);
+  const preferences = usePreferences();
+  const router = useRouter();
   if (shouldFail) throw new Error("Synthetic rendering failure.");
-  if (session.status === "authenticated")
-    return (
-      <Screen title="Settings" back>
-        <Body>Signed in as {session.user.email}</Body>
-        <Body>
-          PocketLedger does not connect to a bank. This device keeps session
-          credentials in platform secure storage.
-        </Body>
-        <Button
-          label="Sign out"
-          onPress={() => {
-            void controller.logout();
-          }}
-        />
-      </Screen>
-    );
-
   return (
-    <PlaceholderScreen
-      title="Settings"
-      path="/settings"
-      description="Account and privacy settings will appear here. PocketLedger does not connect to a bank in the MVP."
-      emptyMessage="No account is connected. This demo stores no credentials or financial records."
-    >
-      <Button label="Exit demo and return to sign in" onPress={exitDemo} />
-      <Button
-        label="Preview rendering error recovery"
-        hint="Shows a safe error screen. Try again will reopen Settings."
-        onPress={() => setShouldFail(true)}
+    <Screen title="Settings" back>
+      <Settings
+        user={session.status === "authenticated" ? session.user : null}
+        controller={controller}
+        {...preferences}
+        version={Constants.expoConfig?.version ?? "Development"}
+        onPrivacy={() => router.push("/privacy")}
+        onExitDemo={exitDemo}
       />
-    </PlaceholderScreen>
+      {session.status === "demo" && (
+        <Button
+          label="Preview rendering error recovery"
+          hint="Shows a safe error screen. Try again will reopen Settings."
+          onPress={() => setShouldFail(true)}
+        />
+      )}
+    </Screen>
   );
 }

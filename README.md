@@ -85,8 +85,8 @@ Run `npm run dev:mobile` for the development client. Use
 demo (native Google is unavailable there).
 From `apps/mobile`, `npm run android` opens an available Android target,
 `npm run ios` needs a macOS iOS simulator, and `npm run web` opens the web preview.
-Categories, CSV import and Settings retain loading/empty/error previews. Dashboard
-and transactions show their actual data states. Settings also offers a
+Categories and CSV import retain loading/empty/error previews. Dashboard,
+transactions and Settings show their actual data states. Demo Settings also offers a
 rendering-error recovery exercise and a demo exit button.
 
 `npm run typecheck --workspace=@pocketledger/mobile` generates ignored Expo route
@@ -397,7 +397,8 @@ for the workflow, file responsibilities, SQL, interview concepts and checks.
 
 After signing in on the mobile app, Dashboard shows income, expenses, net,
 category spending and up to five recent transactions for the selected month and
-currency. It starts with the device's current calendar month and USD. Use Previous
+currency. It starts with the device's current calendar month and session default
+currency (USD until changed in Settings). Use Previous
 month/Next month or Choose month (`YYYY-MM`), and Change currency to select another
 supported currency. Each summary covers the first through last accounting date of
 that month; there is no currency conversion.
@@ -419,3 +420,41 @@ Cards have combined screen-reader labels, net states use words as well as amount
 and controls wrap with large text. Native TalkBack/VoiceOver and maximum system-font
 checks still require a device. See the [Issue #15 learning walkthrough](docs/issue-15-implementation-walkthrough.md)
 for file responsibilities, concurrency examples, verification and the phone checklist.
+
+## Settings, privacy and account controls (Issue #16)
+
+Open Settings from the dashboard after native sign-in. It shows the account's
+email/password and Google-method state, app version, the device-calendar timezone
+policy, and a default currency. That currency applies to new transaction drafts
+and the dashboard during the current app session, resets to USD on logout/restart,
+and never changes existing records. There is no server-saved currency preference
+or separate account timezone setting; saved accounting dates never shift.
+
+Password accounts without Google can choose Link Google. Re-enter the current
+PocketLedger password, then explicitly select the Google identity in a configured
+native development build. The app requests recent reauthentication and a fresh
+session-bound linking challenge. The backend verifies both proofs and retains the
+same user and ledger. Email matches never merge accounts. Cancelled/rejected proofs
+do not attach a method, and ambiguous failures require a status reload before
+another attempt. No unlink, add-password or password-recovery controls are exposed.
+
+Sign out revokes the current session. Sign out on all devices requires confirmation
+and revokes this user's sessions, including this device. Both clear local secure
+credentials and invalidate old clients. An outage reports local-only sign-out
+without claiming confirmed server revocation. Sign-out never deletes ledger data.
+
+Privacy and data retention opens an in-app information page. Server account/ledger
+records have no automatic retention expiry in this pre-release MVP; backup/log
+retention and deletion timelines are not established. The app describes secure
+credential storage, identity-only Google use, operator access, and the absence of
+bank connections and unsupported security/compliance guarantees.
+
+Deletion requests have manual contact instructions using the maintainer address
+already documented in SECURITY.md. Per the implementation request, the app neither
+sends nor drafts email, accepts a deletion request, nor claims to delete data.
+**The expected support response time remains pending at the maintainer's request.**
+This Issue #16 acceptance item is not complete. Only synthetic test data should
+be used before beta safeguards are established.
+
+See the [Issue #16 learning walkthrough](docs/issue-16-implementation-walkthrough.md)
+for file responsibilities, security sequences, commands, tests and device limits.

@@ -19,7 +19,12 @@ import { disposableDatabase } from "../../../api/tests/support/disposable.js";
 import { createSessionController } from "../../src/auth/session-controller";
 import { createTransport, type FetchRequest } from "../../src/auth/transport";
 import { createApiCategorySource } from "../../src/category-api";
-import type { CredentialStore, StoredSession } from "../../src/auth/contracts";
+import type {
+  CredentialStore,
+  StoredSession,
+  GoogleProof
+} from "../../src/auth/contracts";
+import { invalidCredentials } from "../../../api/src/errors.js";
 
 const database = disposableDatabase();
 const db = database.db;
@@ -27,6 +32,12 @@ let app: Awaited<ReturnType<typeof buildApp>>;
 let clock = Date.now();
 const config = { ...testConfig(), accessSeconds: 60 };
 const requests: string[] = [];
+// Replace only Google's external verification boundary with nonce-bound
+// synthetic identities. API unit tests cover real local cryptographic proofs.
+const providerProofs = new Map<
+  string,
+  { subject: string; email: string; nonce: string }
+>();
 const fetcher: FetchRequest = async (input, options) => {
   const url = new URL(String(input));
   requests.push(`${options?.method ?? "GET"} ${url.pathname}`);
@@ -39,7 +50,7 @@ const fetcher: FetchRequest = async (input, options) => {
   });
   return new Response(result.body, { status: result.statusCode });
 };
-function device() {
+function device(proof: GoogleProof = async () => null) {
   let disk: StoredSession | null = null;
   const store: CredentialStore = {
     read: async () => disk,
@@ -54,7 +65,7 @@ function device() {
     createSessionController(
       store,
       createTransport("https://api.example.invalid", fetcher),
-      async () => null,
+      proof,
       () => clock
     );
   const controller = make();
@@ -71,8 +82,14 @@ beforeAll(async () => {
   const auth = await createAuthService(
     db,
     config,
-    async () => {
-      throw new Error("No live provider.");
+    async (token, nonce) => {
+      const proof = providerProofs.get(token);
+      if (!proof || proof.nonce !== nonce) throw invalidCredentials();
+      return {
+        subject: proof.subject,
+        email: proof.email,
+        verifiedEmail: true
+      };
     },
     () => new Date(clock)
   );
@@ -93,6 +110,147 @@ afterAll(async () => {
 });
 
 describe("authenticated mobile category flow", () => {
+  it("links only after both proofs, preserves the ledger and refuses another owner's Google subject", async () => {
+    const email = `${randomUUID()}@example.invalid`;
+    const otherEmail = `${randomUUID()}@example.invalid`;
+    let selectedSubject = "foreign-subject";
+    let providerCalls = 0;
+    const d = device(async (nonce) => {
+      providerCalls++;
+      const token = randomUUID();
+      providerProofs.set(token, { subject: selectedSubject, email, nonce });
+      return token;
+    });
+    await d.controller.restore();
+    await d.controller.signIn("register", email, "synthetic linking password");
+    await d.source().create("Preserved ledger category");
+    const before = d.controller.getSnapshot();
+    if (before.status !== "authenticated") throw new Error("No session");
+    const category = (await d.source().list())[0]!;
+    const transaction = await db.transaction.create({
+      data: {
+        userId: before.user.id,
+        categoryId: category.id,
+        amountMinor: 100,
+        currency: "USD",
+        direction: "expense",
+        date: new Date("2026-10-01"),
+        merchant: "Synthetic retained transaction"
+      }
+    });
+    const other = device();
+    await other.controller.restore();
+    await other.controller.signIn(
+      "register",
+      otherEmail,
+      "synthetic other password"
+    );
+    const otherState = other.controller.getSnapshot();
+    if (otherState.status !== "authenticated") throw new Error("No session");
+    await db.authIdentity.create({
+      data: {
+        userId: otherState.user.id,
+        provider: "google",
+        providerSubject: selectedSubject
+      }
+    });
+    clock += (config.reauthSeconds + 1) * 1000;
+    await expect(
+      d.controller.linkGoogle("wrong password")
+    ).rejects.toMatchObject({ kind: "invalid" });
+    expect(providerCalls).toBe(0);
+    expect(d.controller.getSnapshot().status).toBe("authenticated");
+    await expect(
+      d.controller.linkGoogle("synthetic linking password")
+    ).rejects.toMatchObject({ kind: "invalid" });
+    expect(
+      await db.authIdentity.count({ where: { userId: before.user.id } })
+    ).toBe(0);
+    expect(
+      await db.authIdentity.count({
+        where: {
+          userId: otherState.user.id,
+          providerSubject: "foreign-subject"
+        }
+      })
+    ).toBe(1);
+    selectedSubject = `new-subject-${randomUUID()}`;
+    expect(await d.controller.linkGoogle("synthetic linking password")).toBe(
+      "linked"
+    );
+    await d.controller.refreshAccount();
+    expect(d.controller.getSnapshot()).toMatchObject({
+      status: "authenticated",
+      generation: before.generation,
+      user: {
+        id: before.user.id,
+        email,
+        methods: { password: true, google: true }
+      }
+    });
+    expect(
+      await db.transaction.findUniqueOrThrow({ where: { id: transaction.id } })
+    ).toMatchObject({
+      userId: before.user.id,
+      categoryId: category.id,
+      amountMinor: 100
+    });
+    expect(await db.user.count({ where: { email } })).toBe(1);
+  });
+  it("revokes current/all-device sessions without affecting another owner or deleting ledger records", async () => {
+    const email = `${randomUUID()}@example.invalid`;
+    const first = device();
+    const second = device();
+    const other = device();
+    await Promise.all([
+      first.controller.restore(),
+      second.controller.restore(),
+      other.controller.restore()
+    ]);
+    await first.controller.signIn(
+      "register",
+      email,
+      "synthetic logout password"
+    );
+    await second.controller.signIn("login", email, "synthetic logout password");
+    await other.controller.signIn(
+      "register",
+      `${randomUUID()}@example.invalid`,
+      "synthetic other password"
+    );
+    await first.source().create("Retained after sign out");
+    const state = first.controller.getSnapshot();
+    if (state.status !== "authenticated") throw new Error("No session");
+    await first.controller.logout();
+    expect(first.disk()).toBeNull();
+    expect(
+      await db.session.count({
+        where: { userId: state.user.id, revokedAt: null }
+      })
+    ).toBe(1);
+    expect(await second.source().list()).toHaveLength(1);
+    await first.controller.signIn("login", email, "synthetic logout password");
+    const oldSource = first.source();
+    await second.controller.logout(true);
+    expect(second.disk()).toBeNull();
+    expect(second.controller.getSnapshot()).toMatchObject({
+      status: "signed-out",
+      notice: "Signed out on all devices."
+    });
+    expect(
+      await db.session.count({
+        where: { userId: state.user.id, revokedAt: null }
+      })
+    ).toBe(0);
+    await expect(oldSource.list()).rejects.toBeDefined();
+    expect(first.disk()).toBeNull();
+    expect(await other.source().list()).toEqual([]);
+    expect(
+      await db.category.count({
+        where: { userId: state.user.id, name: "Retained after sign out" }
+      })
+    ).toBe(1);
+  });
   it("renders the real monthly API contract through the verified mobile client and isolates accounts", async () => {
     const alice = device();
     await alice.controller.restore();

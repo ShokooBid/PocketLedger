@@ -10,11 +10,13 @@ import {
 import { useSession } from "../../session";
 import { useTransactions } from "../../transaction-context";
 import { useCategories } from "../../category-context";
+import { usePreferences } from "../../preferences";
 
 export default function DashboardScreen() {
   const { session, controller } = useSession();
   const transactions = useTransactions();
   const categories = useCategories();
+  const { defaultCurrency } = usePreferences();
   const router = useRouter();
   const [active, setActive] = useState(false);
   const [source] = useState(() => {
@@ -38,6 +40,7 @@ export default function DashboardScreen() {
       <Dashboard
         source={source}
         active={active}
+        defaultCurrency={defaultCurrency}
         demo={session.status === "demo"}
         onAdd={({ month, currency }) =>
           router.push({

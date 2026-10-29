@@ -31,6 +31,7 @@ export function Dashboard({
   active = true,
   demo = false,
   initialMonth = currentMonth(),
+  defaultCurrency = "USD",
   onAdd,
   onOpenDetail
 }: {
@@ -38,6 +39,7 @@ export function Dashboard({
   active?: boolean;
   demo?: boolean;
   initialMonth?: string;
+  defaultCurrency?: Currency;
   onAdd: (selection: DashboardSelection) => void;
   onOpenDetail: (id: string) => void;
 }) {
@@ -45,7 +47,7 @@ export function Dashboard({
   const [monthInput, setMonthInput] = useState(initialMonth);
   const [invalidMonth, setInvalidMonth] = useState(false);
   const [choosingMonth, setChoosingMonth] = useState(false);
-  const [currency, setCurrency] = useState<Currency>("USD");
+  const [currency, setCurrency] = useState<Currency>(defaultCurrency);
   const [choosingCurrency, setChoosingCurrency] = useState(false);
   const [reload, setReload] = useState(0);
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -56,6 +58,14 @@ export function Dashboard({
     setState({ status: "loading" });
     setReload((value) => value + 1);
   }, []);
+  const previousDefault = useRef(defaultCurrency);
+  useEffect(() => {
+    if (previousDefault.current !== defaultCurrency) {
+      previousDefault.current = defaultCurrency;
+      setCurrency(defaultCurrency);
+      refresh();
+    }
+  }, [defaultCurrency, refresh]);
   useEffect(
     () => (active ? source.subscribe(refresh) : undefined),
     [source, active, refresh]
