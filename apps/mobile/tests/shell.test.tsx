@@ -34,8 +34,9 @@ beforeEach(() => {
 });
 
 async function openShell(initialUrl = "/") {
-  shell = await renderRouter("./src/app", { initialUrl });
+  const rendering = renderRouter("./src/app", { initialUrl });
   await act(async () => {
+    shell = await rendering;
     await Promise.resolve();
   });
   return shell;
@@ -244,11 +245,129 @@ describe("session navigation", () => {
     await tap(screen.getByRole("link", { name: "Manage categories" }));
     expect(screen.queryByText("Synthetic demo category")).toBeNull();
   });
+
+  it("opens add/detail from the dashboard, retains selection on return and refreshes after edits", async () => {
+    await openShell();
+    await enterDemo();
+    await tap(screen.getByRole("link", { name: "Manage categories" }));
+    await press("Add category");
+    await fireEvent.changeText(
+      screen.getByLabelText("Category name"),
+      "Dashboard food"
+    );
+    await press("Save category");
+    await screen.findByText("Dashboard food");
+    await press("Back to dashboard");
+    await press("Choose month");
+    await fireEvent.changeText(
+      screen.getByLabelText("Month (YYYY-MM)"),
+      "2024-02"
+    );
+    await press("Show selected month");
+    await press("Change currency (USD)");
+    await press("Summary currency JPY");
+    await press("Add transaction");
+    expect(await screen.findByText("New transaction")).toBeVisible();
+    expect(screen.getByLabelText("Transaction date (YYYY-MM-DD)")).toHaveProp(
+      "value",
+      "2024-02-01"
+    );
+    expect(screen.getByRole("button", { name: "Currency JPY" })).toHaveProp(
+      "accessibilityState",
+      expect.objectContaining({ selected: true })
+    );
+    await fireEvent.changeText(screen.getByLabelText("Amount"), "250");
+    await fireEvent.changeText(
+      screen.getByLabelText("Merchant or payee"),
+      "Dashboard shop"
+    );
+    await press("Category: Dashboard food");
+    await press("Save transaction");
+    await screen.findByText(/Transaction saved/);
+    await press("Back to dashboard");
+    expect(await screen.findByLabelText("Net deficit. JPY -250")).toBeVisible();
+    expect(screen.getByText("February 2024 · JPY")).toBeVisible();
+    await press("View Dashboard shop on 2024-02-01");
+    expect(
+      await screen.findByRole("header", { name: "Transaction details screen" })
+    ).toBeVisible();
+    await press("Edit Dashboard shop");
+    await fireEvent.changeText(screen.getByLabelText("Amount"), "300");
+    await press("Save transaction");
+    await screen.findByText(/Transaction saved/);
+    await press("Back to previous screen");
+    expect(await screen.findByLabelText("Net deficit. JPY -300")).toBeVisible();
+  });
+
+  it("clears dashboard amounts and rejects a pending old-account summary on logout", async () => {
+    const h = harness();
+    jest.mocked(runtime.createRuntimeSession).mockReturnValue(h.controller);
+    const pending = deferred<Response>();
+    let delayed = false;
+    h.fetcher.mockImplementation(async (url) => {
+      const parsed = new URL(String(url));
+      if (parsed.pathname === "/v1/me") return response(alice);
+      if (parsed.pathname === "/v1/auth/logout") return response({ ok: true });
+      if (parsed.pathname === "/v1/dashboard/summary") {
+        if (delayed) return pending.promise;
+        return response({
+          from: parsed.searchParams.get("from"),
+          to: parsed.searchParams.get("to"),
+          currency: "USD",
+          incomeMinor: 12345,
+          expensesMinor: 0,
+          netMinor: 12345,
+          categoryBreakdown: [
+            {
+              categoryId: "20000000-0000-4000-8000-000000000001",
+              categoryName: "Private category",
+              incomeMinor: 12345,
+              expensesMinor: 0,
+              netMinor: 12345
+            }
+          ],
+          recentTransactions: []
+        });
+      }
+      return response({ items: [], nextCursor: null });
+    });
+    await openShell();
+    expect(await screen.findByLabelText("Income. USD 123.45")).toBeVisible();
+    delayed = true;
+    await press("Refresh summary");
+    await tap(screen.getByRole("link", { name: "Open settings" }));
+    await press("Sign out");
+    await screen.findByRole("header", { name: "Sign in screen" });
+    await enterDemo();
+    await act(async () => {
+      pending.resolve(response({ private: "late old-account data" }));
+    });
+    expect(await screen.findByText("No transactions this month")).toBeVisible();
+    expect(screen.queryByLabelText("Income. USD 123.45")).toBeNull();
+    expect(screen.queryByText("Private category")).toBeNull();
+  });
+
+  it("rejects malformed add links without echoing external values", async () => {
+    await openShell();
+    await enterDemo();
+    await act(() =>
+      router.push(
+        "/transactions?action=add&date=private-invalid-value&currency=USD"
+      )
+    );
+    expect(
+      await screen.findByText("Invalid add transaction request")
+    ).toBeVisible();
+    expect(screen.queryByText(/private-invalid-value/)).toBeNull();
+    await press("Back to dashboard");
+    expect(
+      screen.getByRole("header", { name: "Dashboard screen" })
+    ).toBeVisible();
+  });
 });
 
 describe("placeholder screens", () => {
   it.each([
-    ["Dashboard", null],
     ["Categories", "Manage categories"],
     ["CSV import", "Preview CSV import"],
     ["Settings", "Open settings"]

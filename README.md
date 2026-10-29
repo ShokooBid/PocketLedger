@@ -76,7 +76,8 @@ recovery rather than replaying a possibly consumed token.
 
 The separately labeled demo uses temporary in-memory categories and makes no API
 requests. Transactions support add/edit/delete and filtered history in both modes.
-Dashboard and import remain screen previews.
+The dashboard shows monthly API summaries for verified sessions and temporary
+transaction summaries in demo mode. CSV import remains a screen preview.
 Web is demo-only. Archive requires confirmation and preserves history.
 
 Run `npm run dev:mobile` for the development client. Use
@@ -84,7 +85,8 @@ Run `npm run dev:mobile` for the development client. Use
 demo (native Google is unavailable there).
 From `apps/mobile`, `npm run android` opens an available Android target,
 `npm run ios` needs a macOS iOS simulator, and `npm run web` opens the web preview.
-Each demo screen offers loading/empty/error previews; Settings also offers a
+Categories, CSV import and Settings retain loading/empty/error previews. Dashboard
+and transactions show their actual data states. Settings also offers a
 rendering-error recovery exercise and a demo exit button.
 
 `npm run typecheck --workspace=@pocketledger/mobile` generates ignored Expo route
@@ -318,7 +320,8 @@ contracts; OS storage and provider/device behavior still need native verificatio
 ## Transactions (Issue #12)
 
 Verified sessions can list, add, edit and delete income/expenses. Demo transactions
-stay in memory for the current demo session. Dashboard and CSV import remain previews.
+stay in memory for the current demo session. The dashboard summarizes those records;
+CSV import remains a preview.
 No new migration is required; the existing category/history migration must be deployed
 before running this feature against a development database.
 
@@ -356,8 +359,8 @@ no transaction bodies, IDs, date/category queries or credentials.
 ## Dashboard summary API (Issue #14)
 
 `GET /v1/dashboard/summary?from=2026-10-01&to=2026-10-31&currency=USD`
-requires a real PocketLedger bearer session. The mobile dashboard remains a preview;
-this issue implements its backend API.
+requires a real PocketLedger bearer session. The mobile dashboard now consumes this
+API; Issue #14 provides the backend and Issue #15 provides its mobile screen.
 
 Required `from` and `to` are inclusive `YYYY-MM-DD` calendar dates (years 0001-9999),
 ordered and at most 366 days apart, matching the history endpoint's bound.
@@ -389,3 +392,30 @@ Responses remain `Cache-Control: no-store`, and logs exclude financial payloads.
 
 See the [detailed Issue #14 walkthrough](docs/issue-14-implementation-walkthrough.md)
 for the workflow, file responsibilities, SQL, interview concepts and checks.
+
+## Monthly mobile dashboard (Issue #15)
+
+After signing in on the mobile app, Dashboard shows income, expenses, net,
+category spending and up to five recent transactions for the selected month and
+currency. It starts with the device's current calendar month and USD. Use Previous
+month/Next month or Choose month (`YYYY-MM`), and Change currency to select another
+supported currency. Each summary covers the first through last accounting date of
+that month; there is no currency conversion.
+
+Empty months explain the absence of records and offer Add transaction. That action
+opens the existing transaction form with the selected currency and the month's
+first date, both editable. Recent activity opens the transaction detail screen.
+Returning to the dashboard retains the selection and reloads the summary. Refresh
+summary also reloads explicitly. Month/currency changes clear the old figures;
+late responses cannot overwrite a newer selection. Read failures show safe retry
+feedback without logging financial values or raw exceptions.
+
+The separately labeled demo makes no API requests and summarizes only its temporary
+transactions. Demo access never creates an authenticated session. To see real API
+data, use the app's email/password sign-in on a configured mobile build; web remains
+demo-only. No dashboard data is persisted on the device.
+
+Cards have combined screen-reader labels, net states use words as well as amounts,
+and controls wrap with large text. Native TalkBack/VoiceOver and maximum system-font
+checks still require a device. See the [Issue #15 learning walkthrough](docs/issue-15-implementation-walkthrough.md)
+for file responsibilities, concurrency examples, verification and the phone checklist.

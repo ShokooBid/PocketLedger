@@ -63,7 +63,7 @@ export function Screen({
         {back && (
           <Button
             label="Back to dashboard"
-            onPress={() => router.replace("/")}
+            onPress={() => router.dismissTo("/")}
           />
         )}
         <Text

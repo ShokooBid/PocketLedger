@@ -6,6 +6,8 @@ import { buildApp } from "../../../api/src/app.js";
 import { createAuthService } from "../../../api/src/auth/service.js";
 import { createCategoryService } from "../../../api/src/categories/service.js";
 import { createTransactionService } from "../../../api/src/transactions/service.js";
+import { createDashboardService } from "../../../api/src/dashboard/service.js";
+import { createApiDashboardSource, moneyLabel } from "../../src/dashboard-data";
 import { createApiTransactionSource } from "../../src/transaction-api";
 import {
   draftInput,
@@ -78,7 +80,8 @@ beforeAll(async () => {
     logger: false,
     rateLimitMax: 10000,
     categories: createCategoryService(db),
-    transactions: createTransactionService(db)
+    transactions: createTransactionService(db),
+    dashboard: createDashboardService(db)
   });
 });
 afterAll(async () => {
@@ -90,6 +93,138 @@ afterAll(async () => {
 });
 
 describe("authenticated mobile category flow", () => {
+  it("renders the real monthly API contract through the verified mobile client and isolates accounts", async () => {
+    const alice = device();
+    await alice.controller.restore();
+    await alice.controller.signIn(
+      "register",
+      `${randomUUID()}@example.invalid`,
+      "synthetic dashboard passphrase"
+    );
+    await alice.source().create("Dashboard fixture");
+    const category = (await alice.source().list())[0]!;
+    const state = alice.controller.getSnapshot();
+    if (state.status !== "authenticated") throw new Error("No session");
+    const transactions = createApiTransactionSource(
+      alice.controller.client(state.generation)
+    );
+    const dashboard = createApiDashboardSource(
+      alice.controller.client(state.generation),
+      transactions
+    );
+    const input = {
+      direction: "expense" as const,
+      amountMinor: 250,
+      currency: "USD" as const,
+      date: "2026-10-01",
+      categoryId: category.id,
+      merchant: "Synthetic dashboard shop",
+      note: null
+    };
+    const expense = await transactions.create(input);
+    await transactions.create({
+      ...input,
+      direction: "income",
+      amountMinor: 2000,
+      date: "2026-10-31"
+    });
+    await transactions.create({
+      ...input,
+      direction: "income",
+      amountMinor: 50,
+      date: "2026-10-15"
+    });
+    await transactions.create({
+      ...input,
+      amountMinor: 999,
+      date: "2026-09-30"
+    });
+    await transactions.create({ ...input, currency: "JPY", amountMinor: 999 });
+    const summary = await dashboard.summary({
+      month: "2026-10",
+      currency: "USD"
+    });
+    expect(summary).toMatchObject({
+      from: "2026-10-01",
+      to: "2026-10-31",
+      incomeMinor: 2050,
+      expensesMinor: 250,
+      netMinor: 1800,
+      categoryBreakdown: [
+        {
+          categoryName: "Dashboard fixture",
+          incomeMinor: 2050,
+          expensesMinor: 250,
+          netMinor: 1800
+        }
+      ]
+    });
+    expect(summary.recentTransactions.map((row) => row.date)).toEqual([
+      "2026-10-31",
+      "2026-10-15",
+      "2026-10-01"
+    ]);
+    expect(moneyLabel(summary.netMinor, summary.currency)).toBe("USD 18.00");
+    expect(
+      await dashboard.summary({ month: "2024-02", currency: "USD" })
+    ).toMatchObject({
+      from: "2024-02-01",
+      to: "2024-02-29",
+      incomeMinor: 0,
+      expensesMinor: 0,
+      netMinor: 0,
+      categoryBreakdown: [],
+      recentTransactions: []
+    });
+    for (const currency of Object.keys(currencyExponents) as Currency[]) {
+      await transactions.create({
+        ...input,
+        currency,
+        date: "2026-11-01",
+        amountMinor: 1001
+      });
+      expect(
+        await dashboard.summary({ month: "2026-11", currency })
+      ).toMatchObject({ expensesMinor: 1001, netMinor: -1001, currency });
+    }
+    await alice.source().archive(category.id);
+    await transactions.update(expense.id, { ...input, amountMinor: 300 });
+    expect(
+      await dashboard.summary({ month: "2026-10", currency: "USD" })
+    ).toMatchObject({
+      expensesMinor: 300,
+      netMinor: 1750,
+      categoryBreakdown: [{ categoryName: "Dashboard fixture" }]
+    });
+    const bob = device();
+    await bob.controller.restore();
+    await bob.controller.signIn(
+      "register",
+      `${randomUUID()}@example.invalid`,
+      "synthetic other passphrase"
+    );
+    const other = bob.controller.getSnapshot();
+    if (other.status !== "authenticated") throw new Error("No session");
+    const otherTransactions = createApiTransactionSource(
+      bob.controller.client(other.generation)
+    );
+    expect(
+      await createApiDashboardSource(
+        bob.controller.client(other.generation),
+        otherTransactions
+      ).summary({ month: "2026-10", currency: "USD" })
+    ).toMatchObject({
+      incomeMinor: 0,
+      expensesMinor: 0,
+      netMinor: 0,
+      categoryBreakdown: [],
+      recentTransactions: []
+    });
+    await alice.controller.logout();
+    await expect(
+      dashboard.summary({ month: "2026-10", currency: "USD" })
+    ).rejects.toMatchObject({ kind: "cancelled" });
+  });
   it("submits exact mobile amounts, filters, edits and deletes through verified sessions", async () => {
     const d = device();
     await d.controller.restore();

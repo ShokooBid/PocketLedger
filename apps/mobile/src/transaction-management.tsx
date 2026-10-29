@@ -38,12 +38,14 @@ export function TransactionManagement({
   source,
   categories,
   demo = false,
+  initialCreate,
   detailId,
   onOpenDetail
 }: {
   source: TransactionSource;
   categories: CategorySource;
   demo?: boolean;
+  initialCreate?: { date: string; currency: Currency };
   detailId?: string;
   onOpenDetail?: (id: string) => void;
 }) {
@@ -52,7 +54,9 @@ export function TransactionManagement({
   const [after, setAfter] = useState<string | null>(null);
   const [filter, setFilter] = useState<TransactionFilter>({});
   const [applied, setApplied] = useState<TransactionFilter>({});
-  const [draft, setDraft] = useState<TransactionDraft | null>(null);
+  const [draft, setDraft] = useState<TransactionDraft | null>(() =>
+    initialCreate ? { ...newDraft(), ...initialCreate } : null
+  );
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [deleting, setDeleting] = useState<Transaction | null>(null);
   const [busy, setBusy] = useState(false);
@@ -342,7 +346,7 @@ export function TransactionManagement({
           />
         </>
       )}
-      {!detailId && (
+      {!detailId && !(initialCreate && draft) && (
         <>
           <Body>
             {Object.values(applied).some(Boolean)
