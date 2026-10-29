@@ -31,7 +31,7 @@ export function PlaceholderScreen({
       <Body>
         {session.status === "demo"
           ? "Demo only — you are not signed in. No financial data is loaded."
-          : "This screen is a preview. Categories and transactions are connected; dashboard summaries and CSV import are coming later."}
+          : "This screen is a preview. Categories, transactions and dashboard summaries are connected; CSV import is coming later."}
       </Body>
       <Body>{description}</Body>
       {preview === null ? (

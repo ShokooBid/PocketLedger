@@ -16,7 +16,7 @@ export default function TransactionDetailScreen() {
   return (
     <Screen title="Transaction details">
       <Button
-        label="Back to transaction history"
+        label="Back to previous screen"
         onPress={() => {
           if (router.canGoBack()) router.back();
           else router.replace("/transactions");
