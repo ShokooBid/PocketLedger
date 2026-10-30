@@ -103,7 +103,7 @@ describe("protected transactions", () => {
     }
   });
   it("round trips exact bounds and real dates, patches without clearing omitted fields, deletes", async () => {
-    for (const currency of ["USD", "EUR", "GBP", "INR", "JPY", "KWD"]) {
+    for (const currency of ["CAD", "USD", "EUR", "GBP", "INR", "JPY", "KWD"]) {
       const row = await create({ currency, amountMinor: 2147483647 });
       expect((await request("GET", `${root}/${row.id}`)).json()).toMatchObject({
         amountMinor: 2147483647,

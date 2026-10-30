@@ -40,6 +40,9 @@ export function TransactionManagement({
   demo = false,
   initialCreate,
   defaultCurrency = "USD",
+  singleCurrency = false,
+  preferencesReady = true,
+  onCurrencySettings,
   detailId,
   onOpenDetail
 }: {
@@ -48,6 +51,9 @@ export function TransactionManagement({
   demo?: boolean;
   initialCreate?: { date: string; currency: Currency };
   defaultCurrency?: Currency;
+  singleCurrency?: boolean;
+  preferencesReady?: boolean;
+  onCurrencySettings?: () => void;
   detailId?: string;
   onOpenDetail?: (id: string) => void;
 }) {
@@ -219,6 +225,16 @@ export function TransactionManagement({
   }
   async function mutate(remove = false) {
     if (lock.current || uncertain || !ready) return;
+    if (
+      !remove &&
+      singleCurrency &&
+      (!preferencesReady || (!editing && draft?.currency !== defaultCurrency))
+    ) {
+      setError(
+        "Reload currency settings or explicitly start a new draft in the configured currency. Your current draft is unchanged."
+      );
+      return;
+    }
     let input;
     if (!remove) {
       try {
@@ -299,9 +315,23 @@ export function TransactionManagement({
         : { ...newDraft(), currency: defaultCurrency }
     );
   }
-  const disabled = busy || uncertain || !ready;
+  const draftCurrencyMismatch =
+    singleCurrency &&
+    draft !== null &&
+    !editing &&
+    draft.currency !== defaultCurrency;
+  const disabled =
+    busy || uncertain || !ready || (singleCurrency && !preferencesReady);
   return (
     <>
+      {singleCurrency && !preferencesReady && (
+        <StateNotice
+          kind="error"
+          title="Currency settings need attention"
+          message="Your draft is preserved. Reload currency settings before saving."
+          {...(onCurrencySettings ? { onRetry: onCurrencySettings } : {})}
+        />
+      )}
       {demo && (
         <Body>
           Demo only: transactions stay in memory and are discarded when you
@@ -441,15 +471,43 @@ export function TransactionManagement({
             editable={!busy && !uncertain}
             onChangeText={(amount) => setDraft({ ...draft, amount })}
           />
-          {(Object.keys(currencyExponents) as Currency[]).map((currency) => (
-            <Button
-              key={currency}
-              label={`Currency ${currency}`}
-              selected={draft.currency === currency}
-              disabled={busy || uncertain}
-              onPress={() => setDraft({ ...draft, currency })}
-            />
-          ))}
+          {singleCurrency ? (
+            <Body>Currency: {draft.currency}</Body>
+          ) : (
+            (Object.keys(currencyExponents) as Currency[]).map((currency) => (
+              <Button
+                key={currency}
+                label={`Currency ${currency}`}
+                selected={draft.currency === currency}
+                disabled={busy || uncertain}
+                onPress={() => setDraft({ ...draft, currency })}
+              />
+            ))
+          )}
+          {draftCurrencyMismatch && (
+            <>
+              <Body>
+                Settings now uses {defaultCurrency}. This draft remains in{" "}
+                {draft.currency}; its amount has not been converted.
+              </Body>
+              {onCurrencySettings && (
+                <Button
+                  label="Keep draft and open currency settings"
+                  onPress={onCurrencySettings}
+                  disabled={busy || uncertain}
+                />
+              )}
+              <Button
+                label={`Discard draft and start in ${defaultCurrency}`}
+                disabled={busy || uncertain || !preferencesReady}
+                onPress={() => {
+                  setDraft({ ...newDraft(), currency: defaultCurrency });
+                  setEditing(null);
+                  setError(null);
+                }}
+              />
+            </>
+          )}
           <Body>
             {currencyExponents[draft.currency]} decimal places allowed. Use a
             period as decimal separator.
@@ -497,7 +555,7 @@ export function TransactionManagement({
           <Button
             label="Save transaction"
             variant="primary"
-            disabled={disabled}
+            disabled={disabled || draftCurrencyMismatch}
             onPress={() => void mutate()}
           />
           <Button

@@ -25,19 +25,29 @@ enum AuthProvider {
 }
 
 model User {
-  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email           String         @unique @db.VarChar(254)
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email              String              @unique @db.VarChar(254)
   // Null for Google-only accounts; never invent a password for social login.
-  passwordHash    String?        @db.Text
-  emailVerifiedAt DateTime?      @db.Timestamptz(3)
-  disabledAt      DateTime?      @db.Timestamptz(3)
-  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime       @default(now()) @updatedAt @db.Timestamptz(3)
-  categories      Category[]
-  transactions    Transaction[]
-  imports         Import[]
-  identities      AuthIdentity[]
-  sessions        Session[]
+  passwordHash       String?             @db.Text
+  emailVerifiedAt    DateTime?           @db.Timestamptz(3)
+  disabledAt         DateTime?           @db.Timestamptz(3)
+  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime            @default(now()) @updatedAt @db.Timestamptz(3)
+  categories         Category[]
+  transactions       Transaction[]
+  imports            Import[]
+  identities         AuthIdentity[]
+  sessions           Session[]
+  financePreferences FinancePreferences?
+}
+
+model FinancePreferences {
+  userId           String    @id @db.Uuid
+  entryCurrency    String    @default("CAD") @db.VarChar(3)
+  currencyLockedAt DateTime? @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+  user             User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 }
 
 model AuthIdentity {

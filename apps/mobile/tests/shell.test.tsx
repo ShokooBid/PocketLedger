@@ -67,6 +67,61 @@ afterEach(() => {
 });
 
 describe("session navigation", () => {
+  it("keeps a gated demo draft unchanged across Settings and locks currency after saving", async () => {
+    const prior = process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED;
+    process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED = "true";
+    try {
+      await openShell();
+      await enterDemo();
+      await tap(screen.getByRole("link", { name: "Manage categories" }));
+      await press("Add category");
+      await fireEvent.changeText(
+        screen.getByLabelText("Category name"),
+        "Currency food"
+      );
+      await press("Save category");
+      await screen.findByText("Currency food");
+      await press("Back to dashboard");
+      await press("Add transaction");
+      await screen.findByText("New transaction");
+      expect(screen.getByText("Currency: CAD")).toBeVisible();
+      expect(screen.queryByRole("button", { name: "Currency USD" })).toBeNull();
+      await fireEvent.changeText(screen.getByLabelText("Amount"), "12.34");
+      await act(() => router.push("/settings"));
+      await press("Default currency EUR");
+      await act(() => router.back());
+      expect(screen.getByText("Currency: CAD")).toBeVisible();
+      expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
+      expect(
+        screen.getByRole("button", { name: "Save transaction" })
+      ).toBeDisabled();
+      await press("Discard draft and start in EUR");
+      expect(screen.getByLabelText("Amount")).toHaveProp("value", "");
+      expect(screen.getByText("Currency: EUR")).toBeVisible();
+      await fireEvent.changeText(screen.getByLabelText("Amount"), "5.67");
+      await fireEvent.changeText(
+        screen.getByLabelText("Merchant or payee"),
+        "Currency demo"
+      );
+      await press("Category: Currency food");
+      await press("Save transaction");
+      await screen.findByText(/Transaction saved/);
+      await act(() => router.push("/settings"));
+      expect(
+        await screen.findByText(
+          "Currency is locked after the first saved transaction."
+        )
+      ).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: "Default currency CAD" })
+      ).toBeDisabled();
+    } finally {
+      if (prior === undefined)
+        delete process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED;
+      else process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED = prior;
+    }
+  });
+
   it("keeps protected data hidden during an outage and retries verification", async () => {
     const h = harness();
     h.fetcher.mockRejectedValueOnce(new Error("private transport error"));

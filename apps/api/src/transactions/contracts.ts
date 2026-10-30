@@ -2,6 +2,7 @@ import { z } from "zod";
 
 // Deliberate MVP allowlist; mobile's projection is checked by integration tests.
 export const currencySchema = z.enum([
+  "CAD",
   "USD",
   "EUR",
   "GBP",

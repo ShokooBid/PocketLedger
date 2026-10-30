@@ -10,6 +10,10 @@ import type {
   TransactionQuery
 } from "./contracts.js";
 import { currencySchema } from "./contracts.js";
+import {
+  assertNewTransactionCurrency,
+  lockFinanceOwner
+} from "../preferences/service.js";
 
 const unavailable = () => new ApiError(404, "NOT_FOUND", "Resource not found.");
 const invalidCategory = () =>
@@ -42,7 +46,10 @@ async function checkCategory(
   >`SELECT id FROM "Category" WHERE id = ${id}::uuid AND "userId" = ${userId}::uuid AND "archivedAt" IS NULL FOR SHARE`;
   if (!rows.length) throw invalidCategory();
 }
-export function createTransactionService(db: PrismaClient) {
+export function createTransactionService(
+  db: PrismaClient,
+  currencyPreferencesEnabled = false
+) {
   return {
     async list(userId: string, query: TransactionQuery) {
       const boundary = query.after
@@ -86,6 +93,12 @@ export function createTransactionService(db: PrismaClient) {
     },
     async create(userId: string, input: TransactionInput) {
       return db.$transaction(async (tx) => {
+        await assertNewTransactionCurrency(
+          tx,
+          userId,
+          input.currency,
+          currencyPreferencesEnabled
+        );
         await checkCategory(tx, userId, input.categoryId);
         return serializeTransaction(
           await tx.transaction.create({
@@ -96,12 +109,24 @@ export function createTransactionService(db: PrismaClient) {
     },
     async update(userId: string, id: string, input: TransactionPatch) {
       return db.$transaction(async (tx) => {
+        await lockFinanceOwner(tx, userId);
         // Lock the owned row before comparing historical category associations.
         const rows = await tx.$queryRaw<
-          { categoryId: string }[]
-        >`SELECT "categoryId" FROM "Transaction" WHERE id = ${id}::uuid AND "userId" = ${userId}::uuid FOR UPDATE`;
+          { categoryId: string; currency: string }[]
+        >`SELECT "categoryId", currency FROM "Transaction" WHERE id = ${id}::uuid AND "userId" = ${userId}::uuid FOR UPDATE`;
         const row = rows[0];
         if (!row) throw unavailable();
+        if (
+          input.currency &&
+          input.currency !== row.currency &&
+          (currencyPreferencesEnabled ||
+            (await tx.financePreferences.findUnique({ where: { userId } })))
+        )
+          throw new ApiError(
+            422,
+            "CURRENCY_IMMUTABLE",
+            "A saved transaction keeps its recorded currency."
+          );
         if (input.categoryId && input.categoryId !== row.categoryId)
           await checkCategory(tx, userId, input.categoryId);
         const data: Prisma.TransactionUncheckedUpdateInput = {

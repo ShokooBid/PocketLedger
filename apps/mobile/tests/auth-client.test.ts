@@ -179,6 +179,20 @@ describe("category API adapter", () => {
 });
 
 describe("transport boundaries", () => {
+  it("allows only the implemented v2 preferences path", async () => {
+    const fetcher = jest.fn<FetchRequest>().mockResolvedValue(response({}));
+    const client = createTransport("https://api.example.invalid", fetcher);
+    await client.send("GET", "/v2/preferences", z.unknown());
+    for (const path of [
+      "/v2/transactions",
+      "/v2/preferences/other",
+      "/v2/preferences?userId=other"
+    ])
+      await expect(client.send("GET", path, z.unknown())).rejects.toMatchObject(
+        { kind: "configuration" }
+      );
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
   it.each([
     undefined,
     "http://public.example.invalid",

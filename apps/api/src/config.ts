@@ -26,7 +26,8 @@ const environmentSchema = z.object({
   REAUTH_TTL_SECONDS: seconds.max(900).default(300),
   GOOGLE_CLIENT_IDS: z.string().default(""),
   GOOGLE_PRESENTER_IDS: z.string().default(""),
-  CORS_ORIGINS: z.string().default("")
+  CORS_ORIGINS: z.string().default(""),
+  FINANCE_CURRENCY_ENABLED: z.enum(["true", "false"]).default("false")
 });
 
 export function readConfig(environment: Record<string, string | undefined>) {
@@ -62,6 +63,7 @@ export function readConfig(environment: Record<string, string | undefined>) {
   }
   return {
     environment: value.NODE_ENV,
+    currencyPreferencesEnabled: value.FINANCE_CURRENCY_ENABLED === "true",
     host: value.HOST,
     port: value.PORT,
     databaseUrl: value.DATABASE_URL,

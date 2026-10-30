@@ -4,13 +4,16 @@ import { Body, Button, Field, StateNotice } from "./ui";
 import type { User } from "./auth/contracts";
 import type { SessionController } from "./auth/session-controller";
 import { ClientFailure } from "./auth/transport";
-import { currencyExponents, type Currency } from "./transaction-data";
+import { type Currency } from "./transaction-data";
+import { CurrencySettings } from "./currency-settings";
+import type { CurrencySettingsState } from "./preference-data";
 
 export function Settings({
   user,
   controller,
   defaultCurrency,
   setDefaultCurrency,
+  currencyState,
   version,
   onPrivacy,
   onExitDemo
@@ -22,6 +25,7 @@ export function Settings({
   >;
   defaultCurrency: Currency;
   setDefaultCurrency: (currency: Currency) => void;
+  currencyState?: CurrencySettingsState;
   version: string;
   onPrivacy: () => void;
   onExitDemo: () => void;
@@ -186,21 +190,12 @@ export function Settings({
         />
       )}
       {message && <Body>{message}</Body>}
-      <Body>Default currency: {defaultCurrency}</Body>
-      <Body>
-        This default applies to the dashboard and new transactions during this
-        app session. It resets to USD when you leave the session or restart.
-        Existing transactions keep their currency.
-      </Body>
-      {(Object.keys(currencyExponents) as Currency[]).map((currency) => (
-        <Button
-          key={currency}
-          label={`Default currency ${currency}`}
-          selected={currency === defaultCurrency}
-          disabled={busy}
-          onPress={() => setDefaultCurrency(currency)}
-        />
-      ))}
+      <CurrencySettings
+        defaultCurrency={defaultCurrency}
+        setDefaultCurrency={setDefaultCurrency}
+        {...(currencyState ? { state: currencyState } : {})}
+        disabled={busy}
+      />
       <Body>Calendar timezone: {timezone}</Body>
       <Body>
         The app uses your device calendar when choosing today's date or current

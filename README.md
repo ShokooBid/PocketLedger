@@ -94,6 +94,24 @@ Mobile screens use white surfaces, violet controls and pink-to-lilac organic
 shapes. See the [purple/pink UI walkthrough](docs/purple-pink-ui-walkthrough.md)
 for design tokens, component responsibilities and verification details.
 
+### Currency redesign preview (#65)
+
+Persisted currency settings are implemented behind the #64 rollout gate. Both
+`FINANCE_CURRENCY_ENABLED` (API) and `EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED`
+(mobile) default to `false`. Keep them off for normal use until the account-aware
+finance rollout is ready. The existing session-local currency flow remains active.
+
+For isolated preview/testing, apply the migrations and generate Prisma Client,
+then enable both flags in your local environment and restart the API and Expo.
+Use a fresh test user/ledger: non-CAD legacy histories return
+`CURRENCY_SETUP_REQUIRED`; no records are automatically deleted or converted.
+The preview starts at CAD, persists Settings changes per user, shows one currency
+on entry, and permanently locks changes when the first transaction commits.
+Demo uses the same rules in memory and resets when its session ends.
+
+See [#65 implementation and verification](docs/mobile-redesign/issue-65.md) for
+contracts, draft behavior, tests and remaining account-related dependencies.
+
 `npm run typecheck --workspace=@pocketledger/mobile` generates ignored Expo route
 types before checking strict TypeScript, including negative navigation assertions.
 `npm run test --workspace=@pocketledger/mobile` runs Expo/Jest screen and navigation

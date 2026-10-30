@@ -9,6 +9,10 @@ Read the [UX specification](ux.md) and [finance contracts](finance-contracts.md)
 together. Follow-up issues implement the screens, services and migrations; #64
 does not change runtime behavior, schema or generated OpenAPI.
 
+The first implementation increment is documented in the [#65 handoff](issue-65.md).
+It keeps the rollout disabled by default; the remaining specifications below
+continue to describe the target design rather than currently enabled features.
+
 ## Confirmed product decisions
 
 These decisions come from the user's explicit instructions and answers, rather
