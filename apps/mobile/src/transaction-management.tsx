@@ -416,6 +416,7 @@ export function TransactionManagement({
           />
           <Button
             label="Add transaction"
+            variant="primary"
             disabled={disabled}
             onPress={() => edit()}
           />
@@ -495,6 +496,7 @@ export function TransactionManagement({
           />
           <Button
             label="Save transaction"
+            variant="primary"
             disabled={disabled}
             onPress={() => void mutate()}
           />
