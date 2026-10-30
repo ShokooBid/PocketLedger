@@ -59,6 +59,7 @@ Do not import server-only modules, database clients, or secrets from
 | -------------------------- | -------------------------------------------------- |
 | `npm run dev:mobile`       | Start the Expo development server.                 |
 | `npm run dev:api`          | Run the API in watch mode (needs process env).     |
+| `npm run start:api`        | Run the API using the root `.env` file.            |
 | `npm run dev`              | Run every available workspace development command. |
 | `npm run format`           | Format supported files with Prettier.              |
 | `npm run format:check`     | Verify formatting without changing files.          |
@@ -88,6 +89,10 @@ From `apps/mobile`, `npm run android` opens an available Android target,
 Categories and CSV import retain loading/empty/error previews. Dashboard,
 transactions and Settings show their actual data states. Demo Settings also offers a
 rendering-error recovery exercise and a demo exit button.
+
+Mobile screens use white surfaces, violet controls and pink-to-lilac organic
+shapes. See the [purple/pink UI walkthrough](docs/purple-pink-ui-walkthrough.md)
+for design tokens, component responsibilities and verification details.
 
 `npm run typecheck --workspace=@pocketledger/mobile` generates ignored Expo route
 types before checking strict TypeScript, including negative navigation assertions.
@@ -219,10 +224,13 @@ inspect your target and run `npm run db:deploy`. Do not reset the database.
 From the repository root, explicitly load the ignored configuration:
 
 ```powershell
-node --env-file=.env --import tsx apps/api/src/index.ts
+npm run start:api
 # Or, after npm run build --workspace=@pocketledger/api:
 node --env-file=.env apps/api/dist/index.js
 ```
+
+`npm run start:api` runs
+`node --env-file=.env --import tsx apps/api/src/index.ts` without watch mode.
 
 `GET /health` is public. Register/login at `/v1/auth/register` and `/v1/auth/login`
 with JSON `{ "email": "learner@example.invalid", "password": "synthetic long passphrase" }`.

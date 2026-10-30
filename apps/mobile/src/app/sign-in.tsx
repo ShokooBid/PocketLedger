@@ -42,8 +42,8 @@ export default function SignInScreen() {
   }
 
   return (
-    <Screen title="Sign in">
-      <Body>Sign in to manage your PocketLedger categories.</Body>
+    <Screen title="Sign in" appearance="welcome">
+      <Body centered>Track income, spending, and your monthly summary.</Body>
       {!configured && (
         <Body>
           Authentication needs a configured native build. Explore the demo
@@ -81,6 +81,7 @@ export default function SignInScreen() {
       />
       <Button
         label="Sign in with email"
+        variant="primary"
         disabled={!configured || busy}
         onPress={() => {
           void submit("login");

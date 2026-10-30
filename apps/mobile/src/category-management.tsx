@@ -161,6 +161,7 @@ export function CategoryManagement({
           </Body>
           <Button
             label="Save category"
+            variant="primary"
             disabled={busy}
             onPress={() => {
               void mutate(() =>

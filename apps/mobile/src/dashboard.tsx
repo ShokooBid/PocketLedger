@@ -299,6 +299,7 @@ export function Dashboard({
       )}
       <Button
         label="Add transaction"
+        variant="primary"
         hint={`Opens a new ${currency} transaction dated ${monthRange(month).from}; you can edit the date.`}
         onPress={() => onAdd({ month, currency })}
       />
@@ -325,9 +326,11 @@ const styles = StyleSheet.create({
     backgroundColor: theme.color.surface,
     padding: theme.space.md,
     borderRadius: theme.radius,
-    gap: theme.space.sm
+    gap: theme.space.sm,
+    borderWidth: 1,
+    borderColor: theme.color.softBorder
   },
-  heading: { color: theme.color.text, fontSize: 22, fontWeight: "700" },
+  heading: { color: theme.color.primary, fontSize: 22, fontWeight: "700" },
   cardLabel: {
     color: theme.color.muted,
     fontSize: theme.font.body,

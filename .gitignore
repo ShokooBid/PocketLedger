@@ -6,7 +6,9 @@ dist/
 coverage/
 .expo/
 .expo-shared/
-/docs
+# Keep local walkthroughs/planning notes ignored; version the accepted redesign spec.
+/docs/*
+!/docs/mobile-redesign/
 *.tsbuildinfo
 
 # Environment configuration: examples must contain placeholders only

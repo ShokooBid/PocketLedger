@@ -144,6 +144,7 @@ export function Settings({
                   />
                   <Button
                     label="Verify password and choose Google account"
+                    variant="primary"
                     disabled={busy || needsReload || !password.length}
                     onPress={() => void act("link")}
                   />
@@ -230,6 +231,7 @@ export function Settings({
               </Body>
               <Button
                 label="Confirm sign out on all devices"
+                variant="primary"
                 disabled={busy}
                 onPress={() => void act("logout-all")}
               />

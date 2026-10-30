@@ -23,6 +23,7 @@
     "dev": "npm run dev --workspaces --if-present",
     "dev:api": "npm run dev --workspace=@pocketledger/api",
     "dev:mobile": "npm run dev --workspace=@pocketledger/mobile",
+    "start:api": "node --env-file=.env --import tsx apps/api/src/index.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",

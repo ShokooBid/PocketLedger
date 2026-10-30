@@ -2,17 +2,20 @@
 
 ## Scope and assumptions
 
-This is the initial threat model for the PocketLedger MVP. It covers the Expo
-mobile app, Fastify API, PostgreSQL database, CSV import, logs, and deployment
-configuration. It intentionally excludes bank connections, third-party AI
-providers, receipt uploads, and voice processing because those features are not
-part of the MVP.
+This is the PocketLedger threat model, amended on 2026-10-30 for
+[Issue #64](mobile-redesign/README.md). It covers the Expo mobile app, Fastify API,
+PostgreSQL, fixed/personal categories, named financial accounts, same-currency
+transfers, logs and deployment. Account-bound CSV/PDF processing is a later
+increment with acceptance gates below; no upload provider is enabled by #64.
+Bank connections, receipt/voice execution and external AI integrations remain
+outside the implemented boundary and require a separate review before enablement.
 
 Google sign-in is an additional identity-provider trust boundary as of 2026-10-19.
 Only identity information crosses it; financial records are not sent to Google.
 
-Protected assets include transaction data, categories, account identity, password
-hashes, sessions, refresh tokens, database credentials, and operational logs.
+Protected assets include transaction data, categories, financial accounts/opening
+balances, currency preferences/locks, statement drafts/provenance, account identity,
+password hashes, sessions, refresh tokens, database credentials and operational logs.
 
 ## Threats and mitigations
 
@@ -29,6 +32,12 @@ hashes, sessions, refresh tokens, database credentials, and operational logs.
 | Network interception or API abuse | Enforce HTTPS in production, use an explicit CORS allowlist, authenticate protected endpoints, validate all input, constrain pagination/date ranges, and rate-limit sensitive routes | A compromised trusted network or client remains possible. Do not claim end-to-end encryption; monitor service errors without storing sensitive payloads. |
 | Database loss, corruption, or unsafe migration | Use Prisma migrations, least-privilege database credentials, tested backups/restores before beta, and reversible/verified migration procedures | Backup retention and recovery objectives are not yet set. Define and test them before production deployment. |
 | Accidental or malicious transaction changes | Require authenticated writes, validate requests, make destructive UI flows deliberate, retain audit-relevant timestamps, and test duplicate/retry behavior | Full audit history/versioning is deferred. Communicate destructive actions clearly and add deeper audit logging before regulated use. |
+| User mutation of fixed defaults or cross-user category trees | Owner-scoped parent references; server rejection of default rename/archive/reparent/metadata changes; exactly two levels; active-ancestor checks | Personal children under defaults are permitted. Test forged default identity, direct API bypass, duplicate siblings and archive/assignment races. |
+| Currency change racing first posting or silently relabeling balances | Persist currency lock with the first committed transaction under the same owner/preference row lock; validate selected account/currency; preserve recorded values | Account creation/opening balance alone does not lock currency. Test preference races with normal, transfer and confirmed-import writes, and failure rollback. |
+| Unbalanced transfer, independent leg mutation or retry duplication | Aggregate plus exactly two matching postings in one DB transaction; commit-time guards; dedicated endpoints; owner-scoped request identity/fingerprint retained after deletion | Test partial failures, key reuse, deleted-resource replay, concurrent archive/edit and summary exclusion. Never rely on the UI to balance entries. |
+| Stale v1 client coercing new finance data | Versioned finance schemas and an enforced upgrade gate before merchant-free writes/transfers; preserve legacy storage and block incompatible operations | Mobile transport currently only accepts v1 paths/two domain codes. Explicitly test safe upgrade mapping and keep auth working; old DTOs are not a rollback target after new data exists. |
+| Later statement posted to an unintended account or duplicated transfer | Bind batch/account/owner server-side; revalidate on confirmation; invalidate review on account changes; preserve row/page provenance and request identity | Test foreign/archived accounts, mismatch, changed account, duplicate upload/confirmation and both statements covering one transfer. Extraction never authorizes posting. |
+| Later hostile PDF/CSV upload or external extraction leakage | Define type/size/page/row/time limits, protected storage/access and retention before enablement; treat extracted text/model output as untrusted drafts | Supported PDF layouts/OCR/provider choices remain later work. No files, notes or financial payloads in routine logs/analytics; synthetic fixtures only. |
 | Future AI or tool-driven unauthorized write | Keep AI/MCP out of MVP. Later integrations must use least privilege and create a reviewable draft requiring explicit user confirmation before persistence | Prompt injection and model error are accepted risks only while no AI/tool write path exists. Revisit this model before enabling such a feature. |
 
 ## Security requirements carried into implementation
@@ -36,7 +45,7 @@ hashes, sessions, refresh tokens, database credentials, and operational logs.
 - Never commit credentials, access tokens, database dumps, real CSV statements,
   screenshots containing financial data, or production logs.
 - Use only synthetic records in seeds, fixtures, demos, and automated tests.
-- Treat all client input, imported CSV cells, and future tool output as untrusted.
+- Treat all client input, imported CSV/PDF content, and future tool output as untrusted.
 - Add tests for authentication failures, authorization boundaries, invalid input,
   CSV edge cases, token revocation, and error redaction as the relevant features
   are implemented.
