@@ -24,6 +24,8 @@ import type { TransactionService } from "./transactions/service.js";
 import { registerTransactionRoutes } from "./transactions/routes.js";
 import type { DashboardService } from "./dashboard/service.js";
 import { registerDashboardRoutes } from "./dashboard/routes.js";
+import { registerPreferencesRoutes } from "./preferences/routes.js";
+import type { PreferencesService } from "./preferences/service.js";
 
 export async function buildApp(
   config: Config,
@@ -34,6 +36,7 @@ export async function buildApp(
     categories?: CategoryService;
     transactions?: TransactionService;
     dashboard?: DashboardService;
+    preferences?: PreferencesService;
   } = {}
 ) {
   const app = Fastify({
@@ -171,5 +174,6 @@ export async function buildApp(
   if (options.transactions)
     registerTransactionRoutes(app, options.transactions);
   if (options.dashboard) registerDashboardRoutes(app, options.dashboard);
+  if (options.preferences) registerPreferencesRoutes(app, options.preferences);
   return app;
 }

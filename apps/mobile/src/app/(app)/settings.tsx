@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useSession } from "../../session";
 import { Button, Screen } from "../../ui";
 import Constants from "expo-constants";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { usePreferences } from "../../preferences";
 import { Settings } from "../../settings";
 
@@ -12,6 +12,12 @@ export default function SettingsScreen() {
   const { session, controller, exitDemo } = useSession();
   const [shouldFail, setShouldFail] = useState(false);
   const preferences = usePreferences();
+  const { enabled, reload } = preferences.currencyState;
+  useFocusEffect(
+    useCallback(() => {
+      if (enabled) void reload();
+    }, [enabled, reload])
+  );
   const router = useRouter();
   if (shouldFail) throw new Error("Synthetic rendering failure.");
   return (

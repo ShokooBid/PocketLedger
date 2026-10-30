@@ -8,6 +8,7 @@ import {
 
 // Client projection of the documented API policy, independent of native UI.
 export const currencyExponents = {
+  CAD: 2,
   USD: 2,
   EUR: 2,
   GBP: 2,
@@ -16,6 +17,7 @@ export const currencyExponents = {
   KWD: 3
 } as const;
 export const currencySchema = z.enum([
+  "CAD",
   "USD",
   "EUR",
   "GBP",
@@ -127,6 +129,12 @@ export function uncertainWrite(error: unknown) {
 }
 export function transactionFailureMessage(error: unknown) {
   if (error instanceof ClientFailure) {
+    if (error.code === "CURRENCY_MISMATCH")
+      return "This draft has a different currency from Settings. Keep it unchanged or explicitly start a new draft.";
+    if (error.code === "CURRENCY_IMMUTABLE")
+      return "A saved transaction keeps its recorded currency.";
+    if (error.code === "PREFERENCES_NOT_READY")
+      return "Reload currency settings before saving this transaction.";
     if (error.kind === "validation")
       return "Check the fields and choose an active category. Reload categories if it was archived.";
     if (error.kind === "unavailable")
@@ -137,7 +145,8 @@ export function transactionFailureMessage(error: unknown) {
   return "The change could not be confirmed. Reload and review saved transactions before deciding whether to submit again.";
 }
 export function createDemoTransactionSource(
-  categories: CategorySource
+  categories: CategorySource,
+  beforeWrite?: (input: TransactionInput, previous?: Transaction) => void
 ): TransactionSource {
   let rows: Transaction[] = [];
   let sequence = 0;
@@ -180,6 +189,7 @@ export function createDemoTransactionSource(
     },
     async create(input) {
       await checked(input);
+      beforeWrite?.(input);
       const row = {
         ...input,
         id: `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`,
@@ -193,6 +203,7 @@ export function createDemoTransactionSource(
       const previous = rows.find((row) => row.id === id);
       if (!previous) throw new ClientFailure("unavailable");
       await checked(input, previous);
+      beforeWrite?.(input, previous);
       const updated = {
         ...previous,
         ...input,

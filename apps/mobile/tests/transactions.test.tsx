@@ -66,6 +66,7 @@ describe("exact amount conversion", () => {
       expect(validDateFilter(filter)).toBe(false);
   });
   it.each([
+    ["0.01", "CAD", 1],
     ["0.01", "USD", 1],
     ["1.01", "EUR", 101],
     ["21474836.47", "GBP", 2147483647],
@@ -101,6 +102,88 @@ describe("exact amount conversion", () => {
   });
 });
 describe("transaction management", () => {
+  it("shows one configured currency and preserves a stale draft until explicit replacement", async () => {
+    const categories = createDemoCategorySource();
+    await categories.create("Food");
+    const source = createDemoTransactionSource(categories);
+    const onCurrencySettings = jest.fn();
+    const props = {
+      source,
+      categories,
+      singleCurrency: true,
+      onCurrencySettings
+    };
+    const view = render(
+      <TransactionManagement
+        {...props}
+        defaultCurrency="CAD"
+        initialCreate={{ date: "2026-10-30", currency: "CAD" }}
+      />
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Save transaction" })
+      ).toBeEnabled()
+    );
+    await field("Amount", "12.34");
+    await field("Note (optional)", "Keep my draft");
+    expect(screen.getByText("Currency: CAD")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^Currency / })).toBeNull();
+    view.rerender(
+      <TransactionManagement
+        {...props}
+        defaultCurrency="EUR"
+        initialCreate={{ date: "2026-10-30", currency: "CAD" }}
+      />
+    );
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
+    expect(screen.getByLabelText("Note (optional)")).toHaveProp(
+      "value",
+      "Keep my draft"
+    );
+    expect(
+      screen.getByRole("button", { name: "Save transaction" })
+    ).toBeDisabled();
+    await press("Keep draft and open currency settings");
+    expect(onCurrencySettings).toHaveBeenCalledTimes(1);
+    await press("Discard draft and start in EUR");
+    expect(screen.getByText("Currency: EUR")).toBeVisible();
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "");
+    expect(await source.list({})).toMatchObject({ items: [] });
+  });
+
+  it("blocks saves during preference recovery without discarding entered values", async () => {
+    const categories = createDemoCategorySource();
+    await categories.create("Food");
+    const source = createDemoTransactionSource(categories);
+    const props = {
+      source,
+      categories,
+      singleCurrency: true,
+      defaultCurrency: "CAD" as const,
+      initialCreate: { date: "2026-10-30", currency: "CAD" as const }
+    };
+    const view = render(<TransactionManagement {...props} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Save transaction" })
+      ).toBeEnabled()
+    );
+    await field("Amount", "7.25");
+    view.rerender(
+      <TransactionManagement {...props} preferencesReady={false} />
+    );
+    expect(
+      screen.getByRole("button", { name: "Save transaction" })
+    ).toBeDisabled();
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "7.25");
+    view.rerender(<TransactionManagement {...props} preferencesReady />);
+    expect(
+      screen.getByRole("button", { name: "Save transaction" })
+    ).toBeEnabled();
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "7.25");
+  });
+
   it("keeps a confirmed save visible without depending on another read or replaying the write", async () => {
     let create: ReturnType<typeof jest.fn<TransactionSource["create"]>>;
     await setup((source) => {

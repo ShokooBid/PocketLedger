@@ -65,7 +65,7 @@ export function registerTransactionRoutes(
       schema: {
         ...secured,
         description:
-          "Positive integer minor units up to 2147483647. Supported currencies: USD/EUR/GBP/INR (2 decimals), JPY (0), KWD (3). Real calendar dates 0001–9999. Merchant 1–200 UTF-16 units with visible text; note nullable, up to 2000 units. Text is preserved; control, format and surrogate characters are rejected. Category must be owned and active.",
+          "Positive integer minor units up to 2147483647. Supported currencies: CAD/USD/EUR/GBP/INR (2 decimals), JPY (0), KWD (3). Real calendar dates 0001–9999. Merchant 1–200 UTF-16 units with visible text; note nullable, up to 2000 units. Text is preserved; control, format and surrogate characters are rejected. Category must be owned and active. Activated currency preferences enforce the configured denomination and lock it atomically with the first posting.",
         body: transactionInput,
         querystring: empty,
         response: { ...errors, 201: transactionSchema }

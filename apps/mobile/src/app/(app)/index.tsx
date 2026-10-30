@@ -10,9 +10,16 @@ import {
 import { useSession } from "../../session";
 import { useTransactions } from "../../transaction-context";
 import { useCategories } from "../../category-context";
-import { usePreferences } from "../../preferences";
+import { PreferencesReady, usePreferences } from "../../preferences";
 
-export default function DashboardScreen() {
+export default function DashboardRoute() {
+  return (
+    <PreferencesReady>
+      <DashboardScreen />
+    </PreferencesReady>
+  );
+}
+function DashboardScreen() {
   const { session, controller } = useSession();
   const transactions = useTransactions();
   const categories = useCategories();

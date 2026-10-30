@@ -96,7 +96,10 @@ export function createTransport(
     async send(method, path, schema, body, accessToken) {
       if (
         !origin ||
-        !/^\/v1\/[A-Za-z0-9/?=&_.%-]+$/.test(path) ||
+        !(
+          /^\/v1\/[A-Za-z0-9/?=&_.%-]+$/.test(path) ||
+          path === "/v2/preferences"
+        ) ||
         path.includes("..")
       )
         throw new ClientFailure("configuration");
@@ -135,7 +138,12 @@ export function createTransport(
               data.error !== null &&
               "code" in data.error &&
               (data.error.code === "CATEGORY_NAME_CONFLICT" ||
-                data.error.code === "CATEGORY_ARCHIVED")
+                data.error.code === "CATEGORY_ARCHIVED" ||
+                data.error.code === "CURRENCY_LOCKED" ||
+                data.error.code === "CURRENCY_MISMATCH" ||
+                data.error.code === "CURRENCY_IMMUTABLE" ||
+                data.error.code === "CURRENCY_SETUP_REQUIRED" ||
+                data.error.code === "FINANCE_FEATURE_DISABLED")
             )
               code = data.error.code;
           } catch {

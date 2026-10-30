@@ -5,13 +5,22 @@ import { useCategories } from "../../../category-context";
 import { useTransactions } from "../../../transaction-context";
 import { useSession } from "../../../session";
 import { TransactionManagement } from "../../../transaction-management";
+import { PreferencesReady, usePreferences } from "../../../preferences";
 
-export default function TransactionDetailScreen() {
+export default function TransactionDetailRoute() {
+  return (
+    <PreferencesReady>
+      <TransactionDetailScreen />
+    </PreferencesReady>
+  );
+}
+function TransactionDetailScreen() {
   const { id } = useLocalSearchParams();
   const parsed = z.uuid().safeParse(id);
   const source = useTransactions();
   const categories = useCategories();
   const { session } = useSession();
+  const { currencyState } = usePreferences();
   const router = useRouter();
   return (
     <Screen title="Transaction details">
@@ -28,6 +37,11 @@ export default function TransactionDetailScreen() {
           source={source}
           categories={categories}
           detailId={parsed.data}
+          singleCurrency={currencyState.enabled}
+          preferencesReady={
+            !currencyState.enabled ||
+            (currencyState.status === "ready" && !currencyState.saving)
+          }
           demo={session.status === "demo"}
         />
       ) : (
