@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Groceries">
+<defs><linearGradient id="g0" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFE2DD"/><stop offset="1" stop-color="#FF6C55" stop-opacity=".16"/></linearGradient></defs>
+<circle cx="32" cy="32" r="30" fill="url(#g0)"/>
+<g transform="translate(13 13) scale(1.583333)" fill="none" stroke="#FF6C55" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1"/><circle cx="19" cy="20" r="1"/><path d="M2 3h3l3 13h12l2-9H6"/></g>
+</svg>

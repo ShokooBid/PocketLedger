@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { buildApp } from "../../../api/src/app.js";
 import { createAuthService } from "../../../api/src/auth/service.js";
 import { createCategoryService } from "../../../api/src/categories/service.js";
+import { createHierarchyCategoryService } from "../../../api/src/categories/hierarchy-service.js";
 import { createTransactionService } from "../../../api/src/transactions/service.js";
 import { createDashboardService } from "../../../api/src/dashboard/service.js";
 import { createApiDashboardSource, moneyLabel } from "../../src/dashboard-data";
@@ -69,11 +70,11 @@ function device(proof: GoogleProof = async () => null) {
       () => clock
     );
   const controller = make();
-  const source = (session = controller) => {
+  const source = (session = controller, hierarchy = false) => {
     const state = session.getSnapshot();
     if (state.status !== "authenticated")
       throw new Error("Test requires verified session.");
-    return createApiCategorySource(session.client(state.generation));
+    return createApiCategorySource(session.client(state.generation), hierarchy);
   };
   return { controller, restart: make, source, disk: () => disk };
 }
@@ -97,6 +98,7 @@ beforeAll(async () => {
     logger: false,
     rateLimitMax: 10000,
     categories: createCategoryService(db),
+    hierarchyCategories: createHierarchyCategoryService(db, true),
     transactions: createTransactionService(db),
     dashboard: createDashboardService(db)
   });
@@ -110,6 +112,65 @@ afterAll(async () => {
 });
 
 describe("authenticated mobile category flow", () => {
+  it("uses v2 for personal hierarchy, fixed defaults, safe errors and session isolation", async () => {
+    const d = device();
+    await d.controller.restore();
+    await d.controller.signIn(
+      "register",
+      `${randomUUID()}@example.invalid`,
+      "synthetic hierarchy password"
+    );
+    const state = d.controller.getSnapshot();
+    if (state.status !== "authenticated") throw new Error("No session");
+    const source = d.source(d.controller, true);
+    await source.create("Mobile parent");
+    const root = (await source.list())[0]!;
+    const childId = await source.createChild!("Mobile child", root.id);
+    expect(
+      (await source.list()).find((row) => row.id === childId)?.parentId
+    ).toBe(root.id);
+    await expect(d.source().list()).rejects.toMatchObject({ code: "upgrade" });
+    await expect(
+      source.createChild!(" mobile CHILD ", root.id)
+    ).rejects.toMatchObject({ code: "duplicate" });
+    await expect(
+      source.createChild!("Too deep", childId)
+    ).rejects.toMatchObject({ code: "invalid-parent" });
+    const fixed = await db.category.create({
+      data: {
+        userId: state.user.id,
+        name: "Synthetic mobile default",
+        isDefault: true,
+        defaultKey: "test.mobile"
+      }
+    });
+    await source.createChild!("Personal under fixed", fixed.id);
+    await expect(source.rename(fixed.id, "Rename")).rejects.toMatchObject({
+      code: "read-only"
+    });
+    await expect(source.archive(fixed.id)).rejects.toMatchObject({
+      code: "read-only"
+    });
+    await source.rename(childId, "Renamed child");
+    await source.archive(root.id);
+    expect(
+      (await source.list()).find((row) => row.id === childId)?.archivedAt
+    ).not.toBeNull();
+    const other = device();
+    await other.controller.restore();
+    await other.controller.signIn(
+      "register",
+      `${randomUUID()}@example.invalid`,
+      "synthetic other hierarchy password"
+    );
+    const otherSource = other.source(other.controller, true);
+    expect(await otherSource.list()).toEqual([]);
+    await expect(
+      otherSource.createChild!("Foreign parent", root.id)
+    ).rejects.toMatchObject({ code: "unavailable" });
+    await d.controller.logout();
+    await expect(source.list()).rejects.toMatchObject({ kind: "cancelled" });
+  });
   it("links only after both proofs, preserves the ledger and refuses another owner's Google subject", async () => {
     const email = `${randomUUID()}@example.invalid`;
     const otherEmail = `${randomUUID()}@example.invalid`;

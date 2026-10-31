@@ -10,6 +10,8 @@ together. Follow-up issues implement the screens, services and migrations; #64
 does not change runtime behavior, schema or generated OpenAPI.
 
 The first implementation increment is documented in the [#65 handoff](issue-65.md).
+Category hierarchy is documented in the [#66 handoff](issue-66.md).
+The supplied default catalog and local preview are documented in the [#67 handoff](issue-67.md).
 It keeps the rollout disabled by default; the remaining specifications below
 continue to describe the target design rather than currently enabled features.
 

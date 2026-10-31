@@ -16,7 +16,10 @@ export function CategoriesProvider({ children }: PropsWithChildren) {
   const [source] = useState(() => {
     if (session.status === "demo") return createDemoCategorySource();
     if (session.status === "authenticated")
-      return createApiCategorySource(controller.client(session.generation));
+      return createApiCategorySource(
+        controller.client(session.generation),
+        process.env.EXPO_PUBLIC_FINANCE_CATEGORIES_ENABLED === "true"
+      );
     throw new Error("Categories require an application session.");
   });
   return <Categories.Provider value={source}>{children}</Categories.Provider>;

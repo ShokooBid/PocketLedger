@@ -64,3 +64,16 @@ export const transactionQuery = z
 export type TransactionInput = z.infer<typeof transactionInput>;
 export type TransactionPatch = z.infer<typeof transactionPatch>;
 export type TransactionQuery = z.infer<typeof transactionQuery>;
+// Prepared for account-aware v2 history (#69/#75); v1 keeps exact-category
+// semantics and rejects this additional query field.
+export const hierarchyTransactionQuery = transactionQuery
+  .safeExtend({
+    includeSubcategories: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true")
+      .optional()
+  })
+  .refine((query) => !query.includeSubcategories || !!query.categoryId);
+export type HierarchyTransactionQuery = z.infer<
+  typeof hierarchyTransactionQuery
+>;

@@ -5,22 +5,43 @@ export type Category = {
   name: string;
   isDefault: boolean;
   archivedAt: string | null;
+  parentId?: string | null;
+  sortOrder?: number;
+  iconKey?: string;
 };
 export interface CategorySource {
+  hierarchy?: boolean;
   list(): Promise<Category[]>;
   create(name: string): Promise<void>;
+  createChild?(name: string, parentId: string): Promise<string>;
   rename(id: string, name: string): Promise<void>;
   archive(id: string): Promise<void>;
 }
 export class CategoryFailure extends Error {
   constructor(
-    public code: "validation" | "duplicate" | "unavailable" | "uncertain"
+    public code:
+      | "validation"
+      | "duplicate"
+      | "unavailable"
+      | "uncertain"
+      | "read-only"
+      | "invalid-parent"
+      | "upgrade"
+      | "disabled"
   ) {
     super(code);
   }
 }
 export function categoryFailureMessage(error: unknown) {
   if (error instanceof CategoryFailure) {
+    if (error.code === "disabled")
+      return "Category management is unavailable in this release. Update PocketLedger or try again later.";
+    if (error.code === "read-only")
+      return "Default categories cannot be changed.";
+    if (error.code === "invalid-parent")
+      return "Choose an active parent category. Reload the list.";
+    if (error.code === "upgrade")
+      return "These categories require a newer version of PocketLedger. Update the app to manage them.";
     if (error.code === "validation")
       return "Use a visible category name of 1–100 characters without control characters.";
     if (error.code === "duplicate")

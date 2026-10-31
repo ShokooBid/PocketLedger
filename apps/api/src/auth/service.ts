@@ -11,6 +11,7 @@ import {
   verifyAccess
 } from "./crypto.js";
 import type { GoogleVerifier } from "./google.js";
+import { provisionCategoryCatalog } from "../categories/provision.js";
 
 type Transaction = Prisma.TransactionClient;
 export type Principal = { userId: string; sessionId: string };
@@ -195,6 +196,8 @@ export async function createAuthService(
         const user = await tx.user.create({
           data: { email: email.trim().toLowerCase(), passwordHash: hash }
         });
+        if (config.categoryHierarchyEnabled)
+          await provisionCategoryCatalog(tx, user.id);
         return issue(tx, user.id, clock());
       });
     } catch (error) {
@@ -238,6 +241,8 @@ export async function createAuthService(
             }
           }
         });
+        if (config.categoryHierarchyEnabled)
+          await provisionCategoryCatalog(tx, user.id);
         return issue(tx, user.id, clock());
       });
     } catch (error) {

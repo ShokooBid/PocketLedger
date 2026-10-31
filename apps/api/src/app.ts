@@ -20,6 +20,8 @@ import type { AuthService } from "./auth/service.js";
 import { errorSchema, registerAuthRoutes } from "./auth/routes.js";
 import { registerCategoryRoutes } from "./categories/routes.js";
 import type { CategoryService } from "./categories/service.js";
+import { registerHierarchyCategoryRoutes } from "./categories/hierarchy-routes.js";
+import type { HierarchyCategoryService } from "./categories/hierarchy-service.js";
 import type { TransactionService } from "./transactions/service.js";
 import { registerTransactionRoutes } from "./transactions/routes.js";
 import type { DashboardService } from "./dashboard/service.js";
@@ -34,6 +36,7 @@ export async function buildApp(
     logger?: FastifyServerOptions["logger"];
     rateLimitMax?: number;
     categories?: CategoryService;
+    hierarchyCategories?: HierarchyCategoryService;
     transactions?: TransactionService;
     dashboard?: DashboardService;
     preferences?: PreferencesService;
@@ -171,6 +174,8 @@ export async function buildApp(
   );
   registerAuthRoutes(app, auth);
   if (options.categories) registerCategoryRoutes(app, options.categories);
+  if (options.hierarchyCategories)
+    registerHierarchyCategoryRoutes(app, options.hierarchyCategories);
   if (options.transactions)
     registerTransactionRoutes(app, options.transactions);
   if (options.dashboard) registerDashboardRoutes(app, options.dashboard);

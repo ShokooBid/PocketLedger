@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Business trips">
+<defs><linearGradient id="g3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#E3F4FF"/><stop offset="1" stop-color="#159EE8" stop-opacity=".16"/></linearGradient></defs>
+<circle cx="32" cy="32" r="30" fill="url(#g3)"/>
+<g transform="translate(13 13) scale(1.583333)" fill="none" stroke="#159EE8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V4h8v3M3 13h18m-11 0h4"/></g>
+</svg>

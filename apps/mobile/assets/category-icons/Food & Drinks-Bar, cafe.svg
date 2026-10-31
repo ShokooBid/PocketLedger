@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Bar, cafe">
+<defs><linearGradient id="g0" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFE2DD"/><stop offset="1" stop-color="#FF6C55" stop-opacity=".16"/></linearGradient></defs>
+<circle cx="32" cy="32" r="30" fill="url(#g0)"/>
+<g transform="translate(13 13) scale(1.583333)" fill="none" stroke="#FF6C55" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h12v9a6 6 0 0 1-12 0V5Zm12 2h2a3 3 0 0 1 0 6h-2M4 21h15"/></g>
+</svg>

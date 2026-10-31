@@ -15,7 +15,10 @@ import {
   type Currency,
   type TransactionSource
 } from "../src/transaction-data";
-import { createDemoCategorySource } from "../src/category-data";
+import {
+  createDemoCategorySource,
+  type CategorySource
+} from "../src/category-data";
 import { ClientFailure } from "../src/auth/transport";
 async function press(name: string) {
   await act(async () => {
@@ -51,6 +54,95 @@ async function fill() {
   await field("Note (optional)", "Retained note");
   await press("Category: Food");
 }
+it("saves parent or child selections with unambiguous hierarchy paths in authenticated entry", async () => {
+  const categories: CategorySource = {
+    hierarchy: true,
+    list: async () => [
+      {
+        id: "root-a",
+        name: "Root A",
+        parentId: null,
+        isDefault: true,
+        archivedAt: null
+      },
+      {
+        id: "root-b",
+        name: "Root B",
+        parentId: null,
+        isDefault: false,
+        archivedAt: null
+      },
+      {
+        id: "child-a",
+        name: "Same",
+        parentId: "root-a",
+        isDefault: false,
+        archivedAt: null
+      },
+      {
+        id: "child-b",
+        name: "Same",
+        parentId: "root-b",
+        isDefault: false,
+        archivedAt: null
+      }
+    ],
+    create: async () => {},
+    rename: async () => {},
+    archive: async () => {}
+  };
+  const create = jest
+    .fn<TransactionSource["create"]>()
+    .mockImplementation(async (input) => ({
+      ...input,
+      id: `saved-${input.categoryId}`,
+      createdAt: "2026-10-30T00:00:00Z",
+      updatedAt: "2026-10-30T00:00:00Z"
+    }));
+  const source: TransactionSource = {
+    create,
+    list: async () => ({ items: [], nextCursor: null }),
+    subscribe: () => () => {},
+    get: async () => {
+      throw new Error("Unused");
+    },
+    update: async () => {
+      throw new Error("Unused");
+    },
+    remove: async () => {}
+  };
+  render(
+    <TransactionManagement
+      source={source}
+      categories={categories}
+      demo={false}
+    />
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Add transaction" })
+    ).toBeEnabled()
+  );
+  expect(
+    screen.getByRole("button", { name: "Filter category: Root A / Same" })
+  ).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "Filter category: Root B / Same" })
+  ).toBeVisible();
+  for (const [label, id] of [
+    ["Root A", "root-a"],
+    ["Root B / Same", "child-b"]
+  ] as const) {
+    await press("Add transaction");
+    await field("Amount", "1.01");
+    await field("Merchant or payee", "Synthetic");
+    await press(`Category: ${label}`);
+    await press("Save transaction");
+    expect(create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ categoryId: id, amountMinor: 101 })
+    );
+  }
+});
 describe("exact amount conversion", () => {
   it("validates inclusive bounded date filters as calendar dates", () => {
     expect(validDateFilter({})).toBe(true);
