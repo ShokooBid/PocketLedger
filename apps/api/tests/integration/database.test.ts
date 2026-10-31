@@ -7,42 +7,19 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDatabaseClient } from "../../src/database.js";
+import { disposableDatabase } from "../support/disposable.js";
 
 const require = createRequire(import.meta.url);
 const execFileAsync = promisify(execFile);
 const prismaCli = require.resolve("prisma/build/index.js");
 const apiDirectory = fileURLToPath(new URL("../../", import.meta.url));
-// Never use DATABASE_URL or load .env here. The parent DB is only an admin entry.
-const baseUrl = process.env.TEST_DATABASE_URL;
-if (!baseUrl)
-  throw new Error("Set TEST_DATABASE_URL to the disposable test service.");
-const url = new URL(baseUrl);
-if (
-  !["postgresql:", "postgres:"].includes(url.protocol) ||
-  !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ||
-  url.pathname !== "/pocketledger_test" ||
-  url.search !== ""
-) {
-  throw new Error(
-    "Tests require a local pocketledger_test database without URL options."
-  );
-}
-
-const databaseName = `pocketledger_test_${randomUUID().replaceAll("-", "")}`;
-url.pathname = `/${databaseName}`;
-const databaseUrl = url.toString();
-const admin = new pg.Client({
-  connectionString: baseUrl,
-  connectionTimeoutMillis: 5000
-});
+const database = disposableDatabase({ migrate: false });
+const databaseUrl = database.url;
 const sql = new pg.Client({
   connectionString: databaseUrl,
   connectionTimeoutMillis: 5000
 });
-const db = createDatabaseClient(databaseUrl);
-let created = false;
-let adminConnected = false;
+const db = database.db;
 let sqlConnected = false;
 const userA = randomUUID();
 const userB = randomUUID();
@@ -93,15 +70,11 @@ async function insertTransaction(
 }
 
 beforeAll(async () => {
-  await admin.connect();
-  adminConnected = true;
-  // Identifier is generated internally from a UUID, never taken from input.
-  await admin.query(`CREATE DATABASE "${databaseName}"`);
-  created = true;
+  await database.start();
   await sql.connect();
   sqlConnected = true;
   const tables = await sql.query(
-    "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+    "SELECT tablename FROM pg_tables WHERE schemaname = current_schema()"
   );
   expect(tables.rows).toHaveLength(0);
   await prisma("migrate", "deploy");
@@ -130,16 +103,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   try {
-    await db.$disconnect();
     if (sqlConnected) await sql.end();
   } finally {
-    try {
-      // Warning: deletes only this run's newly created synthetic database.
-      if (created)
-        await admin.query(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
-    } finally {
-      if (adminConnected) await admin.end();
-    }
+    await database.close();
   }
 });
 
@@ -149,7 +115,7 @@ describe("initial migration and database ownership", () => {
     const result = await sql.query(
       'SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL'
     );
-    expect(result.rows).toHaveLength(5);
+    expect(result.rows).toHaveLength(9);
     expect(await prisma("migrate", "status")).toContain("up to date");
   });
 
@@ -509,18 +475,15 @@ describe("authentication storage (service behavior is implemented in Issue #7)",
   });
 
   it("upgrades the original schema without losing an existing user or transaction", async () => {
-    const upgradeName = `${databaseName}_upgrade`;
-    const upgradeUrl = new URL(databaseUrl);
-    upgradeUrl.pathname = `/${upgradeName}`;
+    const upgradeDatabase = disposableDatabase({ migrate: false });
+    const upgradeUrl = new URL(upgradeDatabase.url);
     const upgrade = new pg.Client({
       connectionString: upgradeUrl.toString(),
       connectionTimeoutMillis: 5000
     });
-    let upgradeCreated = false;
     let upgradeConnected = false;
     try {
-      await admin.query(`CREATE DATABASE "${upgradeName}"`);
-      upgradeCreated = true;
+      await upgradeDatabase.start();
       await upgrade.connect();
       upgradeConnected = true;
       // Reproduce the already-shared initial SQL, then register its baseline.
@@ -567,7 +530,7 @@ describe("authentication storage (service behavior is implemented in Issue #7)",
       expect(
         (
           await upgrade.query(
-            `SELECT indexname FROM pg_indexes WHERE indexname = 'Category_userId_name_key'`
+            `SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'Category_userId_name_key'`
           )
         ).rows
       ).toHaveLength(1);
@@ -603,6 +566,26 @@ describe("authentication storage (service behavior is implemented in Issue #7)",
       ).toEqual([
         { amountMinor: 1234, merchant: "Synthetic preserved merchant" }
       ]);
+      expect(
+        (
+          await upgrade.query(
+            'SELECT id, "parentId", "defaultKey", "iconKey", "colorKey", "sortOrder" FROM "Category" WHERE id = $1',
+            [categoryA]
+          )
+        ).rows
+      ).toEqual([
+        {
+          id: categoryA,
+          parentId: null,
+          defaultKey: null,
+          iconKey: "category",
+          colorKey: "neutral",
+          sortOrder: 0
+        }
+      ]);
+      expect(
+        (await upgrade.query('SELECT "categoryId" FROM "Transaction"')).rows
+      ).toEqual([{ categoryId: categoryA }]);
       await upgrade.query('INSERT INTO "User" (email) VALUES ($1)', [
         "new-google@example.invalid"
       ]);
@@ -617,8 +600,7 @@ describe("authentication storage (service behavior is implemented in Issue #7)",
       try {
         if (upgradeConnected) await upgrade.end();
       } finally {
-        if (upgradeCreated)
-          await admin.query(`DROP DATABASE "${upgradeName}" WITH (FORCE)`);
+        await upgradeDatabase.close();
       }
     }
   });

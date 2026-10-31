@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { CategoryIcon } from "./category-icon";
 import {
   CategoryFailure,
   categoryFailureMessage,
@@ -7,6 +8,11 @@ import {
   type CategorySource
 } from "./category-data";
 import { Body, Button, Field, StateNotice } from "./ui";
+import {
+  activeCategoryChildren,
+  categoryPath,
+  orderedCategories
+} from "./category-hierarchy";
 
 export function CategoryManagement({
   source,
@@ -24,11 +30,15 @@ export function CategoryManagement({
   const locked = useRef(false);
   const mounted = useRef(false);
   const [showArchived, setShowArchived] = useState(false);
-  const [editor, setEditor] = useState<{ id?: string; name: string } | null>(
-    null
-  );
+  const [editor, setEditor] = useState<{
+    id?: string;
+    name: string;
+    parentId?: string;
+  } | null>(null);
   const [confirmation, setConfirmation] = useState<Category | null>(null);
-  const visibleRows = rows.filter((row) =>
+  const visibleRows = (
+    source.hierarchy ? orderedCategories(rows) : rows
+  ).filter((row) =>
     showArchived ? row.archivedAt !== null : row.archivedAt === null
   );
 
@@ -44,8 +54,12 @@ export function CategoryManagement({
           setStatus("ready");
         }
       })
-      .catch(() => {
-        if (active) setStatus("error");
+      .catch((failure: unknown) => {
+        if (active) {
+          if (failure instanceof CategoryFailure)
+            setError(categoryFailureMessage(failure));
+          setStatus("error");
+        }
       });
     return () => {
       active = false;
@@ -64,13 +78,17 @@ export function CategoryManagement({
         setStatus("ready");
         setError(null);
       }
-    } catch {
-      if (mounted.current) setStatus("error");
+    } catch (failure) {
+      if (mounted.current) {
+        if (failure instanceof CategoryFailure)
+          setError(categoryFailureMessage(failure));
+        setStatus("error");
+      }
     } finally {
       locked.current = false;
     }
   }
-  async function mutate(write: () => Promise<void>) {
+  async function mutate(write: () => Promise<unknown>) {
     if (locked.current) return;
     locked.current = true;
     setBusy(true);
@@ -146,6 +164,11 @@ export function CategoryManagement({
       {editor ? (
         <>
           <Body>{editor.id ? "Edit category" : "Add category"}</Body>
+          {editor.parentId && (
+            <Body>
+              Under {rows.find((row) => row.id === editor.parentId)?.name}
+            </Body>
+          )}
           <Field
             label="Category name"
             value={editor.name}
@@ -167,7 +190,9 @@ export function CategoryManagement({
               void mutate(() =>
                 editor.id
                   ? source.rename(editor.id, editor.name)
-                  : source.create(editor.name)
+                  : editor.parentId && source.createChild
+                    ? source.createChild(editor.name, editor.parentId)
+                    : source.create(editor.name)
               );
             }}
           />
@@ -182,7 +207,23 @@ export function CategoryManagement({
         </>
       ) : confirmation ? (
         <>
-          <Body>Archive {confirmation.name}?</Body>
+          <Body>
+            Archive{" "}
+            {source.hierarchy
+              ? categoryPath(confirmation, rows)
+              : confirmation.name}
+            ?
+          </Body>
+          {source.hierarchy &&
+            activeCategoryChildren(confirmation, rows).length > 0 && (
+              <Body>
+                Also archives:{" "}
+                {activeCategoryChildren(confirmation, rows)
+                  .map((row) => row.name)
+                  .join(", ")}
+                . Past transactions keep their associations.
+              </Body>
+            )}
           <Body>
             Past transactions keep this category. It will no longer be available
             for new transactions. You can create a new category with the same
@@ -236,15 +277,30 @@ export function CategoryManagement({
           )}
           {visibleRows.map((row) => (
             <View key={row.id}>
-              <Body>
-                {row.name}
-                {row.isDefault ? " (default)" : ""}
-                {row.archivedAt ? " (archived)" : ""}
-              </Body>
-              {!row.archivedAt && (
+              <View style={styles.categoryHeading}>
+                {!demo && <CategoryIcon iconKey={row.iconKey} />}
+                <View style={styles.categoryName}>
+                  <Body>
+                    {source.hierarchy ? categoryPath(row, rows) : row.name}
+                    {row.isDefault ? " (default)" : ""}
+                    {row.archivedAt ? " (archived)" : ""}
+                  </Body>
+                </View>
+              </View>
+              {source.hierarchy && !row.archivedAt && !row.parentId && (
+                <Button
+                  label={`Add subcategory under ${row.name}`}
+                  disabled={busy}
+                  onPress={() => {
+                    setError(null);
+                    setEditor({ name: "", parentId: row.id });
+                  }}
+                />
+              )}
+              {!row.archivedAt && !row.isDefault && (
                 <>
                   <Button
-                    label={`Edit ${row.name}`}
+                    label={`Edit ${source.hierarchy ? categoryPath(row, rows) : row.name}`}
                     disabled={busy}
                     onPress={() => {
                       setError(null);
@@ -252,7 +308,7 @@ export function CategoryManagement({
                     }}
                   />
                   <Button
-                    label={`Archive ${row.name}`}
+                    label={`Archive ${source.hierarchy ? categoryPath(row, rows) : row.name}`}
                     disabled={busy}
                     onPress={() => {
                       setError(null);
@@ -275,3 +331,7 @@ export function CategoryManagement({
     </>
   );
 }
+const styles = StyleSheet.create({
+  categoryHeading: { flexDirection: "row", alignItems: "center", gap: 8 },
+  categoryName: { flex: 1 }
+});

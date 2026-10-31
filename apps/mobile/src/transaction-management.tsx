@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import type { Category, CategorySource } from "./category-data";
+import { categoryPath } from "./category-hierarchy";
+import { CategoryIcon } from "./category-icon";
 import { Body, Button, Field, StateNotice } from "./ui";
 import { ClientFailure } from "./auth/transport";
 import {
@@ -59,6 +61,17 @@ export function TransactionManagement({
 }) {
   const [rows, setRows] = useState<Transaction[]>([]);
   const [choices, setChoices] = useState<Category[]>([]);
+  function categoryLabel(
+    id: string | undefined,
+    fallback = "Category unavailable"
+  ) {
+    const row = choices.find((category) => category.id === id);
+    return row
+      ? categories.hierarchy
+        ? categoryPath(row, choices)
+        : row.name
+      : fallback;
+  }
   const [after, setAfter] = useState<string | null>(null);
   const [filter, setFilter] = useState<TransactionFilter>({});
   const [applied, setApplied] = useState<TransactionFilter>({});
@@ -382,7 +395,7 @@ export function TransactionManagement({
         <>
           <Body>
             {Object.values(applied).some(Boolean)
-              ? `Active filters: ${applied.from ?? "any date"}${applied.to ? ` to ${applied.to}` : ""}, ${applied.direction ?? "all directions"}, ${choices.find((category) => category.id === applied.categoryId)?.name ?? "all categories"}.`
+              ? `Active filters: ${applied.from ?? "any date"}${applied.to ? ` to ${applied.to}` : ""}, ${applied.direction ?? "all directions"}, ${categoryLabel(applied.categoryId, "all categories")}.`
               : "Showing all transactions."}
           </Body>
           <Field
@@ -428,7 +441,10 @@ export function TransactionManagement({
           {choices.map((category) => (
             <Button
               key={category.id}
-              label={`Filter category: ${category.name}${category.archivedAt ? " (archived)" : ""}`}
+              label={`Filter category: ${categoryLabel(category.id)}${category.archivedAt ? " (archived)" : ""}`}
+              leading={
+                !demo ? <CategoryIcon iconKey={category.iconKey} /> : undefined
+              }
               selected={filter.categoryId === category.id}
               disabled={busy}
               onPress={() => setFilter({ ...filter, categoryId: category.id })}
@@ -532,7 +548,12 @@ export function TransactionManagement({
             .map((category) => (
               <Button
                 key={category.id}
-                label={`Category: ${category.name}${category.archivedAt ? " (archived history)" : ""}`}
+                label={`Category: ${categoryLabel(category.id)}${category.archivedAt ? " (archived history)" : ""}`}
+                leading={
+                  !demo ? (
+                    <CategoryIcon iconKey={category.iconKey} />
+                  ) : undefined
+                }
                 selected={draft.categoryId === category.id}
                 disabled={busy || uncertain}
                 onPress={() => setDraft({ ...draft, categoryId: category.id })}
@@ -584,10 +605,7 @@ export function TransactionManagement({
             {amountText(row.amountMinor, row.currency)} {row.currency} ·{" "}
             {row.merchant}
           </Body>
-          <Body>
-            {choices.find((category) => category.id === row.categoryId)?.name ??
-              "Category unavailable"}
-          </Body>
+          <Body>{categoryLabel(row.categoryId)}</Body>
           {row.note && <Body>{row.note}</Body>}
           {detailId && (
             <>

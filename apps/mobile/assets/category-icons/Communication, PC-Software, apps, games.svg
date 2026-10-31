@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Software, apps, games">
+<defs><linearGradient id="g6" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#E4EDFF"/><stop offset="1" stop-color="#4078ED" stop-opacity=".16"/></linearGradient></defs>
+<circle cx="32" cy="32" r="30" fill="url(#g6)"/>
+<g transform="translate(13 13) scale(1.583333)" fill="none" stroke="#4078ED" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="m9 8-4 4 4 4m6-8 4 4-4 4m-2-10-2 12"/></g>
+</svg>

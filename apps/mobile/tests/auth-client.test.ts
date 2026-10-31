@@ -179,19 +179,30 @@ describe("category API adapter", () => {
 });
 
 describe("transport boundaries", () => {
-  it("allows only the implemented v2 preferences path", async () => {
+  it("allows implemented v2 preferences/category paths and rejects unrelated routes", async () => {
     const fetcher = jest.fn<FetchRequest>().mockResolvedValue(response({}));
     const client = createTransport("https://api.example.invalid", fetcher);
-    await client.send("GET", "/v2/preferences", z.unknown());
+    const allowed = [
+      "/v2/preferences",
+      "/v2/categories?status=all&limit=100",
+      "/v2/categories/recent?limit=8",
+      "/v2/categories/00000000-0000-4000-8000-000000000001",
+      "/v2/categories/00000000-0000-4000-8000-000000000001/archive"
+    ];
+    for (const path of allowed) await client.send("GET", path, z.unknown());
     for (const path of [
       "/v2/transactions",
+      "/v2/accounts",
+      "/v2/categories-other",
+      "/v2/categories//other",
+      "/v2/categories/../preferences",
       "/v2/preferences/other",
       "/v2/preferences?userId=other"
     ])
       await expect(client.send("GET", path, z.unknown())).rejects.toMatchObject(
         { kind: "configuration" }
       );
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(allowed.length);
   });
   it.each([
     undefined,

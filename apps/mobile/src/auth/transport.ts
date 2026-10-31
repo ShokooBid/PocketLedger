@@ -98,7 +98,10 @@ export function createTransport(
         !origin ||
         !(
           /^\/v1\/[A-Za-z0-9/?=&_.%-]+$/.test(path) ||
-          path === "/v2/preferences"
+          path === "/v2/preferences" ||
+          /^\/v2\/categories(?:\/[A-Za-z0-9-]+(?:\/archive)?)?(?:\?[A-Za-z0-9=&_.%+-]+)?$/.test(
+            path
+          )
         ) ||
         path.includes("..")
       )
@@ -139,6 +142,9 @@ export function createTransport(
               "code" in data.error &&
               (data.error.code === "CATEGORY_NAME_CONFLICT" ||
                 data.error.code === "CATEGORY_ARCHIVED" ||
+                data.error.code === "DEFAULT_CATEGORY_READ_ONLY" ||
+                data.error.code === "INVALID_CATEGORY" ||
+                data.error.code === "FINANCE_UPGRADE_REQUIRED" ||
                 data.error.code === "CURRENCY_LOCKED" ||
                 data.error.code === "CURRENCY_MISMATCH" ||
                 data.error.code === "CURRENCY_IMMUTABLE" ||

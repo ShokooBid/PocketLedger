@@ -12,6 +12,11 @@ import {
   CategoryFailure,
   type CategorySource
 } from "../src/category-data";
+import {
+  activeCategoryChildren,
+  categoryPath,
+  orderedCategories
+} from "../src/category-hierarchy";
 
 async function press(name: string) {
   await act(async () => {
@@ -37,6 +42,132 @@ async function add(value: string) {
 }
 
 describe("category management", () => {
+  it("explains the supported-client gate when loading a legacy category source", async () => {
+    const source: CategorySource = {
+      list: async () => {
+        throw new CategoryFailure("upgrade");
+      },
+      create: async () => {},
+      rename: async () => {},
+      archive: async () => {}
+    };
+    render(<CategoryManagement source={source} demo={false} />);
+    await waitFor(() =>
+      expect(
+        screen.getByText(/require a newer version of PocketLedger/)
+      ).toBeVisible()
+    );
+    expect(screen.queryByRole("button", { name: "Add category" })).toBeNull();
+  });
+  it("shows hierarchy paths, protects defaults and creates personal children under either root kind", async () => {
+    const rows = [
+      {
+        id: "fixed",
+        name: "Fixed",
+        isDefault: true,
+        archivedAt: null,
+        parentId: null
+      },
+      {
+        id: "own",
+        name: "Personal",
+        isDefault: false,
+        archivedAt: null,
+        parentId: null
+      },
+      {
+        id: "fixed-child",
+        name: "Common",
+        isDefault: true,
+        archivedAt: null,
+        parentId: "fixed"
+      },
+      {
+        id: "own-child",
+        name: "Common",
+        isDefault: false,
+        archivedAt: null,
+        parentId: "own"
+      }
+    ];
+    const createChild = jest
+      .fn<NonNullable<CategorySource["createChild"]>>()
+      .mockResolvedValue("new-child");
+    await open({
+      hierarchy: true,
+      list: async () => rows,
+      create: async () => {},
+      createChild,
+      rename: async () => {},
+      archive: async () => {}
+    });
+    expect(screen.getByText("Fixed / Common (default)")).toBeVisible();
+    expect(screen.getByText("Personal / Common")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Edit Fixed" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Archive Fixed" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Add subcategory under Common" })
+    ).toBeNull();
+    for (const [label, id] of [
+      ["Fixed", "fixed"],
+      ["Personal", "own"]
+    ] as const) {
+      await press(`Add subcategory under ${label}`);
+      await name("New child");
+      await press("Save category");
+      expect(createChild).toHaveBeenLastCalledWith("New child", id);
+    }
+  });
+  it("confirms affected active descendants before archiving a parent", async () => {
+    const rows = [
+      {
+        id: "root",
+        name: "Parent",
+        parentId: null,
+        isDefault: false,
+        archivedAt: null
+      },
+      {
+        id: "child",
+        name: "Active child",
+        parentId: "root",
+        isDefault: false,
+        archivedAt: null
+      },
+      {
+        id: "old",
+        name: "Old child",
+        parentId: "root",
+        isDefault: false,
+        archivedAt: "2026-10-30T00:00:00Z"
+      }
+    ];
+    const archive = jest
+      .fn<CategorySource["archive"]>()
+      .mockResolvedValue(undefined);
+    await open({
+      hierarchy: true,
+      list: async () => rows,
+      create: async () => {},
+      rename: async () => {},
+      archive
+    });
+    await press("Archive Parent");
+    expect(screen.getByText(/Also archives: Active child/)).toBeVisible();
+    expect(archive).not.toHaveBeenCalled();
+    await press("Cancel archive");
+    expect(archive).not.toHaveBeenCalled();
+    await press("Archive Parent");
+    await press("Confirm archive");
+    expect(archive).toHaveBeenCalledWith("root");
+    expect(activeCategoryChildren(rows[0]!, rows).map((row) => row.id)).toEqual(
+      ["child"]
+    );
+    expect(categoryPath(rows[1]!, rows)).toBe("Parent / Active child");
+    expect(
+      orderedCategories([rows[2]!, rows[1]!, rows[0]!]).map((row) => row.id)
+    ).toEqual(["root", "child", "old"]);
+  });
   it("validates, normalizes and renames while retaining invalid/duplicate input", async () => {
     await open();
     await add("   ");

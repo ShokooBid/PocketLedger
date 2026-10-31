@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Vehicle maintenance">
+<defs><linearGradient id="g4" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#EDE7FF"/><stop offset="1" stop-color="#6B4AF6" stop-opacity=".16"/></linearGradient></defs>
+<circle cx="32" cy="32" r="30" fill="url(#g4)"/>
+<g transform="translate(13 13) scale(1.583333)" fill="none" stroke="#6B4AF6" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 6a7 7 0 0 1-9 8L5 21l-3-3 7-7a7 7 0 0 1 8-9l-5 5 5 5 4-6Z"/></g>
+</svg>

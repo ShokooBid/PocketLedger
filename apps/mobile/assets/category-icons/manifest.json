@@ -1,0 +1,562 @@
+[
+  {
+    "category": "Food & Drinks",
+    "subcategory": null,
+    "filename": "Food & Drinks.svg",
+    "icon": "utensils",
+    "color": "#FF6C55"
+  },
+  {
+    "category": "Food & Drinks",
+    "subcategory": "Bar, cafe",
+    "filename": "Food & Drinks-Bar, cafe.svg",
+    "icon": "cup",
+    "color": "#FF6C55"
+  },
+  {
+    "category": "Food & Drinks",
+    "subcategory": "Groceries",
+    "filename": "Food & Drinks-Groceries.svg",
+    "icon": "cart",
+    "color": "#FF6C55"
+  },
+  {
+    "category": "Food & Drinks",
+    "subcategory": "Restaurant, fast-food",
+    "filename": "Food & Drinks-Restaurant, fast-food.svg",
+    "icon": "utensils",
+    "color": "#FF6C55"
+  },
+  {
+    "category": "Shopping",
+    "subcategory": null,
+    "filename": "Shopping.svg",
+    "icon": "bag",
+    "color": "#F58B25"
+  },
+  {
+    "category": "Shopping",
+    "subcategory": "Clothes & shoes",
+    "filename": "Shopping-Clothes & shoes.svg",
+    "icon": "shirt",
+    "color": "#F58B25"
+  },
+  {
+    "category": "Shopping",
+    "subcategory": "Drug-store, chemist",
+    "filename": "Shopping-Drug-store, chemist.svg",
+    "icon": "pill",
+    "color": "#F58B25"
+  },
+  {
+    "category": "Shopping",
+    "subcategory": "Electronics, accessories",
+    "filename": "Shopping-Electronics, accessories.svg",
+    "icon": "laptop",
+    "color": "#F58B25"
+  },
+  {
+    "category": "Shopping",
+    "subcategory": "Free time",
+    "filename": "Shopping-Free time.svg",
+    "icon": "palette",
+    "color": "#F58B25"
+  },
+  {
+    "category": "Shopping",
+    "subcategory": "Gifts, joy",
+    "filename": "Shopping-Gifts, joy.svg",
+    "icon": "gift",
+    "color": "#F58B25"
+  },
+  {
+    "category": "Shopping",
+    "subcategory": "Health and beauty",
+    "filename": "Shopping-Health and beauty.svg",
+    "icon": "flower",
+    "color": "#F58B25"
+  },
+  {
+    "category": "Shopping",
+    "subcategory": "Home, garden",
+    "filename": "Shopping-Home, garden.svg",
+    "icon": "home",
+    "color": "#F58B25"
+  },
+  {
+    "category": "Shopping",
+    "subcategory": "Jewels, accessories",
+    "filename": "Shopping-Jewels, accessories.svg",
+    "icon": "gem",
+    "color": "#F58B25"
+  },
+  {
+    "category": "Shopping",
+    "subcategory": "Kids",
+    "filename": "Shopping-Kids.svg",
+    "icon": "baby",
+    "color": "#F58B25"
+  },
+  {
+    "category": "Shopping",
+    "subcategory": "Pets, animals",
+    "filename": "Shopping-Pets, animals.svg",
+    "icon": "paw",
+    "color": "#F58B25"
+  },
+  {
+    "category": "Shopping",
+    "subcategory": "Stationery, tools",
+    "filename": "Shopping-Stationery, tools.svg",
+    "icon": "pencil",
+    "color": "#F58B25"
+  },
+  {
+    "category": "Housing",
+    "subcategory": null,
+    "filename": "Housing.svg",
+    "icon": "home",
+    "color": "#17B7AE"
+  },
+  {
+    "category": "Housing",
+    "subcategory": "Energy, utilities",
+    "filename": "Housing-Energy, utilities.svg",
+    "icon": "bulb",
+    "color": "#17B7AE"
+  },
+  {
+    "category": "Housing",
+    "subcategory": "Maintenance, repairs",
+    "filename": "Housing-Maintenance, repairs.svg",
+    "icon": "hammer",
+    "color": "#17B7AE"
+  },
+  {
+    "category": "Housing",
+    "subcategory": "Mortgage",
+    "filename": "Housing-Mortgage.svg",
+    "icon": "bank",
+    "color": "#17B7AE"
+  },
+  {
+    "category": "Housing",
+    "subcategory": "Property insurance",
+    "filename": "Housing-Property insurance.svg",
+    "icon": "shield",
+    "color": "#17B7AE"
+  },
+  {
+    "category": "Housing",
+    "subcategory": "Rent",
+    "filename": "Housing-Rent.svg",
+    "icon": "key",
+    "color": "#17B7AE"
+  },
+  {
+    "category": "Housing",
+    "subcategory": "Services",
+    "filename": "Housing-Services.svg",
+    "icon": "gear",
+    "color": "#17B7AE"
+  },
+  {
+    "category": "Transportation",
+    "subcategory": null,
+    "filename": "Transportation.svg",
+    "icon": "bus",
+    "color": "#159EE8"
+  },
+  {
+    "category": "Transportation",
+    "subcategory": "Business trips",
+    "filename": "Transportation-Business trips.svg",
+    "icon": "briefcase",
+    "color": "#159EE8"
+  },
+  {
+    "category": "Transportation",
+    "subcategory": "Long distance",
+    "filename": "Transportation-Long distance.svg",
+    "icon": "plane",
+    "color": "#159EE8"
+  },
+  {
+    "category": "Transportation",
+    "subcategory": "Public transport",
+    "filename": "Transportation-Public transport.svg",
+    "icon": "train",
+    "color": "#159EE8"
+  },
+  {
+    "category": "Transportation",
+    "subcategory": "Taxi",
+    "filename": "Transportation-Taxi.svg",
+    "icon": "car",
+    "color": "#159EE8"
+  },
+  {
+    "category": "Vehicle",
+    "subcategory": null,
+    "filename": "Vehicle.svg",
+    "icon": "car",
+    "color": "#6B4AF6"
+  },
+  {
+    "category": "Vehicle",
+    "subcategory": "Fuel",
+    "filename": "Vehicle-Fuel.svg",
+    "icon": "fuel",
+    "color": "#6B4AF6"
+  },
+  {
+    "category": "Vehicle",
+    "subcategory": "Leasing",
+    "filename": "Vehicle-Leasing.svg",
+    "icon": "coins",
+    "color": "#6B4AF6"
+  },
+  {
+    "category": "Vehicle",
+    "subcategory": "Parking",
+    "filename": "Vehicle-Parking.svg",
+    "icon": "parking",
+    "color": "#6B4AF6"
+  },
+  {
+    "category": "Vehicle",
+    "subcategory": "Rentals",
+    "filename": "Vehicle-Rentals.svg",
+    "icon": "key",
+    "color": "#6B4AF6"
+  },
+  {
+    "category": "Vehicle",
+    "subcategory": "Vehicle insurance",
+    "filename": "Vehicle-Vehicle insurance.svg",
+    "icon": "shield",
+    "color": "#6B4AF6"
+  },
+  {
+    "category": "Vehicle",
+    "subcategory": "Vehicle maintenance",
+    "filename": "Vehicle-Vehicle maintenance.svg",
+    "icon": "wrench",
+    "color": "#6B4AF6"
+  },
+  {
+    "category": "Life & Entertainment",
+    "subcategory": null,
+    "filename": "Life & Entertainment.svg",
+    "icon": "person",
+    "color": "#E34EB0"
+  },
+  {
+    "category": "Life & Entertainment",
+    "subcategory": "Active sport, fitness",
+    "filename": "Life & Entertainment-Active sport, fitness.svg",
+    "icon": "dumbbell",
+    "color": "#E34EB0"
+  },
+  {
+    "category": "Life & Entertainment",
+    "subcategory": "Alcohol, tobacco",
+    "filename": "Life & Entertainment-Alcohol, tobacco.svg",
+    "icon": "bottle",
+    "color": "#E34EB0"
+  },
+  {
+    "category": "Life & Entertainment",
+    "subcategory": "Books, audio, subscriptions",
+    "filename": "Life & Entertainment-Books, audio, subscriptions.svg",
+    "icon": "book",
+    "color": "#E34EB0"
+  },
+  {
+    "category": "Life & Entertainment",
+    "subcategory": "Charity, gifts",
+    "filename": "Life & Entertainment-Charity, gifts.svg",
+    "icon": "gift",
+    "color": "#E34EB0"
+  },
+  {
+    "category": "Life & Entertainment",
+    "subcategory": "Culture, sport events",
+    "filename": "Life & Entertainment-Culture, sport events.svg",
+    "icon": "stars",
+    "color": "#E34EB0"
+  },
+  {
+    "category": "Life & Entertainment",
+    "subcategory": "Education, development",
+    "filename": "Life & Entertainment-Education, development.svg",
+    "icon": "cap",
+    "color": "#E34EB0"
+  },
+  {
+    "category": "Life & Entertainment",
+    "subcategory": "Health care, doctor",
+    "filename": "Life & Entertainment-Health care, doctor.svg",
+    "icon": "medical",
+    "color": "#E34EB0"
+  },
+  {
+    "category": "Life & Entertainment",
+    "subcategory": "Hobbies",
+    "filename": "Life & Entertainment-Hobbies.svg",
+    "icon": "palette",
+    "color": "#E34EB0"
+  },
+  {
+    "category": "Life & Entertainment",
+    "subcategory": "Holiday, trips, hotels",
+    "filename": "Life & Entertainment-Holiday, trips, hotels.svg",
+    "icon": "palm",
+    "color": "#E34EB0"
+  },
+  {
+    "category": "Life & Entertainment",
+    "subcategory": "Life events",
+    "filename": "Life & Entertainment-Life events.svg",
+    "icon": "calendar",
+    "color": "#E34EB0"
+  },
+  {
+    "category": "Life & Entertainment",
+    "subcategory": "Lottery, gambling",
+    "filename": "Life & Entertainment-Lottery, gambling.svg",
+    "icon": "dice",
+    "color": "#E34EB0"
+  },
+  {
+    "category": "Life & Entertainment",
+    "subcategory": "TV, Streaming",
+    "filename": "Life & Entertainment-TV, Streaming.svg",
+    "icon": "video",
+    "color": "#E34EB0"
+  },
+  {
+    "category": "Life & Entertainment",
+    "subcategory": "Wellness, beauty",
+    "filename": "Life & Entertainment-Wellness, beauty.svg",
+    "icon": "flower",
+    "color": "#E34EB0"
+  },
+  {
+    "category": "Communication, PC",
+    "subcategory": null,
+    "filename": "Communication, PC.svg",
+    "icon": "laptop",
+    "color": "#4078ED"
+  },
+  {
+    "category": "Communication, PC",
+    "subcategory": "Internet",
+    "filename": "Communication, PC-Internet.svg",
+    "icon": "wifi",
+    "color": "#4078ED"
+  },
+  {
+    "category": "Communication, PC",
+    "subcategory": "Phone, cell phone",
+    "filename": "Communication, PC-Phone, cell phone.svg",
+    "icon": "phone",
+    "color": "#4078ED"
+  },
+  {
+    "category": "Communication, PC",
+    "subcategory": "Postal services",
+    "filename": "Communication, PC-Postal services.svg",
+    "icon": "mail",
+    "color": "#4078ED"
+  },
+  {
+    "category": "Communication, PC",
+    "subcategory": "Software, apps, games",
+    "filename": "Communication, PC-Software, apps, games.svg",
+    "icon": "code",
+    "color": "#4078ED"
+  },
+  {
+    "category": "Financial expenses",
+    "subcategory": null,
+    "filename": "Financial expenses.svg",
+    "icon": "wallet",
+    "color": "#16B3BE"
+  },
+  {
+    "category": "Financial expenses",
+    "subcategory": "Advisory",
+    "filename": "Financial expenses-Advisory.svg",
+    "icon": "person",
+    "color": "#16B3BE"
+  },
+  {
+    "category": "Financial expenses",
+    "subcategory": "Charges, Fees",
+    "filename": "Financial expenses-Charges, Fees.svg",
+    "icon": "receipt",
+    "color": "#16B3BE"
+  },
+  {
+    "category": "Financial expenses",
+    "subcategory": "Child Support",
+    "filename": "Financial expenses-Child Support.svg",
+    "icon": "hand",
+    "color": "#16B3BE"
+  },
+  {
+    "category": "Financial expenses",
+    "subcategory": "Fines",
+    "filename": "Financial expenses-Fines.svg",
+    "icon": "alert",
+    "color": "#16B3BE"
+  },
+  {
+    "category": "Financial expenses",
+    "subcategory": "Insurances",
+    "filename": "Financial expenses-Insurances.svg",
+    "icon": "shield",
+    "color": "#16B3BE"
+  },
+  {
+    "category": "Financial expenses",
+    "subcategory": "Loan, interests",
+    "filename": "Financial expenses-Loan, interests.svg",
+    "icon": "bank",
+    "color": "#16B3BE"
+  },
+  {
+    "category": "Financial expenses",
+    "subcategory": "Taxes",
+    "filename": "Financial expenses-Taxes.svg",
+    "icon": "percent",
+    "color": "#16B3BE"
+  },
+  {
+    "category": "Investments",
+    "subcategory": null,
+    "filename": "Investments.svg",
+    "icon": "network",
+    "color": "#AC56D9"
+  },
+  {
+    "category": "Investments",
+    "subcategory": "Collections",
+    "filename": "Investments-Collections.svg",
+    "icon": "gem",
+    "color": "#AC56D9"
+  },
+  {
+    "category": "Investments",
+    "subcategory": "Financial investments",
+    "filename": "Investments-Financial investments.svg",
+    "icon": "chart",
+    "color": "#AC56D9"
+  },
+  {
+    "category": "Investments",
+    "subcategory": "Realty",
+    "filename": "Investments-Realty.svg",
+    "icon": "building",
+    "color": "#AC56D9"
+  },
+  {
+    "category": "Investments",
+    "subcategory": "Savings",
+    "filename": "Investments-Savings.svg",
+    "icon": "piggy",
+    "color": "#AC56D9"
+  },
+  {
+    "category": "Investments",
+    "subcategory": "Vehicles, chattels",
+    "filename": "Investments-Vehicles, chattels.svg",
+    "icon": "car",
+    "color": "#AC56D9"
+  },
+  {
+    "category": "Income",
+    "subcategory": null,
+    "filename": "Income.svg",
+    "icon": "coins",
+    "color": "#E5A11C"
+  },
+  {
+    "category": "Income",
+    "subcategory": "Checks, coupons",
+    "filename": "Income-Checks, coupons.svg",
+    "icon": "check",
+    "color": "#E5A11C"
+  },
+  {
+    "category": "Income",
+    "subcategory": "Child Support",
+    "filename": "Income-Child Support.svg",
+    "icon": "baby",
+    "color": "#E5A11C"
+  },
+  {
+    "category": "Income",
+    "subcategory": "Dues & grants",
+    "filename": "Income-Dues & grants.svg",
+    "icon": "award",
+    "color": "#E5A11C"
+  },
+  {
+    "category": "Income",
+    "subcategory": "Gifts",
+    "filename": "Income-Gifts.svg",
+    "icon": "gift",
+    "color": "#E5A11C"
+  },
+  {
+    "category": "Income",
+    "subcategory": "Interests, dividends",
+    "filename": "Income-Interests, dividends.svg",
+    "icon": "percent",
+    "color": "#E5A11C"
+  },
+  {
+    "category": "Income",
+    "subcategory": "Lending, renting",
+    "filename": "Income-Lending, renting.svg",
+    "icon": "hand",
+    "color": "#E5A11C"
+  },
+  {
+    "category": "Income",
+    "subcategory": "Lottery, gambling",
+    "filename": "Income-Lottery, gambling.svg",
+    "icon": "dice",
+    "color": "#E5A11C"
+  },
+  {
+    "category": "Income",
+    "subcategory": "Refunds (tax, purchase)",
+    "filename": "Income-Refunds (tax, purchase).svg",
+    "icon": "arrowback",
+    "color": "#E5A11C"
+  },
+  {
+    "category": "Income",
+    "subcategory": "Rental income",
+    "filename": "Income-Rental income.svg",
+    "icon": "home",
+    "color": "#E5A11C"
+  },
+  {
+    "category": "Income",
+    "subcategory": "Sale",
+    "filename": "Income-Sale.svg",
+    "icon": "price",
+    "color": "#E5A11C"
+  },
+  {
+    "category": "Income",
+    "subcategory": "Wage, invoices",
+    "filename": "Income-Wage, invoices.svg",
+    "icon": "cash",
+    "color": "#E5A11C"
+  }
+]

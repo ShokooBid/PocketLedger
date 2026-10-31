@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Collections">
+<defs><linearGradient id="g8" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F3E5FC"/><stop offset="1" stop-color="#AC56D9" stop-opacity=".16"/></linearGradient></defs>
+<circle cx="32" cy="32" r="30" fill="url(#g8)"/>
+<g transform="translate(13 13) scale(1.583333)" fill="none" stroke="#AC56D9" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 8 3h8l5 6-9 12L3 9Zm0 0h18M8 3l4 18 4-18"/></g>
+</svg>

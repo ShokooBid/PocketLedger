@@ -14,16 +14,37 @@ const page = z.object({
   items: z.array(category),
   nextCursor: z.uuid().nullable()
 });
-export function createApiCategorySource(client: Transport): CategorySource {
+const hierarchyCategory = category.extend({
+  parentId: z.uuid().nullable(),
+  defaultKey: z.string().nullable(),
+  iconKey: z.string(),
+  colorKey: z.string(),
+  sortOrder: z.number().int()
+});
+export function createApiCategorySource(
+  client: Transport,
+  hierarchy = false
+): CategorySource {
+  const base = hierarchy ? "/v2/categories" : "/v1/categories";
+  const rowSchema = hierarchy ? hierarchyCategory : category;
+  const pageSchema = page.extend({ items: z.array(rowSchema) });
   async function mutate(method: "POST" | "PATCH", path: string, body: unknown) {
     try {
-      await client.send(method, path, category, body);
+      return await client.send(method, path, rowSchema, body);
     } catch (error) {
       if (error instanceof ClientFailure) {
-        if (error.kind === "validation")
-          throw new CategoryFailure("validation");
         if (error.code === "CATEGORY_NAME_CONFLICT")
           throw new CategoryFailure("duplicate");
+        if (error.code === "DEFAULT_CATEGORY_READ_ONLY")
+          throw new CategoryFailure("read-only");
+        if (error.code === "INVALID_CATEGORY")
+          throw new CategoryFailure("invalid-parent");
+        if (error.code === "FINANCE_UPGRADE_REQUIRED")
+          throw new CategoryFailure("upgrade");
+        if (error.code === "FINANCE_FEATURE_DISABLED")
+          throw new CategoryFailure("disabled");
+        if (error.kind === "validation")
+          throw new CategoryFailure("validation");
         if (error.kind === "unavailable" || error.code === "CATEGORY_ARCHIVED")
           throw new CategoryFailure("unavailable");
         if (["network", "server", "protocol"].includes(error.kind))
@@ -33,16 +54,27 @@ export function createApiCategorySource(client: Transport): CategorySource {
     }
   }
   return {
+    hierarchy,
     async list() {
-      const rows: z.infer<typeof category>[] = [];
+      const rows: z.infer<typeof rowSchema>[] = [];
       const cursors = new Set<string>();
       let after: string | null = null;
       do {
-        const result: z.infer<typeof page> = await client.send(
-          "GET",
-          `/v1/categories?status=all&limit=100${after ? `&after=${after}` : ""}`,
-          page
-        );
+        const result: z.infer<typeof pageSchema> = await client
+          .send(
+            "GET",
+            `${base}?status=all&limit=100${after ? `&after=${after}` : ""}`,
+            pageSchema
+          )
+          .catch((error: unknown) => {
+            if (error instanceof ClientFailure) {
+              if (error.code === "FINANCE_UPGRADE_REQUIRED")
+                throw new CategoryFailure("upgrade");
+              if (error.code === "FINANCE_FEATURE_DISABLED")
+                throw new CategoryFailure("disabled");
+            }
+            throw error;
+          });
         rows.push(...result.items);
         after = result.nextCursor;
         if (after && (cursors.has(after) || result.items.length === 0))
@@ -51,10 +83,20 @@ export function createApiCategorySource(client: Transport): CategorySource {
       } while (after);
       return rows;
     },
-    create: (name) => mutate("POST", "/v1/categories", { name }),
-    rename: (id, name) =>
-      mutate("PATCH", `/v1/categories/${encodeURIComponent(id)}`, { name }),
-    archive: (id) =>
-      mutate("POST", `/v1/categories/${encodeURIComponent(id)}/archive`, {})
+    create: async (name) => {
+      await mutate("POST", base, { name });
+    },
+    ...(hierarchy
+      ? {
+          createChild: async (name: string, parentId: string) =>
+            (await mutate("POST", base, { name, parentId })).id
+        }
+      : {}),
+    rename: async (id, name) => {
+      await mutate("PATCH", `${base}/${encodeURIComponent(id)}`, { name });
+    },
+    archive: async (id) => {
+      await mutate("POST", `${base}/${encodeURIComponent(id)}/archive`, {});
+    }
   };
 }

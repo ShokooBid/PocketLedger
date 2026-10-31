@@ -4,7 +4,11 @@ import { PrismaClient } from "./generated/prisma/client.js";
 // Callers supply configuration explicitly; importing this module opens no pool.
 export function createDatabaseClient(databaseUrl: string): PrismaClient {
   if (!databaseUrl) throw new Error("DATABASE_URL is required.");
+  const schema = new URL(databaseUrl).searchParams.get("schema") ?? undefined;
   return new PrismaClient({
-    adapter: new PrismaPg({ connectionString: databaseUrl })
+    adapter: new PrismaPg(
+      { connectionString: databaseUrl },
+      schema ? { schema } : {}
+    )
   });
 }

@@ -1,4 +1,4 @@
-import { type PropsWithChildren } from "react";
+import { type PropsWithChildren, type ReactNode } from "react";
 import { Link, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -29,7 +29,8 @@ export function Button({
   hint,
   disabled = false,
   selected = false,
-  variant = "secondary"
+  variant = "secondary",
+  leading
 }: {
   label: string;
   onPress: () => void;
@@ -37,6 +38,7 @@ export function Button({
   disabled?: boolean;
   selected?: boolean;
   variant?: "primary" | "secondary";
+  leading?: ReactNode;
 }) {
   return (
     <Pressable
@@ -48,14 +50,17 @@ export function Button({
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
+        !!leading && styles.buttonWithIcon,
         (variant === "primary" || selected) && styles.buttonPrimary,
         selected && styles.buttonSelected,
         (pressed || disabled) && styles.pressed
       ]}
     >
+      {leading}
       <Text
         style={[
           styles.buttonText,
+          !!leading && styles.buttonTextWithIcon,
           (variant === "primary" || selected) && styles.buttonTextPrimary
         ]}
       >
@@ -220,6 +225,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.color.primary,
     borderColor: theme.color.primary
   },
+  buttonWithIcon: { flexDirection: "row", gap: 8 },
+  buttonTextWithIcon: { flexShrink: 1 },
   buttonSelected: { borderColor: theme.color.accent, borderWidth: 2 },
   pressed: { opacity: 0.8 },
   buttonText: {

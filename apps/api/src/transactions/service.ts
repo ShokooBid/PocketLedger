@@ -7,7 +7,7 @@ import { ApiError } from "../errors.js";
 import type {
   TransactionInput,
   TransactionPatch,
-  TransactionQuery
+  HierarchyTransactionQuery
 } from "./contracts.js";
 import { currencySchema } from "./contracts.js";
 import {
@@ -39,11 +39,13 @@ async function checkCategory(
   userId: string,
   id: string
 ) {
-  // Share lock serializes new assignments with category archival. The existing
-  // DB trigger is a second guard for writes outside this service.
+  // Caller holds the owner lock, also used by hierarchy mutations and triggers.
   const rows = await tx.$queryRaw<
     { id: string }[]
-  >`SELECT id FROM "Category" WHERE id = ${id}::uuid AND "userId" = ${userId}::uuid AND "archivedAt" IS NULL FOR SHARE`;
+  >`SELECT c.id FROM "Category" c
+    LEFT JOIN "Category" p ON p.id = c."parentId" AND p."userId" = c."userId"
+    WHERE c.id = ${id}::uuid AND c."userId" = ${userId}::uuid AND c."archivedAt" IS NULL
+      AND (c."parentId" IS NULL OR p."archivedAt" IS NULL)`;
   if (!rows.length) throw invalidCategory();
 }
 export function createTransactionService(
@@ -51,7 +53,7 @@ export function createTransactionService(
   currencyPreferencesEnabled = false
 ) {
   return {
-    async list(userId: string, query: TransactionQuery) {
+    async list(userId: string, query: HierarchyTransactionQuery) {
       const boundary = query.after
         ? {
             date: new Date(query.after.slice(0, 10)),
@@ -61,7 +63,19 @@ export function createTransactionService(
       const rows = await db.transaction.findMany({
         where: {
           userId,
-          ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+          ...(query.categoryId
+            ? query.includeSubcategories
+              ? {
+                  category: {
+                    userId,
+                    OR: [
+                      { id: query.categoryId },
+                      { parentId: query.categoryId }
+                    ]
+                  }
+                }
+              : { categoryId: query.categoryId }
+            : {}),
           ...(query.direction ? { direction: query.direction } : {}),
           ...(query.from && query.to
             ? { date: { gte: new Date(query.from), lte: new Date(query.to) } }

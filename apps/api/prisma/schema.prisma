@@ -117,16 +117,25 @@ model Category {
   userId       String        @db.Uuid
   name         String        @db.VarChar(100)
   isDefault    Boolean       @default(false)
+  parentId     String?       @db.Uuid
+  defaultKey   String?       @db.VarChar(100)
+  iconKey      String        @default("category") @db.VarChar(40)
+  colorKey     String        @default("neutral") @db.VarChar(40)
+  sortOrder    Int           @default(0)
   archivedAt   DateTime?     @db.Timestamptz(3)
   createdAt    DateTime      @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime      @default(now()) @updatedAt @db.Timestamptz(3)
   user         User          @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   transactions Transaction[]
+  parent       Category?     @relation("CategoryHierarchy", fields: [parentId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict, map: "Category_parent_owner_fkey")
+  children     Category[]    @relation("CategoryHierarchy")
 
   // A composite target lets the transaction foreign key enforce ownership.
   @@unique([id, userId])
+  @@unique([userId, defaultKey])
   // Active normalized-name uniqueness lives in the hand-written partial index.
   @@index([userId, archivedAt])
+  @@index([userId, parentId, archivedAt])
 }
 
 model Transaction {

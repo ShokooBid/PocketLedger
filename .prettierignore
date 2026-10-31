@@ -8,3 +8,5 @@ apps/mobile/expo-env.d.ts
 docs/*
 !docs/mobile-redesign/
 package-lock.json
+# Keep the supplied SVG source pack verbatim; its generated TS registry is formatted.
+apps/mobile/assets/category-icons/*.svg
