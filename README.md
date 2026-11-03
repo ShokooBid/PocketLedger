@@ -186,7 +186,18 @@ Google-only users may have no password. The upgrade preserves existing finance
 records. Demo seeds
 also set `disabledAt`, and never seed provider credentials or usable tokens.
 
-Run integration tests against a separate disposable PostgreSQL service:
+To run both API and mobile integration suites using your existing local
+PostgreSQL database and the root `.env`, use:
+
+```powershell
+npm run test:integration:local
+```
+
+This command enables `TEST_USE_LOCAL_DATABASE` only for its child process. The
+existing harness requires a loopback database URL, creates disposable test schemas,
+and removes those schemas afterward without changing application rows.
+
+Alternatively, run integration tests against a separate disposable PostgreSQL service:
 
 ```powershell
 docker compose -f compose.test.yaml up -d --wait
@@ -197,8 +208,9 @@ npm run test:integration
 **Warning:** each test run creates and then deletes its own randomly named
 synthetic database. `docker compose -f compose.test.yaml down` removes the
 test container and all of its temporary data. The development Compose service
-and its named volume are separate and are not touched. Tests require the explicit
-`TEST_DATABASE_URL`; they never fall back to `DATABASE_URL`.
+and its named volume are separate and are not touched. The standard
+`test:integration` command requires an explicit `TEST_DATABASE_URL`; local schema
+mode requires the explicit `test:integration:local` command or environment opt-in.
 
 See the [Issue #6 walkthrough](docs/issue-6-implementation-walkthrough.md) for
 the ownership constraints, schema choices, generated files, and commands.

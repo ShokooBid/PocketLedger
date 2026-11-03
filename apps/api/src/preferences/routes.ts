@@ -41,11 +41,10 @@ export function registerPreferencesRoutes(
         querystring: empty,
         body: preferencesPatch,
         description:
-          "Set entry currency before the first saved transaction. Same-currency writes are idempotent; later changes return CURRENCY_LOCKED. Account preferences arrive with financial accounts.",
+          "Nonempty currency/default-account patch. Currency changes after the first posting return CURRENCY_LOCKED. Defaults must be owned, active and match the resulting currency. Changing currency alone clears an incompatible default without changing account money. Default selection requires the accounts preview gate.",
         response: { ...errors, 200: preferencesSchema }
       }
     },
-    (request) =>
-      service.update(request.principal!.userId, request.body.entryCurrency)
+    (request) => service.update(request.principal!.userId, request.body)
   );
 }

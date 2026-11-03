@@ -1,24 +1,11 @@
 import { z } from "zod";
+import { financeName, normalizeFinanceName } from "../finance/names.js";
 
 // Match the migration's explicit ASCII whitespace set, independent of DB locale.
-export const normalizeCategoryName = (name: string) =>
-  name.replace(/[ \t\n\r\f\v]+/g, " ").replace(/^ | $/g, "");
+export const normalizeCategoryName = normalizeFinanceName;
 
 export const categoryInput = z.strictObject({
-  name: z
-    .string()
-    .max(1000)
-    .transform(normalizeCategoryName)
-    .pipe(
-      z
-        .string()
-        .min(1)
-        .max(100)
-        .refine(
-          (name) => !/[\p{Cc}\p{Cf}\p{Cs}]/u.test(name) && /\S/u.test(name),
-          "Use a visible name without control characters."
-        )
-    )
+  name: financeName
 });
 export const categorySchema = z.object({
   id: z.uuid(),

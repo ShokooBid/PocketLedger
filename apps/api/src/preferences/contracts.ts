@@ -4,9 +4,12 @@ import { currencySchema } from "../transactions/contracts.js";
 export const preferencesSchema = z.object({
   entryCurrency: currencySchema,
   currencyLocked: z.boolean(),
-  // Financial accounts arrive in #68; there cannot be a selected account yet.
-  defaultAccountId: z.null()
+  defaultAccountId: z.uuid().nullable()
 });
-export const preferencesPatch = z.strictObject({
-  entryCurrency: currencySchema
-});
+export const preferencesPatch = z
+  .strictObject({
+    entryCurrency: currencySchema.optional(),
+    defaultAccountId: z.uuid().nullable().optional()
+  })
+  .refine((value) => Object.keys(value).length > 0);
+export type PreferencesPatch = z.infer<typeof preferencesPatch>;

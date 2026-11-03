@@ -103,7 +103,7 @@ describe("gated persisted currency preferences", () => {
       { entryCurrency: "cad" },
       { entryCurrency: "CAD", userId: randomUUID() },
       { entryCurrency: "USD", currencyLocked: false },
-      { entryCurrency: "USD", defaultAccountId: randomUUID() }
+      { entryCurrency: "USD", defaultAccountId: "invalid" }
     ])
       expect(
         (await request(user, "PATCH", undefined, payload)).statusCode
