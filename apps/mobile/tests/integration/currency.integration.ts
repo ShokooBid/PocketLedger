@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../../../api/src/app.js";
 import { createAuthService } from "../../../api/src/auth/service.js";
 import { createPreferencesService } from "../../../api/src/preferences/service.js";
+import { createAccountService } from "../../../api/src/accounts/service.js";
 import { createTransactionService } from "../../../api/src/transactions/service.js";
 import { testConfig } from "../../../api/tests/fixtures.js";
 import { disposableDatabase } from "../../../api/tests/support/disposable.js";
@@ -26,7 +27,7 @@ beforeAll(async () => {
   });
   app = await buildApp(config, auth, {
     logger: false,
-    preferences: createPreferencesService(db, true),
+    preferences: createPreferencesService(db, true, true),
     transactions: createTransactionService(db, true)
   });
 });
@@ -65,10 +66,32 @@ async function owner() {
     send: (method, path, schema, body) =>
       transport.send(method, path, schema, body, registered.json().accessToken)
   };
-  return { client, categoryId: category.id };
+  return { client, categoryId: category.id, id: user.id };
 }
 
 describe("mobile currency contracts against real API/PostgreSQL", () => {
+  it("reads a selected account without breaking existing currency Settings", async () => {
+    const user = await owner();
+    const account = await createAccountService(db, true).create(user.id, {
+      name: "User cash",
+      type: "cash",
+      currency: "CAD",
+      openingDate: "2026-01-01",
+      openingBalanceMinor: -100
+    });
+    await createPreferencesService(db, true, true).update(user.id, {
+      defaultAccountId: account.id
+    });
+    const source = createApiPreferencesSource(user.client);
+    expect(await source.get()).toMatchObject({
+      entryCurrency: "CAD",
+      defaultAccountId: account.id
+    });
+    expect(await source.update("USD")).toMatchObject({
+      entryCurrency: "USD",
+      defaultAccountId: null
+    });
+  });
   it("round-trips CAD exactly and enforces the first-save lock through real adapters", async () => {
     const user = await owner();
     const preferences = createApiPreferencesSource(user.client);

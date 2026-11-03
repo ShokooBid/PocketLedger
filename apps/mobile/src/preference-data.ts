@@ -5,7 +5,7 @@ import { ClientFailure, type Transport } from "./auth/transport";
 export const currencyPreferencesSchema = z.object({
   entryCurrency: currencySchema,
   currencyLocked: z.boolean(),
-  defaultAccountId: z.null()
+  defaultAccountId: z.uuid().nullable()
 });
 export type CurrencyPreferences = z.infer<typeof currencyPreferencesSchema>;
 export type CurrencySettingsState = {

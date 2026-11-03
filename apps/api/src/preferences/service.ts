@@ -8,12 +8,13 @@ import {
   currencySchema,
   type TransactionInput
 } from "../transactions/contracts.js";
+import type { PreferencesPatch } from "./contracts.js";
 
 type Tx = Prisma.TransactionClient;
 const serialize = (row: FinancePreferences) => ({
   entryCurrency: currencySchema.parse(row.entryCurrency),
   currencyLocked: row.currencyLockedAt !== null,
-  defaultAccountId: null
+  defaultAccountId: row.defaultAccountId
 });
 
 export async function lockFinanceOwner(tx: Tx, userId: string) {
@@ -25,7 +26,7 @@ export async function lockFinanceOwner(tx: Tx, userId: string) {
 
 // Caller holds the owner lock. No legacy inference/mixed-currency migration:
 // the user chose fresh test ledgers for this gated increment.
-async function activate(tx: Tx, userId: string) {
+export async function activateFinancePreferences(tx: Tx, userId: string) {
   const existing = await tx.financePreferences.findUnique({
     where: { userId }
   });
@@ -62,7 +63,7 @@ export async function assertNewTransactionCurrency(
 ) {
   await lockFinanceOwner(tx, userId);
   const row = activateFlow
-    ? await activate(tx, userId)
+    ? await activateFinancePreferences(tx, userId)
     : await tx.financePreferences.findUnique({ where: { userId } });
   if (row && row.entryCurrency !== currency)
     throw new ApiError(
@@ -72,7 +73,11 @@ export async function assertNewTransactionCurrency(
     );
 }
 
-export function createPreferencesService(db: PrismaClient, enabled: boolean) {
+export function createPreferencesService(
+  db: PrismaClient,
+  enabled: boolean,
+  accountsEnabled = false
+) {
   function available() {
     if (!enabled)
       throw new ApiError(
@@ -86,25 +91,57 @@ export function createPreferencesService(db: PrismaClient, enabled: boolean) {
       available();
       return db.$transaction(async (tx) => {
         await lockFinanceOwner(tx, userId);
-        return serialize(await activate(tx, userId));
+        return serialize(await activateFinancePreferences(tx, userId));
       });
     },
-    async update(userId: string, entryCurrency: TransactionInput["currency"]) {
+    async update(userId: string, patch: PreferencesPatch) {
       available();
+      if (patch.defaultAccountId !== undefined && !accountsEnabled)
+        throw new ApiError(
+          409,
+          "FINANCE_FEATURE_DISABLED",
+          "Financial accounts are not enabled in this release."
+        );
       return db.$transaction(async (tx) => {
         await lockFinanceOwner(tx, userId);
-        const row = await activate(tx, userId);
-        if (row.entryCurrency === entryCurrency) return serialize(row);
-        if (row.currencyLockedAt)
+        const row = await activateFinancePreferences(tx, userId);
+        const entryCurrency =
+          patch.entryCurrency ?? currencySchema.parse(row.entryCurrency);
+        if (row.entryCurrency !== entryCurrency && row.currencyLockedAt)
           throw new ApiError(
             409,
             "CURRENCY_LOCKED",
             "Currency is locked after the first saved transaction."
           );
+        let defaultAccountId =
+          patch.defaultAccountId === undefined
+            ? row.defaultAccountId
+            : patch.defaultAccountId;
+        if (defaultAccountId !== null) {
+          const account = await tx.account.findFirst({
+            where: { id: defaultAccountId, userId }
+          });
+          if (!account)
+            throw new ApiError(404, "NOT_FOUND", "Resource not found.");
+          if (account.archivedAt || account.currency !== entryCurrency) {
+            if (patch.defaultAccountId !== undefined)
+              throw new ApiError(
+                422,
+                "INVALID_ACCOUNT",
+                "Choose an active account in the configured currency."
+              );
+            defaultAccountId = null;
+          }
+        }
+        if (
+          row.entryCurrency === entryCurrency &&
+          row.defaultAccountId === defaultAccountId
+        )
+          return serialize(row);
         return serialize(
           await tx.financePreferences.update({
             where: { userId },
-            data: { entryCurrency }
+            data: { entryCurrency, defaultAccountId }
           })
         );
       });

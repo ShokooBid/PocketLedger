@@ -9,6 +9,7 @@ import { createHierarchyCategoryService } from "./categories/hierarchy-service.j
 import { createTransactionService } from "./transactions/service.js";
 import { createDashboardService } from "./dashboard/service.js";
 import { createPreferencesService } from "./preferences/service.js";
+import { createAccountService } from "./accounts/service.js";
 
 // Explicit environment only; no implicit .env loading or configuration dumps.
 const config = readConfig(process.env);
@@ -21,7 +22,12 @@ const app = await buildApp(config, auth, {
     config.categoryHierarchyEnabled
   ),
   transactions: createTransactionService(db, config.currencyPreferencesEnabled),
-  preferences: createPreferencesService(db, config.currencyPreferencesEnabled),
+  preferences: createPreferencesService(
+    db,
+    config.currencyPreferencesEnabled,
+    config.accountsEnabled
+  ),
+  accounts: createAccountService(db, config.accountsEnabled),
   dashboard: createDashboardService(db)
 });
 app.addHook("onClose", async () => {

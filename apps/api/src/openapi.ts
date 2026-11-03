@@ -7,6 +7,7 @@ import type { HierarchyCategoryService } from "./categories/hierarchy-service.js
 import type { TransactionService } from "./transactions/service.js";
 import type { DashboardService } from "./dashboard/service.js";
 import type { PreferencesService } from "./preferences/service.js";
+import type { AccountService } from "./accounts/service.js";
 
 // Route registration only: no database connection, provider call or credentials.
 const config = readConfig({
@@ -20,7 +21,8 @@ const app = await buildApp(config, {} as AuthService, {
   hierarchyCategories: {} as HierarchyCategoryService,
   transactions: {} as TransactionService,
   dashboard: {} as DashboardService,
-  preferences: {} as PreferencesService
+  preferences: {} as PreferencesService,
+  accounts: {} as AccountService
 });
 try {
   await app.ready();

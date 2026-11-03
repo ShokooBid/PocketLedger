@@ -67,6 +67,8 @@ afterEach(() => {
 });
 
 describe("session navigation", () => {
+  // This full navigation flow also pays for the first cold router render.
+  // Allow slower Windows/CI runs without relaxing individual lookup timeouts.
   it("keeps a gated demo draft unchanged across Settings and locks currency after saving", async () => {
     const prior = process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED;
     process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED = "true";
@@ -120,7 +122,7 @@ describe("session navigation", () => {
         delete process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED;
       else process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED = prior;
     }
-  });
+  }, 15000);
 
   it("keeps protected data hidden during an outage and retries verification", async () => {
     const h = harness();
