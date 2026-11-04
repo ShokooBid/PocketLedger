@@ -11,7 +11,7 @@
     "lint": "eslint . --max-warnings=0",
     "test": "jest --runInBand",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "expo customize tsconfig.json && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "expo": "~58.0.20",
