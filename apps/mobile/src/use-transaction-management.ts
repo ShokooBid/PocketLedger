@@ -2,7 +2,7 @@ import { randomUUID } from "expo-crypto";
 import type { Account, AccountSource } from "./account-data";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Category, CategorySource } from "./category-data";
-import { categoryPath } from "./category-hierarchy";
+import { categoryPath, selectableCategory } from "./category-hierarchy";
 import { ClientFailure } from "./auth/transport";
 import {
   appendTransactionPage,
@@ -92,6 +92,7 @@ export function useTransactionManagement({
         }
       : null
   );
+  const [picker, setPicker] = useState<"category" | "account" | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [deleting, setDeleting] = useState<Transaction | null>(null);
   const [busy, setBusy] = useState(false);
@@ -414,6 +415,41 @@ export function useTransactionManagement({
         row.currency === draft.currency &&
         (!row.archivedAt || row.id === editing?.accountId)
     );
+  const draftCategoryUnavailable =
+    !!draft?.categoryId &&
+    draft.categoryId !== editing?.categoryId &&
+    !choices.some(
+      (row) => row.id === draft.categoryId && selectableCategory(row, choices)
+    );
+  const draftHistoricalCategory =
+    !!draft &&
+    draft.categoryId === editing?.categoryId &&
+    choices.some(
+      (row) => row.id === draft.categoryId && !selectableCategory(row, choices)
+    );
+  const draftHistoricalAccount =
+    !!draft &&
+    draft.accountId === editing?.accountId &&
+    accountChoices.some(
+      (row) => row.id === draft.accountId && !!row.archivedAt
+    );
+  function selectCategory(id: string, items: Category[]) {
+    setChoices(items);
+    setDraft((previous) =>
+      previous ? { ...previous, categoryId: id } : previous
+    );
+    setPicker(null);
+  }
+  function selectAccount(id: string, items: Account[]) {
+    accountRevision.current++;
+    setAccountChoices(items);
+    setAccountsReady(true);
+    setAccountError(null);
+    setDraft((previous) =>
+      previous ? { ...previous, accountId: id } : previous
+    );
+    setPicker(null);
+  }
   const disabled =
     busy || uncertain || !ready || !preferencesReady || !accountsReady;
   return {
@@ -448,6 +484,13 @@ export function useTransactionManagement({
     disabled,
     draftCurrencyMismatch,
     draftAccountUnavailable,
+    draftCategoryUnavailable,
+    draftHistoricalCategory,
+    draftHistoricalAccount,
+    picker,
+    setPicker,
+    selectCategory,
+    selectAccount,
     load,
     mutate,
     edit,

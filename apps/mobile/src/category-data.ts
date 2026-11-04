@@ -12,7 +12,8 @@ export type Category = {
 export interface CategorySource {
   hierarchy?: boolean;
   list(): Promise<Category[]>;
-  create(name: string): Promise<void>;
+  recent(): Promise<Category[]>;
+  create(name: string): Promise<string>;
   createChild?(name: string, parentId: string): Promise<string>;
   rename(id: string, name: string): Promise<void>;
   archive(id: string): Promise<void>;
@@ -77,12 +78,17 @@ export function createDemoCategorySource(): CategorySource {
     async list() {
       return rows.map((row) => ({ ...row }));
     },
+    async recent() {
+      // Demo has no server-owned transaction recency query.
+      return [];
+    },
     async create(raw) {
       const name = checkedName(raw);
       rows = [
         ...rows,
         { id: `demo-${++sequence}`, name, isDefault: false, archivedAt: null }
       ];
+      return rows[rows.length - 1]!.id;
     },
     async rename(id, raw) {
       const row = rows.find((row) => row.id === id && !row.archivedAt);

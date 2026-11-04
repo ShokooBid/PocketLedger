@@ -1,4 +1,5 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import { z } from "zod";
 import { Body, Button, Screen } from "../../../ui";
 import { useCategories } from "../../../category-context";
@@ -23,6 +24,19 @@ function TransactionDetailScreen() {
   const { session } = useSession();
   const { defaultCurrency, defaultAccountId, currencyState } = usePreferences();
   const router = useRouter();
+  const [active, setActive] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      setActive(true);
+      void currencyState.reload();
+      return () => setActive(false);
+    }, [currencyState.reload])
+  );
+  const openDraftSettings = () =>
+    router.push({
+      pathname: "/settings",
+      params: { returnTo: "transaction-draft" }
+    });
   return (
     <Screen title="Transaction details">
       <Button
@@ -41,6 +55,9 @@ function TransactionDetailScreen() {
           defaultCurrency={defaultCurrency}
           defaultAccountId={defaultAccountId}
           accounts={accounts}
+          active={active}
+          onAccountSettings={openDraftSettings}
+          onCurrencySettings={openDraftSettings}
           preferencesReady={
             currencyState.status === "ready" && !currencyState.saving
           }
