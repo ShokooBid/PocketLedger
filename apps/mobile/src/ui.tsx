@@ -74,10 +74,12 @@ export function Screen({
   title,
   children,
   back = false,
+  backAction,
   appearance = "standard"
 }: PropsWithChildren<{
   title: string;
   back?: boolean;
+  backAction?: { label: string; onPress: () => void };
   appearance?: "standard" | "welcome";
 }>) {
   const router = useRouter();
@@ -89,12 +91,14 @@ export function Screen({
           appearance === "welcome" && styles.welcomeContent
         ]}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+        keyboardDismissMode="on-drag"
       >
         <ScreenDecoration prominent={appearance === "welcome"} />
-        {back && (
+        {(back || backAction) && (
           <Button
-            label="Back to dashboard"
-            onPress={() => router.dismissTo("/")}
+            label={backAction?.label ?? "Back to dashboard"}
+            onPress={backAction?.onPress ?? (() => router.dismissTo("/"))}
           />
         )}
         {appearance === "welcome" && (

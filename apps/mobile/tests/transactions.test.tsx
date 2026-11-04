@@ -21,6 +21,7 @@ import {
   type CategorySource
 } from "../src/category-data";
 import { ClientFailure } from "../src/auth/transport";
+import type { AccountSource } from "../src/account-data";
 async function press(name: string) {
   await act(async () => {
     await fireEvent.press(screen.getByRole("button", { name }));
@@ -61,6 +62,123 @@ async function fill() {
   await field("Note (optional)", "Retained note");
   await press("Category: Food");
 }
+
+it("refreshes choices on return, keeps every draft field and only prefills an explicitly selected default", async () => {
+  const categories = createDemoCategorySource();
+  await categories.create("Food");
+  const owned = (await accounts.list()).filter((row) => row.currency === "USD");
+  const row = owned[0]!;
+  let available: typeof owned = [];
+  const accountSource: AccountSource = {
+    ...accounts,
+    list: async () => available
+  };
+  const source = createDemoTransactionSource(categories, accounts);
+  const props = {
+    accounts: accountSource,
+    source,
+    categories,
+    defaultCurrency: "USD" as const,
+    initialCreate: { date: "2024-02-29", currency: "USD" as const },
+    demo: true
+  };
+  const view = render(<TransactionManagement {...props} />);
+  await screen.findByText("Add an account to continue");
+  await field("Amount", "1.01");
+  await field("Note (optional)", "Keep these values");
+  await press("Category: Food");
+  view.rerender(<TransactionManagement {...props} active={false} />);
+  available = [row];
+  view.rerender(
+    <TransactionManagement {...props} defaultAccountId={row.id} active />
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", {
+        name: `Account: ${row.name}`,
+        selected: true
+      })
+    ).toBeVisible()
+  );
+  expect(screen.getByLabelText("Amount")).toHaveProp("value", "1.01");
+  expect(screen.getByLabelText("Transaction date (YYYY-MM-DD)")).toHaveProp(
+    "value",
+    "2024-02-29"
+  );
+  expect(screen.getByLabelText("Note (optional)")).toHaveProp(
+    "value",
+    "Keep these values"
+  );
+  expect(
+    screen.getByRole("button", {
+      name: "Category: Food",
+      selected: true
+    })
+  ).toBeVisible();
+  // Clearing a default does not erase an explicit selection in an existing draft.
+  await press(`Account: ${row.name}`);
+  view.rerender(<TransactionManagement {...props} defaultAccountId={null} />);
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", {
+        name: `Account: ${row.name}`,
+        selected: true
+      })
+    ).toBeVisible()
+  );
+});
+
+it("blocks a newly archived account and reports failed refreshes while retaining the draft", async () => {
+  const categories = createDemoCategorySource();
+  await categories.create("Food");
+  const row = (await accounts.list()).find(
+    (row) => row.id === accountId("USD")
+  )!;
+  const list = jest.fn<AccountSource["list"]>().mockResolvedValue([row]);
+  const props = {
+    accounts: { ...accounts, list },
+    source: createDemoTransactionSource(categories, accounts),
+    categories,
+    defaultCurrency: "USD" as const,
+    defaultAccountId: row.id,
+    demo: true
+  };
+  const view = render(<TransactionManagement {...props} />);
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Add transaction" })
+    ).toBeEnabled()
+  );
+  await fill();
+  view.rerender(<TransactionManagement {...props} active={false} />);
+  list.mockResolvedValue([{ ...row, archivedAt: "2026-11-04T00:00:00Z" }]);
+  view.rerender(<TransactionManagement {...props} active />);
+  await screen.findByText("Select an available account");
+  expect(
+    screen.getByRole("button", { name: "Save transaction" })
+  ).toBeDisabled();
+  expect(
+    screen.queryByRole("button", { name: `Account: ${row.name}` })
+  ).toBeNull();
+  view.rerender(<TransactionManagement {...props} active={false} />);
+  list.mockRejectedValueOnce(new Error("offline"));
+  view.rerender(<TransactionManagement {...props} active />);
+  await screen.findByText(
+    "Accounts could not be refreshed. Your draft is preserved. Reload accounts before saving."
+  );
+  expect(screen.getByLabelText("Amount")).toHaveProp("value", "1.01");
+  expect(screen.getByLabelText("Note (optional)")).toHaveProp(
+    "value",
+    "Retained note"
+  );
+  list.mockResolvedValue([row]);
+  await press("Try again");
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Save transaction" })
+    ).toBeEnabled()
+  );
+});
 it("saves parent or child selections with unambiguous hierarchy paths in authenticated entry", async () => {
   const categories: CategorySource = {
     hierarchy: true,
@@ -218,7 +336,7 @@ describe("transaction management", () => {
     const view = render(
       <TransactionManagement
         accounts={accounts}
-        defaultAccountId={accountId()}
+        defaultAccountId={accountId("CAD")}
         {...props}
         defaultCurrency="CAD"
         initialCreate={{ date: "2026-10-30", currency: "CAD" }}
@@ -236,7 +354,7 @@ describe("transaction management", () => {
     view.rerender(
       <TransactionManagement
         accounts={accounts}
-        defaultAccountId={accountId()}
+        defaultAccountId={accountId("EUR")}
         {...props}
         defaultCurrency="EUR"
         initialCreate={{ date: "2026-10-30", currency: "CAD" }}
@@ -255,6 +373,15 @@ describe("transaction management", () => {
     await press("Discard draft and start in EUR");
     expect(screen.getByText("Currency: EUR")).toBeVisible();
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "");
+    expect(
+      screen.getByRole("button", {
+        name: "Account: Test EUR",
+        selected: true
+      })
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Save transaction" })
+    ).toBeEnabled();
     expect(await source.list({})).toMatchObject({ items: [] });
   });
 
@@ -265,15 +392,12 @@ describe("transaction management", () => {
     const props = {
       source,
       categories,
+      defaultAccountId: accountId("CAD"),
       defaultCurrency: "CAD" as const,
       initialCreate: { date: "2026-10-30", currency: "CAD" as const }
     };
     const view = render(
-      <TransactionManagement
-        accounts={accounts}
-        defaultAccountId={accountId()}
-        {...props}
-      />
+      <TransactionManagement accounts={accounts} {...props} />
     );
     await waitFor(() =>
       expect(
@@ -284,7 +408,6 @@ describe("transaction management", () => {
     view.rerender(
       <TransactionManagement
         accounts={accounts}
-        defaultAccountId={accountId()}
         {...props}
         preferencesReady={false}
       />
@@ -294,12 +417,7 @@ describe("transaction management", () => {
     ).toBeDisabled();
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "7.25");
     view.rerender(
-      <TransactionManagement
-        accounts={accounts}
-        defaultAccountId={accountId()}
-        {...props}
-        preferencesReady
-      />
+      <TransactionManagement accounts={accounts} {...props} preferencesReady />
     );
     expect(
       screen.getByRole("button", { name: "Save transaction" })

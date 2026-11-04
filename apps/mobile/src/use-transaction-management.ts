@@ -43,6 +43,7 @@ export function useTransactionManagement({
   initialCreate,
   defaultCurrency = "CAD",
   preferencesReady = true,
+  active = true,
   detailId
 }: {
   source: TransactionSource;
@@ -54,11 +55,16 @@ export function useTransactionManagement({
   defaultCurrency?: Currency;
   preferencesReady?: boolean;
   onCurrencySettings?: () => void;
+  onAccountSettings?: () => void;
+  active?: boolean;
   detailId?: string;
   onOpenDetail?: (id: string) => void;
 }) {
   const pendingCreate = useRef<TransactionCreate | null>(null);
   const [accountChoices, setAccountChoices] = useState<Account[]>([]);
+  const [accountsReady, setAccountsReady] = useState(false);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const accountRevision = useRef(0);
   const accountLabel = (id: string) =>
     accountChoices.find((row) => row.id === id)?.name ?? "Account unavailable";
   const [rows, setRows] = useState<Transaction[]>([]);
@@ -159,9 +165,8 @@ export function useTransactionManagement({
     lock.current = true;
     setBusy(true);
     const version = revision.current;
-    Promise.all([read({}), categories.list(), accounts.list()])
-      .then(([page, items, ownedAccounts]) => {
-        if (active) setAccountChoices(ownedAccounts);
+    Promise.all([read({}), categories.list()])
+      .then(([page, items]) => {
         if (!active) return;
         if (version !== revision.current) {
           setChoices(items);
@@ -189,7 +194,42 @@ export function useTransactionManagement({
       active = false;
       mounted.current = false;
     };
-  }, [read, categories, accounts]);
+  }, [read, categories]);
+
+  const refreshAccounts = useCallback(async () => {
+    const version = ++accountRevision.current;
+    setAccountsReady(false);
+    setAccountError(null);
+    try {
+      const items = await accounts.list();
+      if (mounted.current && version === accountRevision.current) {
+        setAccountChoices(items);
+        setAccountsReady(true);
+      }
+    } catch {
+      if (mounted.current && version === accountRevision.current)
+        setAccountError(
+          "Accounts could not be refreshed. Your draft is preserved. Reload accounts before saving."
+        );
+    }
+  }, [accounts]);
+  useEffect(() => {
+    if (active) void refreshAccounts();
+    return () => {
+      accountRevision.current++;
+    };
+  }, [active, refreshAccounts, defaultCurrency, defaultAccountId]);
+  useEffect(() => {
+    if (!accountsReady || editing || pendingCreate.current || !defaultAccountId)
+      return;
+    const account = accountChoices.find((row) => row.id === defaultAccountId);
+    if (!account || account.archivedAt) return;
+    setDraft((previous) =>
+      previous && !previous.accountId && previous.currency === account.currency
+        ? { ...previous, accountId: account.id }
+        : previous
+    );
+  }, [accountsReady, accountChoices, defaultAccountId, editing]);
 
   async function load(nextFilter: TransactionFilter, more = false) {
     if (lock.current) return;
@@ -205,10 +245,10 @@ export function useTransactionManagement({
     setError(null);
     const version = revision.current;
     try {
-      const [page, items, ownedAccounts] = await Promise.all([
+      const [page, items] = await Promise.all([
         read(nextFilter, more ? (after ?? undefined) : undefined),
         categories.list(),
-        accounts.list()
+        refreshAccounts()
       ]);
       if (!mounted.current) return;
       if (version !== revision.current) {
@@ -225,7 +265,6 @@ export function useTransactionManagement({
       setRows(merged);
       setAfter(page.nextCursor);
       setChoices(items);
-      setAccountChoices(ownedAccounts);
       setApplied(nextFilter);
       setFilter(nextFilter);
       setRetryFilter(null);
@@ -248,7 +287,8 @@ export function useTransactionManagement({
     }
   }
   async function mutate(remove = false, retry = false) {
-    if (lock.current || (uncertain && !retry) || !ready) return;
+    if (lock.current || (uncertain && !retry) || !ready || !accountsReady)
+      return;
     if (
       !remove &&
       (!preferencesReady || (!editing && draft?.currency !== defaultCurrency))
@@ -366,11 +406,23 @@ export function useTransactionManagement({
   }
   const draftCurrencyMismatch =
     draft !== null && !editing && draft.currency !== defaultCurrency;
-  const disabled = busy || uncertain || !ready || !preferencesReady;
+  const draftAccountUnavailable =
+    !!draft?.accountId &&
+    !accountChoices.some(
+      (row) =>
+        row.id === draft.accountId &&
+        row.currency === draft.currency &&
+        (!row.archivedAt || row.id === editing?.accountId)
+    );
+  const disabled =
+    busy || uncertain || !ready || !preferencesReady || !accountsReady;
   return {
     rows,
     choices,
     accountChoices,
+    accountsReady,
+    accountError,
+    refreshAccounts,
     accountLabel,
     categoryLabel,
     after,
@@ -395,6 +447,7 @@ export function useTransactionManagement({
     deleted,
     disabled,
     draftCurrencyMismatch,
+    draftAccountUnavailable,
     load,
     mutate,
     edit,

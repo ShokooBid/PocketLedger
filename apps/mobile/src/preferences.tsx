@@ -163,7 +163,8 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
   }, [apply]);
   const setDefaultAccount = useCallback(
     async (id: string | null) => {
-      if (inFlight.current || current.current.status !== "ready") return;
+      if (inFlight.current || current.current.status !== "ready")
+        throw new ClientFailure("validation", "PREFERENCES_NOT_READY");
       inFlight.current = true;
       const version = revision.current;
       apply({ ...current.current, saving: true, error: null });
@@ -181,6 +182,7 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
             saving: false,
             error: preferenceFailureMessage(error)
           });
+        throw error;
       } finally {
         if (version === revision.current) inFlight.current = false;
       }

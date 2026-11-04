@@ -1,209 +1,169 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { Body, Button, Field, StateNotice } from "./ui";
+import { amountText } from "./transaction-data";
+import { theme } from "./theme";
 import {
-  accountInput,
-  parseOpeningBalance,
-  type Account,
-  type AccountSource
-} from "./account-data";
-import { amountText, type Currency, uncertainWrite } from "./transaction-data";
+  useAccountManagement,
+  type AccountManagementProps
+} from "./use-account-management";
 
-export function AccountManagement({
-  source,
-  currency,
-  defaultAccountId,
-  onDefault,
-  preferencesReady = true
-}: {
-  source: AccountSource;
-  currency: Currency;
-  defaultAccountId: string | null;
-  onDefault: (id: string | null) => Promise<void>;
-  preferencesReady?: boolean;
-}) {
-  const [rows, setRows] = useState<Account[]>([]),
-    [name, setName] = useState(""),
-    [type, setType] = useState<Account["type"]>("bank");
-  const [opening, setOpening] = useState(""),
-    [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [editing, setEditing] = useState<Account | null>(null),
-    [archiving, setArchiving] = useState<Account | null>(null);
-  const [busy, setBusy] = useState(false),
-    [ready, setReady] = useState(false),
-    [error, setError] = useState<string | null>(null),
-    [uncertain, setUncertain] = useState(false);
-  const [balance, setBalance] = useState<{
-    id: string;
-    asOf: string;
-    balanceMinor: number;
-  } | null>(null);
-  const mounted = useRef(false),
-    lock = useRef(false);
-  const reload = useCallback(async () => {
-    if (lock.current) return;
-    lock.current = true;
-    setBusy(true);
-    try {
-      const accounts = await source.list();
-      if (mounted.current) {
-        setRows(accounts);
-        setReady(true);
-        setError(null);
-        setUncertain(false);
-      }
-    } catch {
-      if (mounted.current) {
-        setReady(false);
-        setError("Accounts could not be loaded. Reload before making changes.");
-      }
-    } finally {
-      lock.current = false;
-      if (mounted.current) setBusy(false);
-    }
-  }, [source]);
-  useEffect(() => {
-    mounted.current = true;
-    void reload();
-    return () => {
-      mounted.current = false;
-    };
-  }, [reload]);
-  async function action(
-    operation: "save" | "archive" | "default" | "balance",
-    row?: Account
-  ) {
-    if (
-      lock.current ||
-      (operation !== "balance" && (uncertain || !ready || !preferencesReady))
-    )
-      return;
-    let input;
-    try {
-      if (operation === "save")
-        input = accountInput.parse({
-          name,
-          type,
-          currency: editing?.currency ?? currency,
-          openingDate: editing?.openingDate ?? date,
-          openingBalanceMinor:
-            editing?.openingBalanceMinor ??
-            parseOpeningBalance(opening, currency)
-        });
-    } catch {
-      setError(
-        "Check the account name, signed opening amount and calendar date."
-      );
-      return;
-    }
-    lock.current = true;
-    setBusy(true);
-    setError(null);
-    try {
-      if (operation === "save") {
-        if (editing)
-          await source.update(editing.id, {
-            name: input!.name,
-            type: input!.type
-          });
-        else await source.create(input!);
-        if (mounted.current) {
-          setName("");
-          setOpening("");
-          setEditing(null);
-        }
-      } else if (operation === "archive") {
-        await source.archive(row!.id);
-        if (defaultAccountId === row!.id) await onDefault(null);
-        if (mounted.current) setArchiving(null);
-      } else if (operation === "default") await onDefault(row?.id ?? null);
-      else {
-        const asOf = [new Date().toISOString().slice(0, 10), row!.openingDate]
-          .sort()
-          .at(-1)!;
-        const result = await source.get(row!.id, asOf);
-        if (mounted.current) setBalance(result);
-      }
-      const accounts = await source.list();
-      if (mounted.current) setRows(accounts);
-    } catch (failure) {
-      if (mounted.current) {
-        setError(
-          "The account action could not be confirmed. Reload accounts and review before another change."
-        );
-        if (operation !== "balance" && uncertainWrite(failure))
-          setUncertain(true);
-      }
-    } finally {
-      lock.current = false;
-      if (mounted.current) setBusy(false);
-    }
-  }
+export function AccountManagement(props: AccountManagementProps) {
+  const { currency, defaultAccountId, preferencesReady = true } = props;
+  const state = useAccountManagement(props);
+  const { busy, disabled } = state;
   return (
-    <View>
-      <Body>Financial accounts</Body>
+    <View style={styles.section}>
+      <Text accessibilityRole="header" style={styles.heading}>
+        Financial accounts
+      </Text>
       <Body>
-        Names describe your own tracking accounts. No bank connection is
-        created.
+        Names describe your own tracking accounts, such as BMO Chequing, BMO
+        Savings, CIBC or Cash. No bank connection is created.
       </Body>
-      {busy && <Body>Loading accounts or confirming a change.</Body>}
-      {error && (
+      {busy && (
+        <StateNotice
+          kind="loading"
+          title="Loading accounts or confirming a change"
+          message="Please wait. Your entered account values are retained."
+        />
+      )}
+      {!preferencesReady && (
+        <StateNotice
+          kind="loading"
+          title="Waiting for currency settings"
+          message="Reload currency settings before changing accounts or defaults."
+        />
+      )}
+      {state.error && (
         <StateNotice
           kind="error"
           title="Accounts need attention"
-          message={error}
+          message={state.error}
         />
+      )}
+      {state.notice && (
+        <View
+          accessible
+          accessibilityLiveRegion="polite"
+          accessibilityLabel={state.notice}
+        >
+          <Body>{state.notice}</Body>
+        </View>
       )}
       <Button
         label="Reload accounts"
         disabled={busy}
-        onPress={() => void reload()}
+        onPress={() => void state.reload()}
       />
-      {!rows.length && ready && !busy && (
-        <Body>Create an account before recording transactions.</Body>
-      )}
-      {rows.map((row) => (
-        <View key={row.id}>
+      {state.uncertain && (
+        <>
           <Body>
+            The change may have succeeded. Reload and review your accounts
+            before another change. No write is retried automatically.
+          </Body>
+          <Button
+            label="I reviewed accounts; enable changes"
+            disabled={busy || !state.ready || !state.reviewed}
+            onPress={state.acknowledgeReview}
+          />
+        </>
+      )}
+      {!state.rows.length && state.ready && !busy && (
+        <StateNotice
+          kind="empty"
+          title="No financial accounts yet"
+          message="Create an account before recording transactions. Your transaction draft stays available while you do this."
+        />
+      )}
+      {state.rows.map((row) => (
+        <View key={row.id} style={styles.card}>
+          <Text accessibilityRole="header" style={styles.heading}>
             {row.name} · {row.currency}
             {row.archivedAt ? " (archived)" : ""}
             {defaultAccountId === row.id ? " (default)" : ""}
+          </Text>
+          <Body>
+            Type: {row.type} · Status: {row.archivedAt ? "Archived" : "Active"}
           </Body>
+          {row.currency !== currency && (
+            <Body>
+              Settings uses {currency}. This account retains {row.currency}; no
+              money was converted. It cannot be the default for new entries in{" "}
+              {currency}.
+            </Body>
+          )}
           <Button
             label={`View balance for ${row.name}`}
-            disabled={busy}
-            onPress={() => void action("balance", row)}
+            hint="Shows account details, opening information and tracked balance."
+            disabled={busy || !state.ready}
+            selected={state.selectedId === row.id}
+            onPress={() => void state.viewDetails(row)}
           />
-          {balance?.id === row.id && (
-            <Body>
-              Balance as of {balance.asOf}:{" "}
-              {balance.balanceMinor < 0 ? "-" : ""}
-              {amountText(Math.abs(balance.balanceMinor), row.currency)}{" "}
-              {row.currency}
-            </Body>
+          {state.selectedId === row.id && (
+            <View style={styles.section}>
+              <Text accessibilityRole="header" style={styles.heading}>
+                Account details: {row.name}
+              </Text>
+              <Body>Currency: {row.currency}</Body>
+              <Body>Opening date: {row.openingDate}</Body>
+              <Body>
+                Opening balance: {row.openingBalanceMinor < 0 ? "-" : ""}
+                {amountText(
+                  Math.abs(row.openingBalanceMinor),
+                  row.currency
+                )}{" "}
+                {row.currency}
+              </Body>
+              <Body>
+                Currency, opening date and opening balance cannot be edited.
+                Opening balance is a starting point, not income.
+              </Body>
+              {row.archivedAt && (
+                <Body>
+                  Archived: {row.archivedAt.slice(0, 10)}. Future entries cannot
+                  select this account. Historical transactions and balances are
+                  preserved.
+                </Body>
+              )}
+              {state.detailError && (
+                <StateNotice
+                  kind="error"
+                  title="Tracked balance unavailable"
+                  message={state.detailError}
+                />
+              )}
+              {state.detail?.id === row.id && (
+                <Body>
+                  Tracked balance as of {state.detail.asOf}:{" "}
+                  {state.detail.balanceMinor < 0 ? "-" : ""}
+                  {amountText(
+                    Math.abs(state.detail.balanceMinor),
+                    row.currency
+                  )}{" "}
+                  {row.currency}
+                </Body>
+              )}
+            </View>
           )}
           {!row.archivedAt && (
             <>
               <Button
                 label={`Rename ${row.name}`}
-                disabled={busy || uncertain || !ready || !preferencesReady}
-                onPress={() => {
-                  setEditing(row);
-                  setName(row.name);
-                  setType(row.type);
-                }}
+                disabled={disabled}
+                onPress={() => state.edit(row)}
               />
               {row.currency === currency && (
                 <Button
                   label={`Use ${row.name} as default`}
-                  disabled={busy || uncertain || !ready || !preferencesReady}
-                  onPress={() => void action("default", row)}
+                  selected={defaultAccountId === row.id}
+                  disabled={disabled}
+                  onPress={() => void state.action("default", row)}
                 />
               )}
               <Button
                 label={`Archive ${row.name}`}
-                disabled={busy || uncertain || !ready || !preferencesReady}
-                onPress={() => setArchiving(row)}
+                disabled={disabled}
+                onPress={() => state.setArchiving(row)}
               />
             </>
           )}
@@ -212,72 +172,112 @@ export function AccountManagement({
       {defaultAccountId && (
         <Button
           label="Clear default account"
-          disabled={busy || uncertain || !ready || !preferencesReady}
-          onPress={() => void action("default")}
+          disabled={disabled}
+          onPress={() => void state.action("default")}
         />
       )}
-      {archiving && (
-        <>
+      {state.archiving && (
+        <View style={styles.card}>
+          <Text accessibilityRole="header" style={styles.heading}>
+            Archive {state.archiving.name}?
+          </Text>
           <Body>
-            Archive {archiving.name}? Historical transactions are preserved.
+            Future entries cannot select this account. Historical transactions
+            and balances are preserved. If this is your default account, the
+            default will be cleared.
           </Body>
           <Button
             label="Confirm archive account"
-            disabled={busy || uncertain || !ready || !preferencesReady}
-            onPress={() => void action("archive", archiving)}
+            disabled={disabled}
+            onPress={() => void state.action("archive", state.archiving!)}
           />
-          <Button label="Keep account" onPress={() => setArchiving(null)} />
-        </>
+          <Button
+            label="Keep account"
+            disabled={busy}
+            onPress={() => state.setArchiving(null)}
+          />
+        </View>
       )}
-      <Body>
-        {editing ? "Rename account" : "Add account"} · Currency:{" "}
-        {editing?.currency ?? currency}
-      </Body>
-      <Field
-        label="Account name"
-        value={name}
-        editable={!busy && !uncertain}
-        onChangeText={setName}
-      />
-      {(["cash", "bank", "credit", "other"] as const).map((value) => (
-        <Button
-          key={value}
-          label={`Account type ${value}`}
-          selected={type === value}
-          disabled={busy || uncertain || !ready || !preferencesReady}
-          onPress={() => setType(value)}
+      <View style={styles.card}>
+        <Text accessibilityRole="header" style={styles.heading}>
+          {state.editing ? "Rename account" : "Add account"} · Currency:{" "}
+          {state.editing?.currency ?? currency}
+        </Text>
+        <Body>
+          {state.editing
+            ? "Change the name or descriptive type. The financial baseline stays the same."
+            : "Currency is inherited from Settings. Opening balance is optional and defaults to zero; creating an account does not lock currency."}
+        </Body>
+        <Field
+          label="Account name"
+          value={state.name}
+          editable={!disabled}
+          autoCapitalize="words"
+          onChangeText={state.setName}
         />
-      ))}
-      {!editing && (
-        <>
-          <Field
-            label="Opening balance (optional)"
-            value={opening}
-            editable={!busy && !uncertain}
-            onChangeText={setOpening}
+        {(["cash", "bank", "credit", "other"] as const).map((value) => (
+          <Button
+            key={value}
+            label={`Account type ${value}`}
+            selected={state.type === value}
+            disabled={disabled}
+            onPress={() => state.setType(value)}
           />
-          <Field
-            label="Account opening date (YYYY-MM-DD)"
-            value={date}
-            editable={!busy && !uncertain}
-            onChangeText={setDate}
-          />
-        </>
-      )}
-      <Button
-        label={editing ? "Save account changes" : "Create account"}
-        disabled={busy || uncertain || !ready || !preferencesReady}
-        onPress={() => void action("save")}
-      />
-      {editing && (
+        ))}
+        {!state.editing && (
+          <>
+            <Field
+              label="Opening balance (optional)"
+              value={state.opening}
+              editable={!disabled}
+              autoCapitalize="none"
+              autoCorrect={false}
+              onChangeText={state.setOpening}
+            />
+            <Body>
+              Use a period for decimals and a minus sign for a negative balance,
+              such as -12.34. Only the currency's supported decimal places are
+              allowed.
+            </Body>
+            <Field
+              label="Account opening date (YYYY-MM-DD)"
+              value={state.date}
+              editable={!disabled}
+              autoCapitalize="none"
+              autoCorrect={false}
+              onChangeText={state.setDate}
+            />
+          </>
+        )}
         <Button
-          label="Cancel account editing"
-          onPress={() => {
-            setEditing(null);
-            setName("");
-          }}
+          label={state.editing ? "Save account changes" : "Create account"}
+          disabled={disabled}
+          onPress={() => void state.action("save")}
         />
-      )}
+        {state.editing && (
+          <Button
+            label="Cancel account editing"
+            disabled={busy}
+            onPress={state.cancelEditing}
+          />
+        )}
+      </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  section: { gap: theme.space.md },
+  card: {
+    gap: theme.space.md,
+    padding: theme.space.md,
+    borderWidth: 1,
+    borderColor: theme.color.softBorder,
+    borderRadius: theme.radius
+  },
+  heading: {
+    color: theme.color.text,
+    fontSize: theme.font.body,
+    fontWeight: "700"
+  }
+});

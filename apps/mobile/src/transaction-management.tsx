@@ -16,6 +16,7 @@ export function TransactionManagement(
     defaultAccountId = null,
     preferencesReady = true,
     onCurrencySettings,
+    onAccountSettings,
     detailId,
     onOpenDetail
   } = props;
@@ -23,6 +24,9 @@ export function TransactionManagement(
     rows,
     choices,
     accountChoices,
+    accountsReady,
+    accountError,
+    refreshAccounts,
     accountLabel,
     categoryLabel,
     after,
@@ -47,6 +51,7 @@ export function TransactionManagement(
     deleted,
     disabled,
     draftCurrencyMismatch,
+    draftAccountUnavailable,
     load,
     mutate,
     edit,
@@ -86,6 +91,21 @@ export function TransactionManagement(
         />
       )}
       {notice && <Body>{notice}</Body>}
+      {accountError && (
+        <StateNotice
+          kind="error"
+          title="Accounts need attention"
+          message={accountError}
+          onRetry={() => void refreshAccounts()}
+        />
+      )}
+      {!accountsReady && !accountError && (
+        <StateNotice
+          kind="loading"
+          title="Loading account choices"
+          message="Your draft is preserved while accounts refresh."
+        />
+      )}
       <Button
         label="Reload transactions and categories"
         disabled={busy}
@@ -252,12 +272,31 @@ export function TransactionManagement(
             editable={!busy && !uncertain}
             onChangeText={(date) => setDraft({ ...draft, date })}
           />
-          {!accountChoices.some(
-            (row) => !row.archivedAt && row.currency === draft.currency
-          ) && (
-            <Body>
-              Create a compatible account in Settings, then reload here.
-            </Body>
+          {accountsReady &&
+            !accountChoices.some(
+              (row) => !row.archivedAt && row.currency === draft.currency
+            ) && (
+              <>
+                <StateNotice
+                  kind="empty"
+                  title="Add an account to continue"
+                  message="Transactions need an active account in this draft's currency. Create one in Settings, then return to this draft. Amount, category, date and note will be kept."
+                />
+                {onAccountSettings && (
+                  <Button
+                    label="Add an account in Settings"
+                    disabled={busy || uncertain}
+                    onPress={onAccountSettings}
+                  />
+                )}
+              </>
+            )}
+          {accountsReady && draftAccountUnavailable && (
+            <StateNotice
+              kind="error"
+              title="Select an available account"
+              message="The selected account is unavailable, archived or uses a different currency. Your other draft fields are preserved. Choose an active compatible account before saving."
+            />
           )}
           {accountChoices
             .filter(
@@ -270,7 +309,7 @@ export function TransactionManagement(
                 key={row.id}
                 label={`Account: ${row.name}${row.archivedAt ? " (archived history)" : ""}`}
                 selected={draft.accountId === row.id}
-                disabled={busy || uncertain}
+                disabled={busy || uncertain || !accountsReady}
                 onPress={() => setDraft({ ...draft, accountId: row.id })}
               />
             ))}
@@ -309,7 +348,9 @@ export function TransactionManagement(
           <Button
             label="Save transaction"
             variant="primary"
-            disabled={disabled || draftCurrencyMismatch}
+            disabled={
+              disabled || draftCurrencyMismatch || draftAccountUnavailable
+            }
             onPress={() => void mutate()}
           />
           <Button
