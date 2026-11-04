@@ -10,7 +10,8 @@ import {
   act,
   fireEvent,
   renderRouter,
-  screen
+  screen,
+  waitFor
 } from "expo-router/testing-library";
 import { router } from "expo-router";
 import { parsePreviewState } from "../src/navigation";
@@ -69,59 +70,58 @@ afterEach(() => {
 describe("session navigation", () => {
   // This full navigation flow also pays for the first cold router render.
   // Allow slower Windows/CI runs without relaxing individual lookup timeouts.
-  it("keeps a gated demo draft unchanged across Settings and locks currency after saving", async () => {
-    const prior = process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED;
-    process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED = "true";
-    try {
-      await openShell();
-      await enterDemo();
-      await tap(screen.getByRole("link", { name: "Manage categories" }));
-      await press("Add category");
-      await fireEvent.changeText(
-        screen.getByLabelText("Category name"),
-        "Currency food"
-      );
-      await press("Save category");
-      await screen.findByText("Currency food");
-      await press("Back to dashboard");
-      await press("Add transaction");
-      await screen.findByText("New transaction");
-      expect(screen.getByText("Currency: CAD")).toBeVisible();
-      expect(screen.queryByRole("button", { name: "Currency USD" })).toBeNull();
-      await fireEvent.changeText(screen.getByLabelText("Amount"), "12.34");
-      await act(() => router.push("/settings"));
-      await press("Default currency EUR");
-      await act(() => router.back());
-      expect(screen.getByText("Currency: CAD")).toBeVisible();
-      expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
-      expect(
-        screen.getByRole("button", { name: "Save transaction" })
-      ).toBeDisabled();
-      await press("Discard draft and start in EUR");
-      expect(screen.getByLabelText("Amount")).toHaveProp("value", "");
-      expect(screen.getByText("Currency: EUR")).toBeVisible();
-      await fireEvent.changeText(screen.getByLabelText("Amount"), "5.67");
-      await fireEvent.changeText(
-        screen.getByLabelText("Merchant or payee"),
-        "Currency demo"
-      );
-      await press("Category: Currency food");
-      await press("Save transaction");
-      await screen.findByText(/Transaction saved/);
-      await act(() => router.push("/settings"));
-      expect(
-        await screen.findByText(
-          "Currency is locked after the first saved transaction."
-        )
-      ).toBeVisible();
-      expect(
-        screen.getByRole("button", { name: "Default currency CAD" })
-      ).toBeDisabled();
-    } finally {
-      if (prior === undefined)
-        delete process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED;
-      else process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED = prior;
-    }
+  it("keeps a demo draft unchanged across Settings and locks currency after saving", async () => {
+    await openShell();
+    await enterDemo();
+    await tap(screen.getByRole("link", { name: "Manage categories" }));
+    await press("Add category");
+    await fireEvent.changeText(
+      screen.getByLabelText("Category name"),
+      "Currency food"
+    );
+    await press("Save category");
+    await screen.findByText("Currency food");
+    await press("Back to dashboard");
+    await press("Add transaction");
+    await screen.findByText("New transaction");
+    expect(screen.getByText("Currency: CAD")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Currency USD" })).toBeNull();
+    await fireEvent.changeText(screen.getByLabelText("Amount"), "12.34");
+    await act(() => router.push("/settings"));
+    await press("Default currency EUR");
+    await fireEvent.changeText(
+      screen.getByLabelText("Account name"),
+      "Demo cash"
+    );
+    await press("Create account");
+    await act(() => router.back());
+    expect(screen.getByText("Currency: CAD")).toBeVisible();
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
+    expect(
+      screen.getByRole("button", { name: "Save transaction" })
+    ).toBeDisabled();
+    await press("Reload transactions and categories");
+    await press("Discard draft and start in EUR");
+    await press("Account: Demo cash");
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "");
+    expect(screen.getByText("Currency: EUR")).toBeVisible();
+    await fireEvent.changeText(screen.getByLabelText("Amount"), "5.67");
+    await fireEvent.changeText(
+      screen.getByLabelText("Note (optional)"),
+      "Currency demo"
+    );
+    await press("Category: Currency food");
+    await press("Save transaction");
+    await screen.findByText(/Transaction saved/);
+    await act(() => router.push("/settings"));
+    expect(
+      await screen.findByText(
+        "Currency is locked after the first saved transaction."
+      )
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Default currency CAD" })
+    ).toBeDisabled();
   }, 15000);
 
   it("keeps protected data hidden during an outage and retries verification", async () => {
@@ -155,6 +155,11 @@ describe("session navigation", () => {
       id: "20000000-0000-4000-8000-000000000001",
       name: "Alice private category",
       isDefault: false,
+      parentId: null,
+      defaultKey: null,
+      iconKey: "category",
+      colorKey: "neutral",
+      sortOrder: 0,
       archivedAt: null,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z"
@@ -167,6 +172,12 @@ describe("session navigation", () => {
         return response(stored(owner.id).credentials);
       }
       if (path === "/v1/me") return response(owner);
+      if (path === "/v1/preferences")
+        return response({
+          entryCurrency: "CAD",
+          currencyLocked: false,
+          defaultAccountId: null
+        });
       if (path === "/v1/auth/logout") return response({ ok: true });
       return response({
         items: owner.id === alice.id ? [category] : [],
@@ -315,27 +326,36 @@ describe("session navigation", () => {
     await press("Save category");
     await screen.findByText("Dashboard food");
     await press("Back to dashboard");
+    await act(() => router.push("/settings"));
+    await press("Default currency JPY");
+    await fireEvent.changeText(
+      screen.getByLabelText("Account name"),
+      "History cash"
+    );
+    await fireEvent.changeText(
+      screen.getByLabelText("Account opening date (YYYY-MM-DD)"),
+      "2024-01-01"
+    );
+    await press("Create account");
+    await act(() => router.back());
     await press("Choose month");
     await fireEvent.changeText(
       screen.getByLabelText("Month (YYYY-MM)"),
       "2024-02"
     );
     await press("Show selected month");
-    await press("Change currency (USD)");
-    await press("Summary currency JPY");
+
     await press("Add transaction");
     expect(await screen.findByText("New transaction")).toBeVisible();
     expect(screen.getByLabelText("Transaction date (YYYY-MM-DD)")).toHaveProp(
       "value",
       "2024-02-01"
     );
-    expect(screen.getByRole("button", { name: "Currency JPY" })).toHaveProp(
-      "accessibilityState",
-      expect.objectContaining({ selected: true })
-    );
+    expect(screen.getByText("Currency: JPY")).toBeVisible();
+    await press("Account: History cash");
     await fireEvent.changeText(screen.getByLabelText("Amount"), "250");
     await fireEvent.changeText(
-      screen.getByLabelText("Merchant or payee"),
+      screen.getByLabelText("Note (optional)"),
       "Dashboard shop"
     );
     await press("Category: Dashboard food");
@@ -364,6 +384,12 @@ describe("session navigation", () => {
     h.fetcher.mockImplementation(async (url) => {
       const parsed = new URL(String(url));
       if (parsed.pathname === "/v1/me") return response(alice);
+      if (parsed.pathname === "/v1/preferences")
+        return response({
+          entryCurrency: "USD",
+          currencyLocked: false,
+          defaultAccountId: null
+        });
       if (parsed.pathname === "/v1/auth/logout") return response({ ok: true });
       if (parsed.pathname === "/v1/dashboard/summary") {
         if (delayed) return pending.promise;
@@ -442,16 +468,13 @@ describe("session navigation", () => {
     ).toBeVisible();
     await tap(screen.getByRole("link", { name: "View transactions" }));
     await press("Add transaction");
-    expect(screen.getByRole("button", { name: "Currency KWD" })).toHaveProp(
-      "accessibilityState",
-      expect.objectContaining({ selected: true })
-    );
+    expect(screen.getByText("Currency: KWD")).toBeVisible();
     await press("Back to dashboard");
     await tap(screen.getByRole("link", { name: "Open settings" }));
     await press("Exit demo and return to sign in");
     await enterDemo();
     expect(
-      await screen.findByLabelText("Net balanced. USD 0.00")
+      await screen.findByLabelText("Net balanced. CAD 0.00")
     ).toBeVisible();
   });
 
@@ -526,6 +549,11 @@ describe("placeholder screens", () => {
     await openShell();
     await enterDemo();
     await tap(screen.getByRole("link", { name: "Open settings" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Create account" })
+      ).toBeEnabled()
+    );
     // React's expected development diagnostic contains only the synthetic error.
     const diagnostic = jest
       .spyOn(console, "error")
@@ -539,6 +567,11 @@ describe("placeholder screens", () => {
     expect(
       screen.getByRole("header", { name: "Settings screen" })
     ).toBeVisible();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Create account" })
+      ).toBeEnabled()
+    );
     diagnostic.mockRestore();
     await press("Exit demo and return to sign in");
     expect(shell.getPathname()).toBe("/sign-in");
@@ -567,4 +600,12 @@ describe("external preview parameter validation", () => {
       expect(parsePreviewState(value)).toBeNull();
     }
   );
+});
+
+jest.mock("expo-crypto", () => {
+  let sequence = 0;
+  return {
+    randomUUID: () =>
+      "90000000-0000-4000-8000-" + String(++sequence).padStart(12, "0")
+  };
 });

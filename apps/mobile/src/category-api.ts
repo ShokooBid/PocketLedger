@@ -21,12 +21,9 @@ const hierarchyCategory = category.extend({
   colorKey: z.string(),
   sortOrder: z.number().int()
 });
-export function createApiCategorySource(
-  client: Transport,
-  hierarchy = false
-): CategorySource {
-  const base = hierarchy ? "/v2/categories" : "/v1/categories";
-  const rowSchema = hierarchy ? hierarchyCategory : category;
+export function createApiCategorySource(client: Transport): CategorySource {
+  const base = "/v1/categories";
+  const rowSchema = hierarchyCategory;
   const pageSchema = page.extend({ items: z.array(rowSchema) });
   async function mutate(method: "POST" | "PATCH", path: string, body: unknown) {
     try {
@@ -39,10 +36,6 @@ export function createApiCategorySource(
           throw new CategoryFailure("read-only");
         if (error.code === "INVALID_CATEGORY")
           throw new CategoryFailure("invalid-parent");
-        if (error.code === "FINANCE_UPGRADE_REQUIRED")
-          throw new CategoryFailure("upgrade");
-        if (error.code === "FINANCE_FEATURE_DISABLED")
-          throw new CategoryFailure("disabled");
         if (error.kind === "validation")
           throw new CategoryFailure("validation");
         if (error.kind === "unavailable" || error.code === "CATEGORY_ARCHIVED")
@@ -54,27 +47,17 @@ export function createApiCategorySource(
     }
   }
   return {
-    hierarchy,
+    hierarchy: true,
     async list() {
       const rows: z.infer<typeof rowSchema>[] = [];
       const cursors = new Set<string>();
       let after: string | null = null;
       do {
-        const result: z.infer<typeof pageSchema> = await client
-          .send(
-            "GET",
-            `${base}?status=all&limit=100${after ? `&after=${after}` : ""}`,
-            pageSchema
-          )
-          .catch((error: unknown) => {
-            if (error instanceof ClientFailure) {
-              if (error.code === "FINANCE_UPGRADE_REQUIRED")
-                throw new CategoryFailure("upgrade");
-              if (error.code === "FINANCE_FEATURE_DISABLED")
-                throw new CategoryFailure("disabled");
-            }
-            throw error;
-          });
+        const result: z.infer<typeof pageSchema> = await client.send(
+          "GET",
+          `${base}?status=all&limit=100${after ? `&after=${after}` : ""}`,
+          pageSchema
+        );
         rows.push(...result.items);
         after = result.nextCursor;
         if (after && (cursors.has(after) || result.items.length === 0))
@@ -86,12 +69,8 @@ export function createApiCategorySource(
     create: async (name) => {
       await mutate("POST", base, { name });
     },
-    ...(hierarchy
-      ? {
-          createChild: async (name: string, parentId: string) =>
-            (await mutate("POST", base, { name, parentId })).id
-        }
-      : {}),
+    createChild: async (name: string, parentId: string) =>
+      (await mutate("POST", base, { name, parentId })).id,
     rename: async (id, name) => {
       await mutate("PATCH", `${base}/${encodeURIComponent(id)}`, { name });
     },

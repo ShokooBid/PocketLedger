@@ -15,6 +15,11 @@ const category = (id: string, archived = false) => ({
   id,
   name: "Synthetic category",
   isDefault: false,
+  parentId: null,
+  defaultKey: null,
+  iconKey: "category",
+  colorKey: "neutral",
+  sortOrder: 0,
   archivedAt: archived ? "2026-01-01T00:00:00Z" : null,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z"
@@ -179,25 +184,36 @@ describe("category API adapter", () => {
 });
 
 describe("transport boundaries", () => {
-  it("allows implemented v2 preferences/category paths and rejects unrelated routes", async () => {
+  it("allows implemented v1 finance paths and rejects unrelated routes", async () => {
     const fetcher = jest.fn<FetchRequest>().mockResolvedValue(response({}));
     const client = createTransport("https://api.example.invalid", fetcher);
     const allowed = [
-      "/v2/preferences",
-      "/v2/categories?status=all&limit=100",
-      "/v2/categories/recent?limit=8",
-      "/v2/categories/00000000-0000-4000-8000-000000000001",
-      "/v2/categories/00000000-0000-4000-8000-000000000001/archive"
+      "/v1/preferences",
+      "/v1/categories?status=all&limit=100",
+      "/v1/categories/recent?limit=8",
+      "/v1/categories/00000000-0000-4000-8000-000000000001",
+      "/v1/categories/00000000-0000-4000-8000-000000000001/archive",
+      "/v1/accounts",
+      "/v1/accounts?status=active&limit=50",
+      "/v1/accounts/00000000-0000-4000-8000-000000000001?asOf=2026-11-03",
+      "/v1/accounts/00000000-0000-4000-8000-000000000001/archive",
+      "/v1/transactions",
+      "/v1/transactions/00000000-0000-4000-8000-000000000001"
     ];
     for (const path of allowed) await client.send("GET", path, z.unknown());
     for (const path of [
       "/v2/transactions",
-      "/v2/accounts",
-      "/v2/categories-other",
-      "/v2/categories//other",
-      "/v2/categories/../preferences",
-      "/v2/preferences/other",
-      "/v2/preferences?userId=other"
+      "/v2/preferences",
+      "/v1/imports",
+      "/v1/transfers",
+      "/v1/history",
+      "/v1/accounts-other",
+      "/v1/transactions-other",
+      "/v1/categories-other",
+      "/v1/categories//other",
+      "/v1/categories/../preferences",
+      "/v1/preferences/other",
+      "/v1/preferences?userId=other"
     ])
       await expect(client.send("GET", path, z.unknown())).rejects.toMatchObject(
         { kind: "configuration" }

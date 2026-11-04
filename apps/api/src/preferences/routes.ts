@@ -19,7 +19,7 @@ export function registerPreferencesRoutes(
   );
   const secured = { tags: ["Preferences"], security: [{ bearerAuth: [] }] };
   app.get(
-    "/v2/preferences",
+    "/v1/preferences",
     {
       onRequest: app.authenticate,
       schema: {
@@ -33,7 +33,7 @@ export function registerPreferencesRoutes(
     (request) => service.get(request.principal!.userId)
   );
   app.patch(
-    "/v2/preferences",
+    "/v1/preferences",
     {
       onRequest: app.authenticate,
       schema: {

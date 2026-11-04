@@ -196,8 +196,7 @@ export async function createAuthService(
         const user = await tx.user.create({
           data: { email: email.trim().toLowerCase(), passwordHash: hash }
         });
-        if (config.categoryHierarchyEnabled)
-          await provisionCategoryCatalog(tx, user.id);
+        await provisionCategoryCatalog(tx, user.id);
         return issue(tx, user.id, clock());
       });
     } catch (error) {
@@ -241,8 +240,7 @@ export async function createAuthService(
             }
           }
         });
-        if (config.categoryHierarchyEnabled)
-          await provisionCategoryCatalog(tx, user.id);
+        await provisionCategoryCatalog(tx, user.id);
         return issue(tx, user.id, clock());
       });
     } catch (error) {

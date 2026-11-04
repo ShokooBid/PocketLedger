@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  jest
-} from "@jest/globals";
+import { afterEach, describe, expect, it, jest } from "@jest/globals";
 import {
   act,
   fireEvent,
@@ -24,22 +17,16 @@ import { Button, Body } from "../src/ui";
 import { CategoriesProvider, useCategories } from "../src/category-context";
 import {
   TransactionsProvider,
-  useTransactions
+  useTransactions,
+  useAccounts
 } from "../src/transaction-context";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useState } from "react";
 import { transactionFailureMessage } from "../src/transaction-data";
 import { alice, bob, deferred, harness, response } from "./auth-fixtures";
 
-const priorFlag = process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED;
-beforeEach(() => {
-  process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED = "true";
-});
 afterEach(() => {
   jest.restoreAllMocks();
-  if (priorFlag === undefined)
-    delete process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED;
-  else process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED = priorFlag;
 });
 async function press(name: string) {
   await act(async () => {
@@ -101,7 +88,8 @@ function Fixture({ demo = false }: { demo?: boolean }) {
 function DemoSave() {
   const p = usePreferences(),
     categories = useCategories(),
-    transactions = useTransactions();
+    transactions = useTransactions(),
+    accounts = useAccounts();
   const [message, setMessage] = useState("");
   const [recordedCurrency, setRecordedCurrency] = useState("");
   async function save(amountMinor: number) {
@@ -115,7 +103,20 @@ function DemoSave() {
         currency: p.defaultCurrency,
         amountMinor,
         date: "2026-10-30",
-        merchant: "Demo",
+        accountId:
+          (await accounts.list()).find(
+            (row) => row.currency === p.defaultCurrency
+          )?.id ??
+          (
+            await accounts.create({
+              name: "Test cash " + p.defaultCurrency,
+              type: "cash",
+              currency: p.defaultCurrency,
+              openingDate: "2026-01-01",
+              openingBalanceMinor: 0
+            })
+          ).id,
+        clientRequestId: "90000000-0000-4000-8000-000000000001",
         note: null
       });
       setMessage("Demo saved");
@@ -132,7 +133,7 @@ function DemoSave() {
         currency: "USD",
         date: row.date,
         categoryId: row.categoryId,
-        merchant: row.merchant,
+        accountId: row.accountId,
         note: row.note
       });
     } catch (error) {
@@ -189,7 +190,7 @@ describe("persisted currency UI", () => {
     view.unmount();
     render(<Fixture />);
     expect(await screen.findByText("Entry ready in KWD")).toBeVisible();
-    expect(h.fetcher.mock.calls.at(-1)?.[0]).toContain("/v2/preferences");
+    expect(h.fetcher.mock.calls.at(-1)?.[0]).toContain("/v1/preferences");
   });
 
   it("retains the confirmed currency and requires reload after an uncertain update", async () => {
@@ -299,16 +300,5 @@ describe("persisted currency UI", () => {
     expect(
       screen.getByRole("button", { name: "Default currency EUR" })
     ).toBeEnabled();
-  });
-
-  it("keeps the legacy rollout off without preference requests", async () => {
-    process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED = "false";
-    const h = await login();
-    const before = h.fetcher.mock.calls.length;
-    render(<Fixture />);
-    expect(screen.getByText("Entry ready in USD")).toBeVisible();
-    await press("Default currency KWD");
-    expect(screen.getByText("Entry ready in KWD")).toBeVisible();
-    expect(h.fetcher.mock.calls).toHaveLength(before);
   });
 });

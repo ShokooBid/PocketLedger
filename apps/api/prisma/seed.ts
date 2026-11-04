@@ -14,6 +14,7 @@ const db = createDatabaseClient(process.env.DATABASE_URL ?? "");
 const userId = "00000000-0000-4000-8000-000000000001";
 const foodId = "00000000-0000-4000-8000-000000000002";
 const incomeId = "00000000-0000-4000-8000-000000000003";
+const accountId = "00000000-0000-4000-8000-000000000007";
 const importId = "00000000-0000-4000-8000-000000000004";
 
 try {
@@ -29,6 +30,24 @@ try {
         // Deliberately not a password hash: this fixture cannot authenticate.
         passwordHash: "!disabled:synthetic-seed",
         disabledAt: new Date("2026-01-01T00:00:00Z")
+      }
+    });
+    await tx.financePreferences.upsert({
+      where: { userId },
+      update: {},
+      create: { userId, entryCurrency: "USD" }
+    });
+    await tx.account.upsert({
+      where: { id: accountId },
+      update: {},
+      create: {
+        id: accountId,
+        userId,
+        name: "Synthetic cash",
+        type: "cash",
+        currency: "USD",
+        openingDate: new Date("2026-01-01"),
+        openingBalanceMinor: 0
       }
     });
     for (const category of [
@@ -57,12 +76,12 @@ try {
       create: {
         id: "00000000-0000-4000-8000-000000000005",
         userId,
+        accountId,
         categoryId: foodId,
         direction: "expense",
         amountMinor: 1234,
         currency: "USD",
         date: new Date("2026-01-15T00:00:00Z"),
-        merchant: "Fictional Demo Market",
         note: "Synthetic manual transaction; no real purchase."
       }
     });
@@ -72,13 +91,13 @@ try {
       create: {
         id: "00000000-0000-4000-8000-000000000006",
         userId,
+        accountId,
         categoryId: incomeId,
         importId,
         direction: "income",
         amountMinor: 250000,
         currency: "USD",
         date: new Date("2026-01-01T00:00:00Z"),
-        merchant: "Fictional Demo Employer",
         note: "Synthetic import example; no CSV or real employer."
       }
     });

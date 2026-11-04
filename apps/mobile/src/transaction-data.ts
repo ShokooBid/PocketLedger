@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AccountSource } from "./account-data";
 import type { CategorySource } from "./category-data";
 import { ClientFailure } from "./auth/transport";
 import {
@@ -40,12 +41,14 @@ export const transactionInput = z.strictObject({
   currency: currencySchema,
   date: calendarDate,
   categoryId: z.string().min(1),
-  merchant: text(200).refine((value) => /\S/u.test(value)),
+  accountId: z.string().min(1),
   note: text(2000).nullable()
 });
 export const transactionSchema = transactionInput.extend({
   id: z.uuid(),
   categoryId: z.uuid(),
+  accountId: z.uuid(),
+  importId: z.uuid().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime()
 });
@@ -56,10 +59,20 @@ export const pageSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}_[0-9a-f-]{36}$/)
     .nullable()
 });
+export const transactionCreate = transactionInput.extend({
+  clientRequestId: z.uuid()
+});
+export const transactionPatch = transactionInput
+  .partial()
+  .refine((input) => Object.keys(input).length > 0);
+export type TransactionPatch = z.infer<typeof transactionPatch>;
+export type TransactionCreate = z.infer<typeof transactionCreate>;
 export type TransactionInput = z.infer<typeof transactionInput>;
 export type Transaction = z.infer<typeof transactionSchema>;
 export type TransactionPage = z.infer<typeof pageSchema>;
 export type TransactionFilter = {
+  accountId?: string;
+  currency?: Currency;
   from?: string;
   to?: string;
   categoryId?: string;
@@ -78,8 +91,8 @@ export interface TransactionSource {
   get(id: string): Promise<Transaction>;
   subscribe(listener: (change: TransactionChange) => void): () => void;
   list(filter: TransactionFilter, after?: string): Promise<TransactionPage>;
-  create(input: TransactionInput): Promise<Transaction>;
-  update(id: string, input: TransactionInput): Promise<Transaction>;
+  create(input: TransactionCreate): Promise<Transaction>;
+  update(id: string, input: TransactionPatch): Promise<Transaction>;
   remove(id: string): Promise<void>;
 }
 export function parseAmount(raw: string, currency: Currency): number {
@@ -107,7 +120,7 @@ export type TransactionDraft = {
   currency: Currency;
   date: string;
   categoryId: string;
-  merchant: string;
+  accountId: string;
   note: string;
 };
 export function draftInput(draft: TransactionDraft): TransactionInput {
@@ -117,7 +130,7 @@ export function draftInput(draft: TransactionDraft): TransactionInput {
     currency: draft.currency,
     date: draft.date,
     categoryId: draft.categoryId,
-    merchant: draft.merchant,
+    accountId: draft.accountId,
     note: draft.note || null
   });
 }
@@ -136,7 +149,7 @@ export function transactionFailureMessage(error: unknown) {
     if (error.code === "PREFERENCES_NOT_READY")
       return "Reload currency settings before saving this transaction.";
     if (error.kind === "validation")
-      return "Check the fields and choose an active category. Reload categories if it was archived.";
+      return "Check the fields and choose an active account and category.";
     if (error.kind === "unavailable")
       return "This transaction is unavailable. Reload the list.";
     if (error.kind === "rate-limit")
@@ -146,19 +159,32 @@ export function transactionFailureMessage(error: unknown) {
 }
 export function createDemoTransactionSource(
   categories: CategorySource,
+  accounts: Pick<AccountSource, "get">,
   beforeWrite?: (input: TransactionInput, previous?: Transaction) => void
 ): TransactionSource {
   let rows: Transaction[] = [];
   let sequence = 0;
+  const creations = new Map<string, { fingerprint: string; id: string }>();
   async function checked(input: TransactionInput, previous?: Transaction) {
     if (!transactionInput.safeParse(input).success)
       throw new ClientFailure("validation");
-    const category = (await categories.list()).find(
-      (row) => row.id === input.categoryId
-    );
+    if (previous && input.currency !== previous.currency)
+      throw new ClientFailure("validation", "CURRENCY_IMMUTABLE");
+    const account = await accounts.get(input.accountId, input.date);
+    if (
+      (account.archivedAt && previous?.accountId !== account.id) ||
+      account.currency !== input.currency ||
+      input.date < account.openingDate
+    )
+      throw new ClientFailure("validation", "INVALID_ACCOUNT");
+    const allCategories = await categories.list();
+    const category = allCategories.find((row) => row.id === input.categoryId);
     if (
       !category ||
-      (category.archivedAt && previous?.categoryId !== category.id)
+      ((category.archivedAt ||
+        allCategories.find((parent) => parent.id === category.parentId)
+          ?.archivedAt) &&
+        previous?.categoryId !== category.id)
     )
       throw new ClientFailure("validation");
   }
@@ -172,6 +198,8 @@ export function createDemoTransactionSource(
       const sorted = rows
         .filter(
           (row) =>
+            (!filter.accountId || row.accountId === filter.accountId) &&
+            (!filter.currency || row.currency === filter.currency) &&
             (!filter.from || row.date >= filter.from) &&
             (!filter.to || row.date <= filter.to) &&
             (!filter.categoryId || row.categoryId === filter.categoryId) &&
@@ -187,26 +215,57 @@ export function createDemoTransactionSource(
           sorted.length > 50 && last ? `${last.date}_${last.id}` : null
       };
     },
-    async create(input) {
+    async create(request) {
+      const { clientRequestId, ...input } = transactionCreate.parse(request);
+      const fingerprint = JSON.stringify([
+        input.accountId,
+        input.categoryId,
+        input.direction,
+        input.amountMinor,
+        input.currency,
+        input.date,
+        input.note
+      ]);
+      const prior = creations.get(clientRequestId);
+      if (prior) {
+        if (prior.fingerprint !== fingerprint)
+          throw new ClientFailure("conflict", "IDEMPOTENCY_KEY_REUSED");
+        const saved = rows.find((row) => row.id === prior.id);
+        if (!saved)
+          throw new ClientFailure("conflict", "OPERATION_ALREADY_APPLIED");
+        return { ...saved };
+      }
       await checked(input);
       beforeWrite?.(input);
       const row = {
         ...input,
+        importId: null,
         id: `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
       rows.push(row);
+      creations.set(clientRequestId, { fingerprint, id: row.id });
       return { ...row };
     },
     async update(id, input) {
       const previous = rows.find((row) => row.id === id);
       if (!previous) throw new ClientFailure("unavailable");
-      await checked(input, previous);
-      beforeWrite?.(input, previous);
+      const merged = transactionInput.parse({
+        direction: previous.direction,
+        amountMinor: previous.amountMinor,
+        currency: previous.currency,
+        date: previous.date,
+        categoryId: previous.categoryId,
+        accountId: previous.accountId,
+        note: previous.note,
+        ...input
+      });
+      await checked(merged, previous);
+      beforeWrite?.(merged, previous);
       const updated = {
         ...previous,
-        ...input,
+        ...merged,
         updatedAt: new Date().toISOString()
       };
       rows = rows.map((row) => (row.id === id ? updated : row));

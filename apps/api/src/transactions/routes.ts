@@ -2,9 +2,9 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { errorSchema } from "../auth/routes.js";
+import { cursorSchema } from "./contracts.js";
 import {
-  cursorSchema,
-  transactionInput,
+  transactionCreate,
   transactionPatch,
   transactionQuery,
   transactionSchema
@@ -23,17 +23,17 @@ export function registerTransactionRoutes(
     ])
   );
   const secured = { tags: ["Transactions"], security: [{ bearerAuth: [] }] };
-  const params = z.strictObject({ id: z.uuid() });
-  const empty = z.strictObject({});
+  const params = z.strictObject({ id: z.uuid() }),
+    empty = z.strictObject({});
   app.get(
     "/v1/transactions",
     {
       onRequest: app.authenticate,
       schema: {
         ...secured,
-        description:
-          "Owned transactions, date descending then UUID descending. limit 1–100 (default 50); after is nextCursor. Optional inclusive from/to must be supplied together, at most 366 days apart. categoryId and direction combine with AND. Pagination is live, not a snapshot.",
         querystring: transactionQuery,
+        description:
+          "Normal transactions only. Date/UUID descending keyset pagination; bounded date/account/category/direction/currency filters combine with AND. includeSubcategories requires categoryId.",
         response: {
           ...errors,
           200: z.object({
@@ -64,17 +64,24 @@ export function registerTransactionRoutes(
       onRequest: app.authenticate,
       schema: {
         ...secured,
-        description:
-          "Positive integer minor units up to 2147483647. Supported currencies: CAD/USD/EUR/GBP/INR (2 decimals), JPY (0), KWD (3). Real calendar dates 0001–9999. Merchant 1–200 UTF-16 units with visible text; note nullable, up to 2000 units. Text is preserved; control, format and surrogate characters are rejected. Category must be owned and active. Activated currency preferences enforce the configured denomination and lock it atomically with the first posting.",
-        body: transactionInput,
         querystring: empty,
-        response: { ...errors, 201: transactionSchema }
+        body: transactionCreate,
+        description:
+          "Required owned active account/category and UUID clientRequestId. Positive exact integer minor units, matching account/Settings currency, date on or after account opening. No merchant or client provenance. Same owner/key/payload replays with 200; changed payload or replay after deletion returns 409. First posting and currency lock commit atomically.",
+        response: {
+          ...errors,
+          200: transactionSchema,
+          201: transactionSchema
+        }
       }
     },
-    async (request, reply) =>
-      reply
-        .code(201)
-        .send(await service.create(request.principal!.userId, request.body))
+    async (request, reply) => {
+      const result = await service.create(
+        request.principal!.userId,
+        request.body
+      );
+      return reply.code(result.replayed ? 200 : 201).send(result.resource);
+    }
   );
   app.patch(
     "/v1/transactions/:id",
@@ -82,11 +89,11 @@ export function registerTransactionRoutes(
       onRequest: app.authenticate,
       schema: {
         ...secured,
-        description:
-          "Partial update; at least one field. Retaining an existing archived category is allowed; a different category must be owned and active.",
         params,
-        body: transactionPatch,
         querystring: empty,
+        body: transactionPatch,
+        description:
+          "Nonempty partial update. Recorded currency/identity/provenance are immutable. Unchanged archived account/category associations may remain; changed selections must be active. Opening-date/currency guards always apply.",
         response: { ...errors, 200: transactionSchema }
       }
     },

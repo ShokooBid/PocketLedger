@@ -5,7 +5,6 @@ import {
   accountQuery
 } from "../src/accounts/contracts.js";
 import { preferencesPatch } from "../src/preferences/contracts.js";
-import { readConfig } from "../src/config.js";
 
 const input = {
   name: "My cash",
@@ -74,23 +73,5 @@ describe("account contracts", () => {
       { userId: "forged" }
     ])
       expect(accountQuery.safeParse(query).success).toBe(false);
-  });
-  it("requires both explicit account and currency rollout flags", () => {
-    const env = {
-      NODE_ENV: "test",
-      DATABASE_URL: "postgresql://unused:unused@127.0.0.1/unused",
-      ACCESS_TOKEN_SECRET: "A".repeat(43)
-    };
-    expect(readConfig(env).accountsEnabled).toBe(false);
-    expect(
-      readConfig({ ...env, FINANCE_ACCOUNTS_ENABLED: "true" }).accountsEnabled
-    ).toBe(false);
-    expect(
-      readConfig({
-        ...env,
-        FINANCE_ACCOUNTS_ENABLED: "true",
-        FINANCE_CURRENCY_ENABLED: "true"
-      }).accountsEnabled
-    ).toBe(true);
   });
 });

@@ -22,15 +22,11 @@ async function owner() {
 }
 beforeAll(async () => {
   await database.start();
-  auth = await createAuthService(
-    db,
-    { ...testConfig(), categoryHierarchyEnabled: true },
-    async (subject) => ({
-      subject,
-      email: `${subject}@example.invalid`,
-      verifiedEmail: true
-    })
-  );
+  auth = await createAuthService(db, testConfig(), async (subject) => ({
+    subject,
+    email: `${subject}@example.invalid`,
+    verifiedEmail: true
+  }));
 });
 afterAll(async () => {
   await database.close();

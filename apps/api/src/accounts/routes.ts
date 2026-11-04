@@ -26,7 +26,7 @@ export function registerAccountRoutes(
   const secured = { tags: ["Accounts"], security: [{ bearerAuth: [] }] };
   const empty = z.strictObject({});
   const params = z.strictObject({ id: z.uuid() });
-  const base = "/v2/accounts";
+  const base = "/v1/accounts";
   app.get(
     base,
     {

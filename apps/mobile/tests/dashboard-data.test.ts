@@ -1,3 +1,4 @@
+import { accounts, accountId, requestId } from "./auth-fixtures";
 import { describe, expect, it, jest } from "@jest/globals";
 import {
   adjacentMonth,
@@ -94,7 +95,7 @@ describe("dashboard data boundaries", () => {
   it("keeps demo totals complete across pages, separates currencies, and retains archived names", async () => {
     const categories = createDemoCategorySource();
     await categories.create("Food");
-    const transactions = createDemoTransactionSource(categories);
+    const transactions = createDemoTransactionSource(categories, accounts);
     const source = createDemoDashboardSource(transactions, categories);
     const listener = jest.fn();
     const unsubscribe = source.subscribe(listener);
@@ -104,17 +105,32 @@ describe("dashboard data boundaries", () => {
       currency: "USD" as const,
       date: "2026-10-01",
       categoryId: "demo-1",
-      merchant: "Synthetic shop",
+      accountId: accountId(),
       note: null
     };
-    for (let n = 0; n < 51; n++) await transactions.create(input);
-    await transactions.create({ ...input, currency: "JPY", amountMinor: 999 });
+    for (let n = 0; n < 51; n++)
+      await transactions.create({ ...input, clientRequestId: requestId() });
     await transactions.create({
-      ...input,
-      direction: "income",
-      amountMinor: 10000
+      ...{
+        ...input,
+        currency: "JPY",
+        accountId: accountId("JPY"),
+        amountMinor: 999
+      },
+      clientRequestId: requestId()
     });
-    await transactions.create({ ...input, date: "2026-11-01" });
+    await transactions.create({
+      ...{
+        ...input,
+        direction: "income",
+        amountMinor: 10000
+      },
+      clientRequestId: requestId()
+    });
+    await transactions.create({
+      ...{ ...input, date: "2026-11-01" },
+      clientRequestId: requestId()
+    });
     await categories.archive("demo-1");
     const summary = await source.summary({ month: "2026-10", currency: "USD" });
     expect(summary).toMatchObject({

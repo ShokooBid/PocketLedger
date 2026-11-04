@@ -1,3 +1,4 @@
+import { accountId } from "./auth-fixtures";
 import { afterEach, describe, expect, it, jest } from "@jest/globals";
 import {
   act,
@@ -44,8 +45,9 @@ function fixture(
         amountMinor: 250,
         currency: "USD",
         date: `${month}-01`,
-        merchant: "Synthetic shop",
-        note: null,
+        accountId: accountId(),
+        importId: null,
+        note: "Synthetic shop",
         createdAt: "2026-10-01T00:00:00Z",
         updatedAt: "2026-10-01T00:00:00Z"
       }

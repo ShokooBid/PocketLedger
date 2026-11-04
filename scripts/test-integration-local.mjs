@@ -8,10 +8,10 @@ if (!npm)
   throw new Error("Run this script with npm run test:integration:local.");
 
 // The existing harness validates a loopback DATABASE_URL and owns a temporary
-// schema for each suite. Only the child process receives this opt-in flag.
+// schema for each suite. Only the child process receives this test connection.
 const result = spawnSync(process.execPath, [npm, "run", "test:integration"], {
   cwd: fileURLToPath(new URL("../", import.meta.url)),
-  env: { ...process.env, TEST_USE_LOCAL_DATABASE: "true" },
+  env: { ...process.env, TEST_DATABASE_URL: process.env.DATABASE_URL },
   stdio: "inherit",
   windowsHide: true
 });

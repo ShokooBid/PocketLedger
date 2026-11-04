@@ -2,59 +2,73 @@ import {
   createContext,
   useContext,
   useState,
+  useRef,
   type PropsWithChildren
 } from "react";
 import { useCategories } from "./category-context";
 import { useSession } from "./session";
 import { usePreferences } from "./preferences";
 import { createApiTransactionSource } from "./transaction-api";
-import { ClientFailure } from "./auth/transport";
 import {
-  createDemoTransactionSource,
-  type TransactionSource
-} from "./transaction-data";
+  createApiAccountSource,
+  createDemoFinanceSources,
+  type AccountSource
+} from "./account-data";
+import type { TransactionSource } from "./transaction-data";
 
 const Transactions = createContext<TransactionSource | null>(null);
+const Accounts = createContext<AccountSource | null>(null);
+// The session-keyed application layout discards both sources on account changes.
 export function TransactionsProvider({ children }: PropsWithChildren) {
-  const categories = useCategories();
-  const { session, controller } = useSession();
-  const preferences = usePreferences();
-  const [source] = useState(() => {
+  const categories = useCategories(),
+    { session, controller } = useSession(),
+    preferences = usePreferences();
+  const current = useRef(preferences);
+  current.current = preferences;
+  const [sources] = useState(() => {
     if (session.status === "demo")
-      return createDemoTransactionSource(categories, (input, previous) => {
-        if (previous) {
-          if (
-            preferences.currencyState.enabled &&
-            input.currency !== previous.currency
-          )
-            throw new ClientFailure("validation", "CURRENCY_IMMUTABLE");
-        } else {
-          preferences.assertNewCurrency(input.currency);
-          preferences.transactionSaved();
+      return createDemoFinanceSources(
+        categories,
+        () => current.current.defaultCurrency,
+        (input, previous) => {
+          if (!previous) {
+            current.current.assertNewCurrency(input.currency);
+            current.current.transactionSaved();
+          }
         }
-      });
-    if (session.status === "authenticated") {
-      const source = createApiTransactionSource(
-        controller.client(session.generation)
       );
-      return {
+    if (session.status !== "authenticated")
+      throw new Error("Finance requires an application session.");
+    const client = controller.client(session.generation),
+      source = createApiTransactionSource(client);
+    return {
+      accounts: createApiAccountSource(client),
+      transactions: {
         ...source,
         async create(input: Parameters<TransactionSource["create"]>[0]) {
-          preferences.assertNewCurrency(input.currency);
+          current.current.assertNewCurrency(input.currency);
           const row = await source.create(input);
-          preferences.transactionSaved();
+          current.current.transactionSaved();
           return row;
         }
-      };
-    }
-    throw new Error("Transactions require an application session.");
+      }
+    };
   });
   return (
-    <Transactions.Provider value={source}>{children}</Transactions.Provider>
+    <Accounts.Provider value={sources.accounts}>
+      <Transactions.Provider value={sources.transactions}>
+        {children}
+      </Transactions.Provider>
+    </Accounts.Provider>
   );
 }
 export function useTransactions() {
   const source = useContext(Transactions);
+  if (!source) throw new Error("TransactionsProvider is required.");
+  return source;
+}
+export function useAccounts() {
+  const source = useContext(Accounts);
   if (!source) throw new Error("TransactionsProvider is required.");
   return source;
 }

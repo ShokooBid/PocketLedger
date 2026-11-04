@@ -71,7 +71,7 @@ jobs:
         id: typecheck
         run: npm run typecheck
 
-      - name: Run unit tests (shared still permits zero tests)
+      - name: Run unit tests
         id: unit
         run: npm run test
 
@@ -84,10 +84,6 @@ jobs:
       - name: Build API
         id: api_build
         run: npm run build --workspace=@pocketledger/api
-
-      - name: Build shared package
-        id: shared_build
-        run: npm run build --workspace=@pocketledger/shared
 
       - name: Generate OpenAPI from route schemas
         id: openapi
@@ -117,9 +113,8 @@ jobs:
             "unit": "${{ steps.unit.outcome }}",
             "integration": "${{ steps.integration.outcome }}",
             "apiBuild": "${{ steps.api_build.outcome }}",
-            "sharedBuild": "${{ steps.shared_build.outcome }}",
             "openapi": "${{ steps.openapi.outcome }}",
-            "testCoverageNote": "API and mobile category integration tests use disposable PostgreSQL and synthetic accounts. Mobile session/storage/provider/UI unit tests mock native boundaries; shared still permits zero tests. Real Google/device flows require development builds."
+            "testCoverageNote": "API and mobile category integration tests use disposable PostgreSQL and synthetic accounts. Mobile session/storage/provider/UI unit tests mock native boundaries; Real Google/device flows require development builds."
           }
           JSON
 

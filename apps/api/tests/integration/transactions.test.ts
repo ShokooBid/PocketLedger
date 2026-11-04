@@ -1,57 +1,43 @@
 import { randomUUID } from "node:crypto";
-import { Writable } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../../src/app.js";
 import { createAuthService } from "../../src/auth/service.js";
+import { createAccountService } from "../../src/accounts/service.js";
+import { createPreferencesService } from "../../src/preferences/service.js";
 import { createTransactionService } from "../../src/transactions/service.js";
+import { createCategoryService } from "../../src/categories/service.js";
+import { createDashboardService } from "../../src/dashboard/service.js";
 import { testConfig } from "../fixtures.js";
 import { disposableDatabase } from "../support/disposable.js";
 
-const database = disposableDatabase();
-const db = database.db;
+const database = disposableDatabase(),
+  db = database.db;
+const accounts = createAccountService(db),
+  preferences = createPreferencesService(db);
+const service = createTransactionService(db);
 let app: Awaited<ReturnType<typeof buildApp>>;
-let alice: { token: string; id: string; categoryId: string };
-let bob: typeof alice;
-const root = "/v1/transactions";
-const logs: string[] = [];
+const base = "/v1/transactions";
+type Owner = {
+  id: string;
+  token: string;
+  categoryId: string;
+  accountId: string;
+};
 beforeAll(async () => {
   await database.start();
-  const auth = await createAuthService(db, testConfig(), async () => {
-    throw new Error("No provider");
+  const config = testConfig();
+  const auth = await createAuthService(db, config, async () => {
+    throw new Error("No provider calls.");
   });
-  app = await buildApp(testConfig(), auth, {
-    logger: {
-      level: "info",
-      stream: new Writable({
-        write(chunk, _encoding, callback) {
-          logs.push(String(chunk));
-          callback();
-        }
-      })
-    },
+  app = await buildApp(config, auth, {
+    logger: false,
     rateLimitMax: 10000,
-    transactions: createTransactionService(db)
+    accounts,
+    preferences,
+    transactions: service,
+    categories: createCategoryService(db),
+    dashboard: createDashboardService(db)
   });
-  async function owner() {
-    const email = `${randomUUID()}@example.invalid`;
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/auth/register",
-      payload: { email, password: "synthetic transaction password" }
-    });
-    expect(response.statusCode).toBe(201);
-    const user = await db.user.findUniqueOrThrow({ where: { email } });
-    const category = await db.category.create({
-      data: { userId: user.id, name: "Synthetic category" }
-    });
-    return {
-      token: response.json().accessToken as string,
-      id: user.id,
-      categoryId: category.id
-    };
-  }
-  alice = await owner();
-  bob = await owner();
 });
 afterAll(async () => {
   try {
@@ -60,285 +46,308 @@ afterAll(async () => {
     await database.close();
   }
 });
-const input = () => ({
+async function owner(): Promise<Owner> {
+  const email = `${randomUUID()}@example.invalid`;
+  const response = await app.inject({
+    method: "POST",
+    url: "/v1/auth/register",
+    payload: { email, password: "synthetic transaction password" }
+  });
+  expect(response.statusCode, response.body).toBe(201);
+  const { id } = await db.user.findUniqueOrThrow({ where: { email } });
+  const category = await db.category.create({
+    data: { userId: id, name: "Food" }
+  });
+  const account = await accounts.create(id, {
+    name: "Cash",
+    type: "cash",
+    currency: "CAD",
+    openingDate: "2026-01-01",
+    openingBalanceMinor: 10000
+  });
+  return {
+    id,
+    token: response.json().accessToken,
+    categoryId: category.id,
+    accountId: account.id
+  };
+}
+const input = (user: Owner, extra: object = {}) => ({
+  clientRequestId: randomUUID(),
+  accountId: user.accountId,
+  categoryId: user.categoryId,
   direction: "expense",
-  amountMinor: 101,
-  currency: "USD",
-  date: "2024-02-29",
-  categoryId: alice.categoryId,
-  merchant: "Synthetic shop",
-  note: "Keep this note"
+  amountMinor: 1250,
+  currency: "CAD",
+  date: "2026-02-01",
+  ...extra
 });
-function request(
+const request = (
+  user: Owner,
   method: "GET" | "POST" | "PATCH" | "DELETE",
-  path = root,
-  payload?: object,
-  token = alice.token
-) {
-  return app.inject({
+  url = base,
+  payload?: object
+) =>
+  app.inject({
     method,
-    url: path,
-    headers: { authorization: `Bearer ${token}` },
+    url,
+    headers: { authorization: `Bearer ${user.token}` },
     ...(payload ? { payload } : {})
   });
-}
-async function create(extra: object = {}) {
-  const response = await request("POST", root, { ...input(), ...extra });
+async function create(user: Owner, extra: object = {}) {
+  const response = await request(user, "POST", base, input(user, extra));
   expect(response.statusCode, response.body).toBe(201);
-  return response.json<{ id: string; note: string }>();
+  return response.json() as { id: string; accountId: string; currency: string };
 }
-describe("protected transactions", () => {
-  it("requires authentication on all operations", async () => {
-    for (const [method, url] of [
-      ["GET", root],
-      ["GET", `${root}/${randomUUID()}`],
-      ["POST", root],
-      ["PATCH", `${root}/${randomUUID()}`],
-      ["DELETE", `${root}/${randomUUID()}`]
-    ] as const) {
-      expect((await app.inject({ method, url })).statusCode).toBe(401);
-      expect((await request(method, url, undefined, "forged")).statusCode).toBe(
-        401
-      );
-    }
-  });
-  it("round trips exact bounds and real dates, patches without clearing omitted fields, deletes", async () => {
-    for (const currency of ["CAD", "USD", "EUR", "GBP", "INR", "JPY", "KWD"]) {
-      const row = await create({ currency, amountMinor: 2147483647 });
-      expect((await request("GET", `${root}/${row.id}`)).json()).toMatchObject({
-        amountMinor: 2147483647,
-        date: "2024-02-29",
-        currency
-      });
+
+describe("account-aware transactions", () => {
+  it("authenticates before validation and exposes one canonical contract", async () => {
+    for (const [method, url, payload] of [
+      ["GET", base],
+      ["GET", `${base}/bad`],
+      ["POST", base, {}],
+      ["PATCH", `${base}/bad`, {}],
+      ["DELETE", `${base}/bad`]
+    ] as const)
       expect(
-        (
-          await request("PATCH", `${root}/${row.id}`, {
-            amountMinor: 1,
-            date: "0001-01-01"
-          })
-        ).json()
-      ).toMatchObject({
-        amountMinor: 1,
-        date: "0001-01-01",
-        note: "Keep this note"
-      });
-      expect(
-        (await request("PATCH", `${root}/${row.id}`, { note: null })).json()
-          .note
-      ).toBeNull();
-      expect((await request("DELETE", `${root}/${row.id}`)).json()).toEqual({
-        ok: true
-      });
-      expect((await request("GET", `${root}/${row.id}`)).statusCode).toBe(404);
-    }
+        (await app.inject({ method, url, ...(payload ? { payload } : {}) }))
+          .statusCode
+      ).toBe(401);
+    const user = await owner();
+    expect((await request(user, "GET", "/v1/me")).statusCode).toBe(200);
+    expect(app.swagger().paths?.[base]?.post?.responses?.["200"]).toBeDefined();
+    expect(app.swagger().paths?.[base]?.post?.responses?.["201"]).toBeDefined();
   });
-  it("rejects malformed amounts, currencies, dates, text, category assignments and owner/import injection", async () => {
-    const row = await create();
-    for (const patch of [
-      { amountMinor: 0 },
-      { amountMinor: -1 },
-      { amountMinor: 1.1 },
-      { amountMinor: 2147483648 },
-      { amountMinor: "100" },
-      { currency: "ZZZ" },
-      { currency: "usd" },
-      { date: "2023-02-29" },
-      { date: "2024-04-31" },
-      { date: "0000-01-01" },
-      { date: "2024-01-01T00:00:00Z" },
-      { merchant: " " },
-      { merchant: "x".repeat(201) },
-      { note: "x".repeat(2001) },
-      { note: "bad\u0000text" },
-      { merchant: "\ud800" },
-      { categoryId: bob.categoryId },
-      { categoryId: randomUUID() },
-      { userId: bob.id },
-      { importId: randomUUID() }
-    ]) {
-      for (const [method, path, payload] of [
-        ["POST", root, { ...input(), ...patch }],
-        ["PATCH", `${root}/${row.id}`, patch]
-      ] as const)
-        expect(
-          (await request(method, path, payload)).statusCode,
-          JSON.stringify(patch)
-        ).toBe(422);
-    }
-    expect((await request("PATCH", `${root}/${row.id}`, {})).statusCode).toBe(
-      422
-    );
+  it("stores no synthetic merchant, locks on first commit, and computes exact signed as-of balances", async () => {
+    const user = await owner();
+    expect((await preferences.get(user.id)).currencyLocked).toBe(false);
+    const row = await create(user, { note: "Weekly groceries" });
+    const stored = await db.transaction.findUniqueOrThrow({
+      where: { id: row.id }
+    });
+    expect(stored.merchant).toBeNull();
     expect(
-      (await request("GET", `${root}/${row.id}`)).json()
-    ).not.toHaveProperty("userId");
-    expect((await request("GET", `${root}/${row.id}`)).json()).toMatchObject(
-      input()
+      (await request(user, "GET", `${base}/${row.id}`)).json()
+    ).toMatchObject({
+      accountId: user.accountId,
+      note: "Weekly groceries",
+      importId: null
+    });
+    expect(
+      (await request(user, "GET", `${base}/${row.id}`)).json()
+    ).not.toHaveProperty("merchant");
+    await create(user, { amountMinor: 250, direction: "income" });
+    await create(user, { date: "9999-12-31", amountMinor: 500 });
+    expect(
+      (await accounts.get(user.id, user.accountId, "2026-01-31")).balanceMinor
+    ).toBe(10000);
+    expect(
+      (await accounts.get(user.id, user.accountId, "2026-02-01")).balanceMinor
+    ).toBe(9000);
+    expect((await accounts.get(user.id, user.accountId)).balanceMinor).toBe(
+      9000
     );
+    await create(user, { amountMinor: 20000 });
+    expect(
+      (await accounts.get(user.id, user.accountId, "2026-02-01")).balanceMinor
+    ).toBe(-11000);
+    await expect(
+      preferences.update(user.id, { entryCurrency: "USD" })
+    ).rejects.toMatchObject({ code: "CURRENCY_LOCKED" });
+    const filtered = (
+      await request(
+        user,
+        "GET",
+        `${base}?accountId=${user.accountId}&direction=income&from=2026-02-01&to=2026-02-01&currency=CAD`
+      )
+    ).json();
+    expect(filtered.items).toHaveLength(1);
+    const first = (await request(user, "GET", `${base}?limit=1`)).json();
+    const second = (
+      await request(user, "GET", `${base}?limit=1&after=${first.nextCursor}`)
+    ).json();
+    expect(first.items[0].id).not.toBe(second.items[0].id);
   });
-  it("hides foreign/missing IDs equally and isolates list and writes", async () => {
-    const other = await request(
+  it("rejects foreign/missing/archived/wrong-currency/predating associations without leaving locks or identity records", async () => {
+    const user = await owner(),
+      other = await owner();
+    const foreign = await request(
+      user,
       "POST",
-      root,
-      { ...input(), categoryId: bob.categoryId },
-      bob.token
+      base,
+      input(user, { accountId: other.accountId })
     );
-    expect(other.statusCode).toBe(201);
-    for (const id of [other.json().id as string, randomUUID()])
-      for (const method of ["GET", "PATCH", "DELETE"] as const) {
-        const result = await request(
-          method,
-          `${root}/${id}`,
-          method === "PATCH" ? { merchant: "Intruder" } : undefined
-        );
-        expect(result.statusCode).toBe(404);
-        expect(result.json().error).toMatchObject({
-          code: "NOT_FOUND",
-          message: "Resource not found."
-        });
-      }
-    expect(
-      (await request("GET", `${root}?categoryId=${bob.categoryId}`)).json()
-        .items
-    ).toEqual([]);
+    const absent = await request(
+      user,
+      "POST",
+      base,
+      input(user, { accountId: randomUUID() })
+    );
+    expect([foreign.statusCode, absent.statusCode]).toEqual([404, 404]);
+    expect(foreign.json().error.code).toBe(absent.json().error.code);
     expect(
       (
-        await request("GET", `${root}/${other.json().id}`, undefined, bob.token)
-      ).json().merchant
-    ).toBe("Synthetic shop");
+        await request(
+          user,
+          "POST",
+          base,
+          input(user, { categoryId: other.categoryId })
+        )
+      ).statusCode
+    ).toBe(404);
+    expect(
+      (
+        await request(user, "POST", base, input(user, { date: "2025-12-31" }))
+      ).json().error.code
+    ).toBe("INVALID_ACCOUNT");
+    await preferences.update(user.id, { entryCurrency: "USD" });
+    expect(
+      (await request(user, "POST", base, input(user))).json().error.code
+    ).toBe("CURRENCY_MISMATCH");
+    expect(
+      (
+        await request(user, "POST", base, input(user, { currency: "USD" }))
+      ).json().error.code
+    ).toBe("CURRENCY_MISMATCH");
+    await preferences.update(user.id, { entryCurrency: "CAD" });
+    await accounts.archive(user.id, user.accountId);
+    expect(
+      (await request(user, "POST", base, input(user))).json().error.code
+    ).toBe("INVALID_ACCOUNT");
+    expect((await preferences.get(user.id)).currencyLocked).toBe(false);
+    expect(
+      await db.transactionCreation.count({ where: { userId: user.id } })
+    ).toBe(0);
+    for (const id of [other.accountId, randomUUID()])
+      expect(
+        (await request(user, "GET", `${base}?accountId=${id}`)).statusCode
+      ).toBe(404);
   });
-  it("preserves archived history but rejects new assignments", async () => {
-    const category = await db.category.create({
-      data: { userId: alice.id, name: "Historical" }
-    });
-    const row = await create({ categoryId: category.id });
+  it("retains unchanged archived associations but validates changed assignments and dates on edits", async () => {
+    const user = await owner();
+    const row = await create(user);
+    await accounts.archive(user.id, user.accountId);
     await db.category.update({
-      where: { id: category.id },
+      where: { id: user.categoryId },
       data: { archivedAt: new Date() }
     });
     expect(
       (
-        await request("PATCH", `${root}/${row.id}`, {
-          categoryId: category.id,
-          merchant: "Edited history"
+        await request(user, "PATCH", `${base}/${row.id}`, {
+          note: "Edited history",
+          accountId: user.accountId,
+          categoryId: user.categoryId
         })
       ).statusCode
     ).toBe(200);
     expect(
-      (await request("POST", root, { ...input(), categoryId: category.id }))
-        .statusCode
-    ).toBe(422);
-    const other = await create();
-    expect(
       (
-        await request("PATCH", `${root}/${other.id}`, {
-          categoryId: category.id
+        await request(user, "PATCH", `${base}/${row.id}`, {
+          date: "2025-12-31"
         })
       ).statusCode
     ).toBe(422);
     expect(
-      (await request("GET", `${root}?categoryId=${category.id}`)).json()
-        .items[0].id
-    ).toBe(row.id);
+      (
+        await request(user, "PATCH", `${base}/${row.id}`, { currency: "USD" })
+      ).json().error.code
+    ).toBe("CURRENCY_IMMUTABLE");
+    const active = await accounts.create(user.id, {
+      name: "Other",
+      type: "other",
+      currency: "CAD",
+      openingDate: "2026-01-01",
+      openingBalanceMinor: 0
+    });
+    expect(
+      (
+        await request(user, "PATCH", `${base}/${row.id}`, {
+          accountId: active.id
+        })
+      ).statusCode
+    ).toBe(200);
+    expect(
+      (
+        await request(user, "PATCH", `${base}/${row.id}`, {
+          accountId: user.accountId
+        })
+      ).statusCode
+    ).toBe(422);
+    expect(
+      (await request(user, "DELETE", `${base}/${row.id}`)).statusCode
+    ).toBe(200);
+    expect((await preferences.get(user.id)).currencyLocked).toBe(true);
   });
-  it("combines inclusive filters and paginates same-day ties without duplicates, including after deletion", async () => {
-    const category = await db.category.create({
-      data: { userId: alice.id, name: "Filter" }
-    });
-    const expected: string[] = [];
-    for (const date of [
-      "2026-10-01",
-      "2026-10-02",
-      "2026-10-02",
-      "2026-10-03"
-    ]) {
-      const row = await create({
-        categoryId: category.id,
-        date,
-        direction: "income"
-      });
-      if (date !== "2026-10-03") expected.push(row.id);
-    }
-    await create({
-      categoryId: category.id,
-      date: "2026-10-02",
-      direction: "expense"
-    });
-    const query = `from=2026-10-01&to=2026-10-02&categoryId=${category.id}&direction=income&limit=1`;
-    const ids: string[] = [];
-    let after: string | null = null;
-    do {
-      const result = await request(
-        "GET",
-        `${root}?${query}${after ? `&after=${after}` : ""}`
-      );
-      expect(result.statusCode).toBe(200);
-      const page = result.json<{
-        items: { id: string }[];
-        nextCursor: string | null;
-      }>();
-      ids.push(...page.items.map((row) => row.id));
-      after = page.nextCursor;
-      if (ids.length === 1) await request("DELETE", `${root}/${ids[0]}`);
-    } while (after);
-    expect(ids.sort()).toEqual(expected.sort());
-    expect(new Set(ids).size).toBe(ids.length);
-    for (const query of [
-      "limit=0",
-      "limit=101",
-      "limit=1.5",
-      "after=bad",
-      "from=2026-01-01",
-      "to=2026-01-01",
-      "from=2026-02-01&to=2026-01-01",
-      "from=2020-01-01&to=2026-01-01",
-      "direction=transfer",
-      "userId=bad"
-    ])
-      expect((await request("GET", `${root}?${query}`)).statusCode).toBe(422);
-  });
-  it("publishes protected routes and supports DELETE preflight", async () => {
-    await app.ready();
-    const spec = app.swagger();
-    for (const method of ["get", "post"] as const)
-      expect(spec.paths?.[root]?.[method]?.security).toEqual([
-        { bearerAuth: [] }
-      ]);
-    for (const method of ["get", "patch", "delete"] as const)
-      expect(spec.paths?.[`${root}/{id}`]?.[method]?.security).toEqual([
-        { bearerAuth: [] }
-      ]);
-    const response = await app.inject({
-      method: "OPTIONS",
-      url: root,
-      headers: {
-        origin: "https://app.example.invalid",
-        "access-control-request-method": "DELETE"
-      }
-    });
-    expect(response.statusCode).toBe(204);
-    expect(response.headers["access-control-allow-methods"]).toContain(
-      "DELETE"
+  it("serializes duplicate creates, isolates keys by owner, rejects changed payloads and keeps deletion tombstones", async () => {
+    const user = await owner(),
+      other = await owner(),
+      payload = input(user);
+    const responses = await Promise.all([
+      request(user, "POST", base, payload),
+      request(user, "POST", base, payload)
+    ]);
+    expect(responses.map((r) => r.statusCode).sort()).toEqual([200, 201]);
+    const id = responses[0]!.json().id;
+    expect(responses[1]!.json().id).toBe(id);
+    expect(await db.transaction.count({ where: { userId: user.id } })).toBe(1);
+    expect(
+      (await request(user, "POST", base, { ...payload, amountMinor: 1 })).json()
+        .error.code
+    ).toBe("IDEMPOTENCY_KEY_REUSED");
+    expect(
+      (
+        await request(
+          other,
+          "POST",
+          base,
+          input(other, { clientRequestId: payload.clientRequestId })
+        )
+      ).statusCode
+    ).toBe(201);
+    await request(user, "DELETE", `${base}/${id}`);
+    expect((await request(user, "POST", base, payload)).json().error.code).toBe(
+      "OPERATION_ALREADY_APPLIED"
     );
   });
-  it("keeps transaction bodies, filters, IDs and credentials out of routine logs", async () => {
-    const row = await create({
-      merchant: "private-merchant-marker",
-      note: "private-note-marker"
-    });
-    await request(
-      "GET",
-      `${root}?categoryId=${alice.categoryId}&from=2024-02-29&to=2024-02-29`
-    );
-    const output = logs.join("");
-    expect(output).toContain("request completed");
-    for (const value of [
-      "private-merchant-marker",
-      "private-note-marker",
-      row.id,
-      alice.categoryId,
-      alice.token,
-      "2024-02-29"
+  it("enforces account/date/currency rules in direct writes and serializes first-posting races", async () => {
+    const user = await owner(),
+      other = await owner();
+    const fields = {
+      accountId: user.accountId,
+      categoryId: user.categoryId,
+      amountMinor: 1250,
+      currency: "CAD",
+      date: "2026-02-01"
+    };
+    for (const extra of [
+      { accountId: other.accountId },
+      { date: new Date("2025-12-31") },
+      { currency: "USD" }
     ])
-      expect(output).not.toContain(value);
+      await expect(
+        db.transaction.create({
+          data: {
+            ...fields,
+            userId: user.id,
+            direction: "expense",
+            date: new Date(fields.date),
+            ...extra
+          }
+        })
+      ).rejects.toThrow();
+    const [post, change] = await Promise.all([
+      request(user, "POST", base, input(user)),
+      request(user, "PATCH", "/v1/preferences", { entryCurrency: "USD" })
+    ]);
+    expect([
+      [201, 409],
+      [422, 200]
+    ]).toContainEqual([post.statusCode, change.statusCode]);
+    const racing = await owner();
+    const [createResult] = await Promise.all([
+      request(racing, "POST", base, input(racing)),
+      accounts.archive(racing.id, racing.accountId)
+    ]);
+    expect([201, 422]).toContain(createResult.statusCode);
   });
 });

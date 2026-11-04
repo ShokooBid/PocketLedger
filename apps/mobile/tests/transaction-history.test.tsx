@@ -1,3 +1,4 @@
+import { accounts, accountId, requestId } from "./auth-fixtures";
 import { describe, expect, it, jest } from "@jest/globals";
 import {
   act,
@@ -23,13 +24,14 @@ import { ClientFailure } from "../src/auth/transport";
 
 const row = (n: number, date = "2026-10-01"): Transaction => ({
   id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+  importId: null,
   categoryId: "demo-1",
   direction: "expense",
   amountMinor: n,
   currency: "USD",
   date,
-  merchant: `Synthetic ${n}`,
-  note: null,
+  accountId: accountId(),
+  note: `Synthetic ${n}`,
   createdAt: "2026-10-01T00:00:00.000Z",
   updatedAt: "2026-10-01T00:00:00.000Z"
 });
@@ -47,17 +49,26 @@ async function fixture(count = 3) {
   const categories = createDemoCategorySource();
   await categories.create("Food");
   await categories.create("Work");
-  const source = createDemoTransactionSource(categories);
+  const source = createDemoTransactionSource(categories, accounts);
   for (let n = 1; n <= count; n++) {
-    const { categoryId, amountMinor, currency, merchant, note } = row(n);
-    await source.create({
+    const {
       categoryId,
       amountMinor,
       currency,
-      merchant,
-      note,
-      direction: n === 2 ? "income" : "expense",
-      date: n === 2 ? "2026-10-02" : "2026-10-01"
+      accountId: selectedAccountId,
+      note
+    } = row(n);
+    await source.create({
+      ...{
+        categoryId,
+        amountMinor,
+        currency,
+        accountId: selectedAccountId,
+        note,
+        direction: n === 2 ? "income" : "expense",
+        date: n === 2 ? "2026-10-02" : "2026-10-01"
+      },
+      clientRequestId: requestId()
     });
   }
   return { categories, source };
@@ -69,6 +80,9 @@ async function open(
 ) {
   render(
     <TransactionManagement
+      accounts={accounts}
+      defaultAccountId={accountId()}
+      defaultCurrency="USD"
       source={source}
       categories={categories}
       {...(detailId ? { detailId } : {})}
@@ -248,18 +262,18 @@ describe("transaction history and details", () => {
     expect(screen.queryByRole("button", { name: "Apply filters" })).toBeNull();
     expect(screen.getByText(/^Created:/)).toBeVisible();
     await press("Edit Synthetic 1");
-    await field("Merchant or payee", "Cancelled edit");
+    await field("Note (optional)", "Cancelled edit");
     await press("Cancel editing");
-    expect((await source.get(id)).merchant).toBe("Synthetic 1");
+    expect((await source.get(id)).note).toBe("Synthetic 1");
     await press("Edit Synthetic 1");
-    await field("Merchant or payee", "Corrected");
+    await field("Note (optional)", "Corrected");
     await press("Save transaction");
     expect(
       screen.getByRole("button", { name: "Edit Corrected" })
     ).toBeVisible();
     await press("Delete Corrected");
     await press("Keep transaction");
-    expect((await source.get(id)).merchant).toBe("Corrected");
+    expect((await source.get(id)).note).toBe("Corrected");
     await press("Delete Corrected");
     await press("Confirm delete transaction");
     expect(screen.getByText(/Transaction deleted. Return/)).toBeVisible();
@@ -277,4 +291,12 @@ describe("transaction history and details", () => {
     expect(screen.getByText(/This transaction is unavailable/)).toBeVisible();
     expect(names()).toEqual([]);
   });
+});
+
+jest.mock("expo-crypto", () => {
+  let sequence = 0;
+  return {
+    randomUUID: () =>
+      "90000000-0000-4000-8000-" + String(++sequence).padStart(12, "0")
+  };
 });

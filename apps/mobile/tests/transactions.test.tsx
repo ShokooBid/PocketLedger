@@ -1,3 +1,4 @@
+import { accounts, accountId } from "./auth-fixtures";
 import { describe, expect, it, jest } from "@jest/globals";
 import {
   act,
@@ -34,10 +35,17 @@ async function setup(wrap?: (source: TransactionSource) => TransactionSource) {
   const categories = createDemoCategorySource();
   await categories.create("Food");
   const source =
-    wrap?.(createDemoTransactionSource(categories)) ??
-    createDemoTransactionSource(categories);
+    wrap?.(createDemoTransactionSource(categories, accounts)) ??
+    createDemoTransactionSource(categories, accounts);
   render(
-    <TransactionManagement source={source} categories={categories} demo />
+    <TransactionManagement
+      accounts={accounts}
+      defaultAccountId={accountId()}
+      defaultCurrency="USD"
+      source={source}
+      categories={categories}
+      demo
+    />
   );
   await waitFor(() =>
     expect(
@@ -50,7 +58,6 @@ async function fill() {
   await press("Add transaction");
   await field("Amount", "1.01");
   await field("Transaction date (YYYY-MM-DD)", "2024-02-29");
-  await field("Merchant or payee", "Synthetic shop");
   await field("Note (optional)", "Retained note");
   await press("Category: Food");
 }
@@ -96,6 +103,7 @@ it("saves parent or child selections with unambiguous hierarchy paths in authent
     .mockImplementation(async (input) => ({
       ...input,
       id: `saved-${input.categoryId}`,
+      importId: null,
       createdAt: "2026-10-30T00:00:00Z",
       updatedAt: "2026-10-30T00:00:00Z"
     }));
@@ -113,6 +121,9 @@ it("saves parent or child selections with unambiguous hierarchy paths in authent
   };
   render(
     <TransactionManagement
+      accounts={accounts}
+      defaultAccountId={accountId()}
+      defaultCurrency="USD"
       source={source}
       categories={categories}
       demo={false}
@@ -135,7 +146,7 @@ it("saves parent or child selections with unambiguous hierarchy paths in authent
   ] as const) {
     await press("Add transaction");
     await field("Amount", "1.01");
-    await field("Merchant or payee", "Synthetic");
+    await field("Note (optional)", "Synthetic");
     await press(`Category: ${label}`);
     await press("Save transaction");
     expect(create).toHaveBeenLastCalledWith(
@@ -197,16 +208,17 @@ describe("transaction management", () => {
   it("shows one configured currency and preserves a stale draft until explicit replacement", async () => {
     const categories = createDemoCategorySource();
     await categories.create("Food");
-    const source = createDemoTransactionSource(categories);
+    const source = createDemoTransactionSource(categories, accounts);
     const onCurrencySettings = jest.fn();
     const props = {
       source,
       categories,
-      singleCurrency: true,
       onCurrencySettings
     };
     const view = render(
       <TransactionManagement
+        accounts={accounts}
+        defaultAccountId={accountId()}
         {...props}
         defaultCurrency="CAD"
         initialCreate={{ date: "2026-10-30", currency: "CAD" }}
@@ -223,6 +235,8 @@ describe("transaction management", () => {
     expect(screen.queryByRole("button", { name: /^Currency / })).toBeNull();
     view.rerender(
       <TransactionManagement
+        accounts={accounts}
+        defaultAccountId={accountId()}
         {...props}
         defaultCurrency="EUR"
         initialCreate={{ date: "2026-10-30", currency: "CAD" }}
@@ -247,15 +261,20 @@ describe("transaction management", () => {
   it("blocks saves during preference recovery without discarding entered values", async () => {
     const categories = createDemoCategorySource();
     await categories.create("Food");
-    const source = createDemoTransactionSource(categories);
+    const source = createDemoTransactionSource(categories, accounts);
     const props = {
       source,
       categories,
-      singleCurrency: true,
       defaultCurrency: "CAD" as const,
       initialCreate: { date: "2026-10-30", currency: "CAD" as const }
     };
-    const view = render(<TransactionManagement {...props} />);
+    const view = render(
+      <TransactionManagement
+        accounts={accounts}
+        defaultAccountId={accountId()}
+        {...props}
+      />
+    );
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "Save transaction" })
@@ -263,13 +282,25 @@ describe("transaction management", () => {
     );
     await field("Amount", "7.25");
     view.rerender(
-      <TransactionManagement {...props} preferencesReady={false} />
+      <TransactionManagement
+        accounts={accounts}
+        defaultAccountId={accountId()}
+        {...props}
+        preferencesReady={false}
+      />
     );
     expect(
       screen.getByRole("button", { name: "Save transaction" })
     ).toBeDisabled();
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "7.25");
-    view.rerender(<TransactionManagement {...props} preferencesReady />);
+    view.rerender(
+      <TransactionManagement
+        accounts={accounts}
+        defaultAccountId={accountId()}
+        {...props}
+        preferencesReady
+      />
+    );
     expect(
       screen.getByRole("button", { name: "Save transaction" })
     ).toBeEnabled();
@@ -320,11 +351,11 @@ describe("transaction management", () => {
     });
     await categories.archive((await categories.list())[0]!.id);
     await press("Reload transactions and categories");
-    await press("Edit Synthetic shop");
+    await press("Edit Retained note");
     expect(
       screen.getByRole("button", { name: "Category: Food (archived history)" })
     ).toBeVisible();
-    await field("Merchant or payee", "Edited shop");
+    await field("Note (optional)", "Edited shop");
     await press("Save transaction");
     await press("Delete Edited shop");
     await press("Keep transaction");
@@ -363,24 +394,23 @@ describe("transaction management", () => {
     await press("Save transaction");
     expect(create).toHaveBeenCalledTimes(1);
     await act(async () => reject(new ClientFailure("network")));
-    expect(screen.getByLabelText("Merchant or payee")).toHaveProp(
+    expect(screen.getByLabelText("Note (optional)")).toHaveProp(
       "value",
-      "Synthetic shop"
+      "Retained note"
     );
     expect(
       screen.getByRole("button", { name: "Save transaction" })
     ).toBeDisabled();
     expect(
       screen.getByRole("button", {
-        name: "I reviewed the list; enable changes"
+        name: "Retry original save"
       })
     ).toBeDisabled();
     await press("Reload transactions and categories");
     expect(create).toHaveBeenCalledTimes(1);
-    await press("I reviewed the list; enable changes");
-    expect(
-      screen.getByRole("button", { name: "Save transaction" })
-    ).toBeEnabled();
+    await press("Retry original save");
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1]?.[0]).toEqual(create.mock.calls[0]?.[0]);
   });
   it("shows read recovery without enabling writes until reload succeeds", async () => {
     await setup((source) => ({
@@ -400,4 +430,12 @@ describe("transaction management", () => {
       screen.getByRole("button", { name: "Add transaction" })
     ).toBeEnabled();
   });
+});
+
+jest.mock("expo-crypto", () => {
+  let sequence = 0;
+  return {
+    randomUUID: () =>
+      "90000000-0000-4000-8000-" + String(++sequence).padStart(12, "0")
+  };
 });

@@ -24,33 +24,18 @@ export async function lockFinanceOwner(tx: Tx, userId: string) {
   if (!rows.length) throw new ApiError(404, "NOT_FOUND", "Resource not found.");
 }
 
-// Caller holds the owner lock. No legacy inference/mixed-currency migration:
-// the user chose fresh test ledgers for this gated increment.
+// Caller holds the owner lock. Existing ledgers already have preferences after
+// the explicit migration; only an empty new ledger starts with CAD.
 export async function activateFinancePreferences(tx: Tx, userId: string) {
   const existing = await tx.financePreferences.findUnique({
     where: { userId }
   });
   if (existing) return existing;
-  const incompatible = await tx.transaction.findFirst({
-    where: { userId, currency: { not: "CAD" } },
-    select: { id: true }
-  });
-  if (incompatible)
-    throw new ApiError(
-      409,
-      "CURRENCY_SETUP_REQUIRED",
-      "Use a fresh test ledger before enabling currency settings."
-    );
-  const first = await tx.transaction.findFirst({
-    where: { userId },
-    orderBy: { createdAt: "asc" },
-    select: { createdAt: true }
-  });
   return tx.financePreferences.create({
     data: {
       userId,
       entryCurrency: "CAD",
-      currencyLockedAt: first?.createdAt ?? null
+      currencyLockedAt: null
     }
   });
 }
@@ -58,14 +43,10 @@ export async function activateFinancePreferences(tx: Tx, userId: string) {
 export async function assertNewTransactionCurrency(
   tx: Tx,
   userId: string,
-  currency: TransactionInput["currency"],
-  activateFlow: boolean
+  currency: TransactionInput["currency"]
 ) {
-  await lockFinanceOwner(tx, userId);
-  const row = activateFlow
-    ? await activateFinancePreferences(tx, userId)
-    : await tx.financePreferences.findUnique({ where: { userId } });
-  if (row && row.entryCurrency !== currency)
+  const row = await activateFinancePreferences(tx, userId);
+  if (row.entryCurrency !== currency)
     throw new ApiError(
       422,
       "CURRENCY_MISMATCH",
@@ -73,35 +54,15 @@ export async function assertNewTransactionCurrency(
     );
 }
 
-export function createPreferencesService(
-  db: PrismaClient,
-  enabled: boolean,
-  accountsEnabled = false
-) {
-  function available() {
-    if (!enabled)
-      throw new ApiError(
-        409,
-        "FINANCE_FEATURE_DISABLED",
-        "Currency settings are not enabled in this release."
-      );
-  }
+export function createPreferencesService(db: PrismaClient) {
   return {
     async get(userId: string) {
-      available();
       return db.$transaction(async (tx) => {
         await lockFinanceOwner(tx, userId);
         return serialize(await activateFinancePreferences(tx, userId));
       });
     },
     async update(userId: string, patch: PreferencesPatch) {
-      available();
-      if (patch.defaultAccountId !== undefined && !accountsEnabled)
-        throw new ApiError(
-          409,
-          "FINANCE_FEATURE_DISABLED",
-          "Financial accounts are not enabled in this release."
-        );
       return db.$transaction(async (tx) => {
         await lockFinanceOwner(tx, userId);
         const row = await activateFinancePreferences(tx, userId);
