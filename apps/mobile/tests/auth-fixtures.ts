@@ -2,6 +2,8 @@ import { jest } from "@jest/globals";
 import type { CredentialStore, StoredSession } from "../src/auth/contracts";
 import { createSessionController } from "../src/auth/session-controller";
 import { createTransport, type FetchRequest } from "../src/auth/transport";
+import type { Currency } from "../src/transaction-data";
+import type { AccountSource } from "../src/account-data";
 
 export const now = Date.parse("2026-10-26T12:00:00Z");
 export const alice = {
@@ -89,3 +91,43 @@ export function harness(initial: StoredSession | null = stored()) {
     disk: () => disk
   };
 }
+
+// Deterministic ports for UI tests: every posting still selects a real fixture account.
+export const accountId = (currency: Currency = "USD") =>
+  "70000000-0000-4000-8000-" +
+  String(
+    ["CAD", "USD", "EUR", "GBP", "INR", "JPY", "KWD"].indexOf(currency) + 1
+  ).padStart(12, "0");
+let requestSequence = 0;
+export const requestId = () =>
+  "80000000-0000-4000-8000-" + String(++requestSequence).padStart(12, "0");
+export const accounts: AccountSource = {
+  list: async () =>
+    (["CAD", "USD", "EUR", "GBP", "INR", "JPY", "KWD"] as const).map(
+      (currency) => ({
+        id: accountId(currency),
+        name: "Test " + currency,
+        type: "cash",
+        currency,
+        openingBalanceMinor: 0,
+        openingDate: "0001-01-01",
+        archivedAt: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z"
+      })
+    ),
+  get: async (id, asOf = "2026-10-30") => {
+    const row = (await accounts.list()).find((row) => row.id === id);
+    if (!row) throw new Error("Missing fixture account");
+    return { ...row, asOf, balanceMinor: 0 };
+  },
+  create: async () => {
+    throw new Error("Unexpected fixture write");
+  },
+  update: async () => {
+    throw new Error("Unexpected fixture write");
+  },
+  archive: async () => {
+    throw new Error("Unexpected fixture write");
+  }
+};

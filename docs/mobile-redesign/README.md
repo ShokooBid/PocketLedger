@@ -11,9 +11,14 @@ does not change runtime behavior, schema or generated OpenAPI.
 
 The first implementation increment is documented in the [#65 handoff](issue-65.md).
 Category hierarchy is documented in the [#66 handoff](issue-66.md).
+Account-linked transactions and the staged upgrade are documented in the
+[#69 walkthrough](issue-69.md).
 The supplied default catalog and local preview are documented in the [#67 handoff](issue-67.md).
-It keeps the rollout disabled by default; the remaining specifications below
-continue to describe the target design rather than currently enabled features.
+The #69 cleanup supersedes the earlier rollout/version instructions: current
+finance uses one `/v1` contract without feature flags. Earlier handoffs preserve
+the implementation history. Settings accounts and account-linked entry are wired
+to the live API; custom presentation, transfers and statement processing remain
+future work.
 
 ## Confirmed product decisions
 

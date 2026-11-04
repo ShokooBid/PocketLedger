@@ -1,13 +1,19 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { errorSchema } from "../auth/routes.js";
-import { categoryInput, categoryQuery, categorySchema } from "./contracts.js";
+import {
+  categoryInput,
+  categoryPatch,
+  categoryQuery,
+  categorySchema,
+  recentCategoryQuery
+} from "./contracts.js";
 import type { CategoryService } from "./service.js";
 
 export function registerCategoryRoutes(
   instance: FastifyInstance,
-  categories: CategoryService
+  service: CategoryService
 ) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
   const errors = Object.fromEntries(
@@ -17,99 +23,123 @@ export function registerCategoryRoutes(
     ])
   );
   const secured = { tags: ["Categories"], security: [{ bearerAuth: [] }] };
+  const empty = z.strictObject({});
   const params = z.strictObject({ id: z.uuid() });
+  // Read-only defaults report the domain conflict even for an attempted parent
+  // change. Personal patches still reject parent/default fields in the schema.
+  const protectDefault = async (request: FastifyRequest) => {
+    const parsed = params.safeParse(request.params);
+    if (parsed.success)
+      await service.assertMutable(request.principal!.userId, parsed.data.id);
+  };
+  const base = "/v1/categories";
   app.get(
-    "/v1/categories",
+    base,
     {
       onRequest: app.authenticate,
       schema: {
         ...secured,
         description:
-          "Owner-only list. Defaults to active; status=all includes historical categories. UUID keyset pagination; limit 1–100, default 50; after is the previous nextCursor.",
+          "Gated two-level owned categories. Flat UUID-keyset pages; parentId=root explicitly fetches roots, UUID fetches children. Omit to list all levels. Search matches category names; fetch parents by ID for paths. A page is not the full tree.",
         querystring: categoryQuery,
         response: {
           ...errors,
           200: z.object({
-            items: z.array(categorySchema),
+            items: z.array(categorySchema).max(100),
             nextCursor: z.uuid().nullable()
           })
         }
       }
     },
-    async (request) => categories.list(request.principal!.userId, request.query)
+    (request) => service.list(request.principal!.userId, request.query)
   );
   app.get(
-    "/v1/categories/:id",
+    `${base}/recent`,
     {
       onRequest: app.authenticate,
       schema: {
         ...secured,
-        description:
-          "Owner-only lookup, including archived categories for history. Missing and foreign IDs both return 404.",
+        querystring: recentCategoryQuery,
+        response: {
+          ...errors,
+          200: z.object({
+            items: z
+              .array(
+                categorySchema.extend({
+                  parent: categorySchema.nullable()
+                })
+              )
+              .max(20)
+          })
+        }
+      }
+    },
+    (request) => service.recent(request.principal!.userId, request.query.limit)
+  );
+  app.get(
+    `${base}/:id`,
+    {
+      onRequest: app.authenticate,
+      schema: {
+        ...secured,
         params,
-        querystring: z.strictObject({}),
+        querystring: empty,
         response: { ...errors, 200: categorySchema }
       }
     },
-    async (request) =>
-      categories.get(request.principal!.userId, request.params.id)
+    (request) => service.get(request.principal!.userId, request.params.id)
   );
   app.post(
-    "/v1/categories",
+    base,
     {
       onRequest: app.authenticate,
       schema: {
         ...secured,
         description:
-          "Collapse/trim ASCII whitespace; preserve display case. Active duplicates ignore ASCII letter case within one owner (409). Non-ASCII letters are case-sensitive. Names are 1–100 UTF-16 units after normalization, visible, and contain no control/format/surrogate characters. Raw input is bounded at 1000 units.",
+          "Create a personal root or child of an active owned root. Active sibling names are unique under ASCII case folding. No catalog/default identity input.",
         body: categoryInput,
-        querystring: z.strictObject({}),
+        querystring: empty,
         response: { ...errors, 201: categorySchema }
       }
     },
     async (request, reply) =>
       reply
         .code(201)
-        .send(
-          await categories.create(request.principal!.userId, request.body.name)
-        )
+        .send(await service.create(request.principal!.userId, request.body))
   );
   app.patch(
-    "/v1/categories/:id",
+    `${base}/:id`,
     {
       onRequest: app.authenticate,
+      preValidation: protectDefault,
       schema: {
         ...secured,
         description:
-          "Rename an active owned category using create's normalization rule. Archived categories return 409.",
+          "Nonempty name/presentation patch on an active personal category. Defaults are read only. Parent changes are unavailable, including unused categories.",
         params,
-        body: categoryInput,
-        querystring: z.strictObject({}),
+        body: categoryPatch,
+        querystring: empty,
         response: { ...errors, 200: categorySchema }
       }
     },
-    async (request) =>
-      categories.rename(
-        request.principal!.userId,
-        request.params.id,
-        request.body.name
-      )
+    (request) =>
+      service.update(request.principal!.userId, request.params.id, request.body)
   );
   app.post(
-    "/v1/categories/:id/archive",
+    `${base}/:id/archive`,
     {
       onRequest: app.authenticate,
+      preValidation: protectDefault,
       schema: {
         ...secured,
         description:
-          "Archive after client confirmation. Idempotent; keeps historical references and frees the active name. No delete or restore operation.",
+          "Archive personal category and its active children atomically after client confirmation. Idempotent; preserves historical references. No restore or delete.",
         params,
-        body: z.strictObject({}),
-        querystring: z.strictObject({}),
+        body: empty,
+        querystring: empty,
         response: { ...errors, 200: categorySchema }
       }
     },
-    async (request) =>
-      categories.archive(request.principal!.userId, request.params.id)
+    (request) => service.archive(request.principal!.userId, request.params.id)
   );
 }

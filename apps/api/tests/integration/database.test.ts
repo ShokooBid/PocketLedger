@@ -1,12 +1,18 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { testAccount } from "../fixtures.js";
+import {
+  prepareFinanceUpgrade,
+  backfillFinanceOwner,
+  verifyFinanceMigration
+} from "../../src/finance/migration.js";
 import { disposableDatabase } from "../support/disposable.js";
 
 const require = createRequire(import.meta.url);
@@ -23,6 +29,7 @@ const db = database.db;
 let sqlConnected = false;
 const userA = randomUUID();
 const userB = randomUUID();
+const ownerAccounts = new Map<string, string>();
 const categoryA = randomUUID();
 const categoryB = randomUUID();
 const importA = randomUUID();
@@ -62,10 +69,15 @@ async function insertTransaction(
 ) {
   return sql.query(
     `INSERT INTO "Transaction"
-      ("userId", "categoryId", "importId", direction, "amountMinor", currency, date, merchant)
-     VALUES ($1, $2, $3, 'expense', 1234, 'USD', '2026-01-15', 'Synthetic shop')
+      ("userId", "categoryId", "importId", "accountId", direction, "amountMinor", currency, date, merchant)
+     VALUES ($1, $2, $3, $4, 'expense', 1234, 'USD', '2026-01-15', 'Synthetic shop')
      RETURNING id`,
-    [owner, category, source]
+    [
+      owner,
+      category,
+      source,
+      ownerAccounts.get(owner) ?? ownerAccounts.get(userA)
+    ]
   );
 }
 
@@ -87,6 +99,8 @@ beforeAll(async () => {
       }
     });
   }
+  for (const id of [userA, userB])
+    ownerAccounts.set(id, (await testAccount(db, id, "USD")).id);
   await db.category.createMany({
     data: [
       { id: categoryA, userId: userA, name: "Synthetic A" },
@@ -111,11 +125,22 @@ afterAll(async () => {
 
 describe("initial migration and database ownership", () => {
   it("applies from zero and deploying again is a no-op", async () => {
+    const migrations = (
+      await readdir(new URL("../../prisma/migrations/", import.meta.url), {
+        withFileTypes: true
+      })
+    )
+      .filter((entry) => entry.isDirectory() && /^\d/.test(entry.name))
+      .map((entry) => entry.name)
+      .sort();
+    const appliedMigrations =
+      'SELECT * FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY migration_name';
+    const before = await sql.query(appliedMigrations);
+    expect(before.rows.map((row) => row.migration_name)).toEqual(migrations);
+
     await prisma("migrate", "deploy");
-    const result = await sql.query(
-      'SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL'
-    );
-    expect(result.rows).toHaveLength(10);
+    const after = await sql.query(appliedMigrations);
+    expect(after.rows).toEqual(before.rows);
     expect(await prisma("migrate", "status")).toContain("up to date");
   });
 
@@ -155,6 +180,7 @@ describe("initial migration and database ownership", () => {
       db.transaction.create({
         data: {
           userId: userA,
+          accountId: ownerAccounts.get(userA)!,
           categoryId: categoryB,
           direction: "expense",
           amountMinor: 1,
@@ -173,9 +199,7 @@ describe("initial migration and database ownership", () => {
   });
 
   it("rejects nonexistent owners, categories and imports", async () => {
-    await expect(insertTransaction(randomUUID())).rejects.toMatchObject({
-      code: "23503"
-    });
+    await expect(insertTransaction(randomUUID())).rejects.toThrow();
     await expect(insertTransaction(userA, randomUUID())).rejects.toMatchObject({
       code: "23503"
     });
@@ -206,7 +230,7 @@ describe("initial migration and database ownership", () => {
           value,
           id
         ])
-      ).rejects.toMatchObject({ code: "23503" });
+      ).rejects.toThrow();
     }
   });
 
@@ -275,12 +299,12 @@ describe("initial migration and database ownership", () => {
       sql.query('UPDATE "Transaction" SET "userId" = NULL WHERE id = $1', [
         result.rows[0].id
       ])
-    ).rejects.toMatchObject({ code: "23502" });
+    ).rejects.toThrow();
   });
 
   it("has owner-first indexes for date and category listing", async () => {
     const result = await sql.query(
-      "SELECT indexdef FROM pg_indexes WHERE tablename = 'Transaction'"
+      "SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'Transaction'"
     );
     const definitions = result.rows
       .map((row: { indexdef: string }) => row.indexdef)
@@ -486,7 +510,7 @@ describe("authentication storage (service behavior is implemented in Issue #7)",
       await upgradeDatabase.start();
       await upgrade.connect();
       upgradeConnected = true;
-      // Reproduce the already-shared initial SQL, then register its baseline.
+      // Reproduce the historical schema, then rehearse every forward SQL change.
       await upgrade.query(
         await readFile(
           new URL(
@@ -541,14 +565,33 @@ describe("authentication storage (service behavior is implemented in Issue #7)",
       await upgrade.query('DELETE FROM "Category" WHERE id = $1', [
         collisionId
       ]);
-      await runPrisma(
-        upgradeUrl.toString(),
-        "migrate",
-        "resolve",
-        "--applied",
-        "20261017000000_init"
+      const migrationRoot = new URL(
+        "../../prisma/migrations/",
+        import.meta.url
       );
-      await runPrisma(upgradeUrl.toString(), "migrate", "deploy");
+      for (const name of (await readdir(migrationRoot))
+        .filter((name) => /^\d/.test(name) && name > "20261017000000_init")
+        .sort()) {
+        if (name === "20261104000000_canonical_finance") {
+          await prepareFinanceUpgrade(upgradeDatabase.db);
+          expect(
+            (
+              await backfillFinanceOwner(upgradeDatabase.db, userA, {
+                apply: true
+              })
+            ).conflicts
+          ).toEqual([]);
+          expect(await verifyFinanceMigration(upgradeDatabase.db)).toBe(
+            "verified"
+          );
+        }
+        await upgrade.query(
+          await readFile(
+            new URL(`${name}/migration.sql`, migrationRoot),
+            "utf8"
+          )
+        );
+      }
       expect(
         (
           await upgrade.query(

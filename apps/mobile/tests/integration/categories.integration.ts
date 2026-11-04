@@ -5,7 +5,6 @@ import { randomUUID } from "node:crypto";
 import { buildApp } from "../../../api/src/app.js";
 import { createAuthService } from "../../../api/src/auth/service.js";
 import { createCategoryService } from "../../../api/src/categories/service.js";
-import { createHierarchyCategoryService } from "../../../api/src/categories/hierarchy-service.js";
 import { createTransactionService } from "../../../api/src/transactions/service.js";
 import { createDashboardService } from "../../../api/src/dashboard/service.js";
 import { createApiDashboardSource, moneyLabel } from "../../src/dashboard-data";
@@ -15,7 +14,7 @@ import {
   currencyExponents,
   type Currency
 } from "../../src/transaction-data";
-import { testConfig } from "../../../api/tests/fixtures.js";
+import { testConfig, testAccount } from "../../../api/tests/fixtures.js";
 import { disposableDatabase } from "../../../api/tests/support/disposable.js";
 import { createSessionController } from "../../src/auth/session-controller";
 import { createTransport, type FetchRequest } from "../../src/auth/transport";
@@ -70,11 +69,11 @@ function device(proof: GoogleProof = async () => null) {
       () => clock
     );
   const controller = make();
-  const source = (session = controller, hierarchy = false) => {
+  const source = (session = controller) => {
     const state = session.getSnapshot();
     if (state.status !== "authenticated")
       throw new Error("Test requires verified session.");
-    return createApiCategorySource(session.client(state.generation), hierarchy);
+    return createApiCategorySource(session.client(state.generation));
   };
   return { controller, restart: make, source, disk: () => disk };
 }
@@ -98,7 +97,6 @@ beforeAll(async () => {
     logger: false,
     rateLimitMax: 10000,
     categories: createCategoryService(db),
-    hierarchyCategories: createHierarchyCategoryService(db, true),
     transactions: createTransactionService(db),
     dashboard: createDashboardService(db)
   });
@@ -112,7 +110,7 @@ afterAll(async () => {
 });
 
 describe("authenticated mobile category flow", () => {
-  it("uses v2 for personal hierarchy, fixed defaults, safe errors and session isolation", async () => {
+  it("uses v1 for personal hierarchy, fixed defaults, safe errors and session isolation", async () => {
     const d = device();
     await d.controller.restore();
     await d.controller.signIn(
@@ -122,14 +120,16 @@ describe("authenticated mobile category flow", () => {
     );
     const state = d.controller.getSnapshot();
     if (state.status !== "authenticated") throw new Error("No session");
-    const source = d.source(d.controller, true);
+    const source = d.source();
     await source.create("Mobile parent");
-    const root = (await source.list())[0]!;
+    const root = (await source.list()).find(
+      (row) => row.name === "Mobile parent"
+    )!;
     const childId = await source.createChild!("Mobile child", root.id);
     expect(
       (await source.list()).find((row) => row.id === childId)?.parentId
     ).toBe(root.id);
-    await expect(d.source().list()).rejects.toMatchObject({ code: "upgrade" });
+
     await expect(
       source.createChild!(" mobile CHILD ", root.id)
     ).rejects.toMatchObject({ code: "duplicate" });
@@ -163,8 +163,8 @@ describe("authenticated mobile category flow", () => {
       `${randomUUID()}@example.invalid`,
       "synthetic other hierarchy password"
     );
-    const otherSource = other.source(other.controller, true);
-    expect(await otherSource.list()).toEqual([]);
+    const otherSource = other.source();
+    expect((await otherSource.list()).every((row) => row.isDefault)).toBe(true);
     await expect(
       otherSource.createChild!("Foreign parent", root.id)
     ).rejects.toMatchObject({ code: "unavailable" });
@@ -187,7 +187,7 @@ describe("authenticated mobile category flow", () => {
     await d.source().create("Preserved ledger category");
     const before = d.controller.getSnapshot();
     if (before.status !== "authenticated") throw new Error("No session");
-    const category = (await d.source().list())[0]!;
+    const category = (await d.source().list()).find((row) => !row.isDefault)!;
     const transaction = await db.transaction.create({
       data: {
         userId: before.user.id,
@@ -196,7 +196,7 @@ describe("authenticated mobile category flow", () => {
         currency: "USD",
         direction: "expense",
         date: new Date("2026-10-01"),
-        merchant: "Synthetic retained transaction"
+        accountId: (await testAccount(db, before.user.id, "USD")).id
       }
     });
     const other = device();
@@ -289,7 +289,9 @@ describe("authenticated mobile category flow", () => {
         where: { userId: state.user.id, revokedAt: null }
       })
     ).toBe(1);
-    expect(await second.source().list()).toHaveLength(1);
+    expect(
+      (await second.source().list()).filter((row) => !row.isDefault)
+    ).toHaveLength(1);
     await first.controller.signIn("login", email, "synthetic logout password");
     const oldSource = first.source();
     await second.controller.logout(true);
@@ -305,7 +307,9 @@ describe("authenticated mobile category flow", () => {
     ).toBe(0);
     await expect(oldSource.list()).rejects.toBeDefined();
     expect(first.disk()).toBeNull();
-    expect(await other.source().list()).toEqual([]);
+    expect((await other.source().list()).every((row) => row.isDefault)).toBe(
+      true
+    );
     expect(
       await db.category.count({
         where: { userId: state.user.id, name: "Retained after sign out" }
@@ -321,7 +325,9 @@ describe("authenticated mobile category flow", () => {
       "synthetic dashboard passphrase"
     );
     await alice.source().create("Dashboard fixture");
-    const category = (await alice.source().list())[0]!;
+    const category = (await alice.source().list()).find(
+      (row) => row.name === "Dashboard fixture"
+    )!;
     const state = alice.controller.getSnapshot();
     if (state.status !== "authenticated") throw new Error("No session");
     const transactions = createApiTransactionSource(
@@ -337,28 +343,40 @@ describe("authenticated mobile category flow", () => {
       currency: "USD" as const,
       date: "2026-10-01",
       categoryId: category.id,
-      merchant: "Synthetic dashboard shop",
+      accountId: (await testAccount(db, state.user.id, "USD")).id,
       note: null
     };
-    const expense = await transactions.create(input);
-    await transactions.create({
+    const expense = await transactions.create({
       ...input,
-      direction: "income",
-      amountMinor: 2000,
-      date: "2026-10-31"
+      clientRequestId: randomUUID()
     });
     await transactions.create({
-      ...input,
-      direction: "income",
-      amountMinor: 50,
-      date: "2026-10-15"
+      ...{
+        ...input,
+        direction: "income",
+        amountMinor: 2000,
+        date: "2026-10-31"
+      },
+      clientRequestId: randomUUID()
     });
     await transactions.create({
-      ...input,
-      amountMinor: 999,
-      date: "2026-09-30"
+      ...{
+        ...input,
+        direction: "income",
+        amountMinor: 50,
+        date: "2026-10-15"
+      },
+      clientRequestId: randomUUID()
     });
-    await transactions.create({ ...input, currency: "JPY", amountMinor: 999 });
+    await transactions.create({
+      ...{
+        ...input,
+        amountMinor: 999,
+        date: "2026-09-30"
+      },
+      clientRequestId: randomUUID()
+    });
+
     const summary = await dashboard.summary({
       month: "2026-10",
       currency: "USD"
@@ -395,19 +413,8 @@ describe("authenticated mobile category flow", () => {
       categoryBreakdown: [],
       recentTransactions: []
     });
-    for (const currency of Object.keys(currencyExponents) as Currency[]) {
-      await transactions.create({
-        ...input,
-        currency,
-        date: "2026-11-01",
-        amountMinor: 1001
-      });
-      expect(
-        await dashboard.summary({ month: "2026-11", currency })
-      ).toMatchObject({ expensesMinor: 1001, netMinor: -1001, currency });
-    }
     await alice.source().archive(category.id);
-    await transactions.update(expense.id, { ...input, amountMinor: 300 });
+    await transactions.update(expense.id, { amountMinor: 300 });
     expect(
       await dashboard.summary({ month: "2026-10", currency: "USD" })
     ).toMatchObject({
@@ -445,21 +452,22 @@ describe("authenticated mobile category flow", () => {
     ).rejects.toMatchObject({ kind: "cancelled" });
   });
   it("submits exact mobile amounts, filters, edits and deletes through verified sessions", async () => {
-    const d = device();
-    await d.controller.restore();
-    await d.controller.signIn(
-      "register",
-      `${randomUUID()}@example.invalid`,
-      "synthetic mobile passphrase"
-    );
-    await d.source().create("Transaction category");
-    const category = (await d.source().list())[0]!;
-    const state = d.controller.getSnapshot();
-    if (state.status !== "authenticated") throw new Error("No session");
-    const source = createApiTransactionSource(
-      d.controller.client(state.generation)
-    );
     for (const currency of Object.keys(currencyExponents) as Currency[]) {
+      const d = device();
+      await d.controller.restore();
+      await d.controller.signIn(
+        "register",
+        `${randomUUID()}@example.invalid`,
+        "synthetic mobile passphrase"
+      );
+      await d.source().create("Transaction category");
+      const category = (await d.source().list()).find((row) => !row.isDefault)!;
+      const state = d.controller.getSnapshot();
+      if (state.status !== "authenticated") throw new Error("No session");
+      const source = createApiTransactionSource(
+        d.controller.client(state.generation)
+      );
+      const selectedAccount = await testAccount(db, state.user.id, currency);
       const exponent = currencyExponents[currency];
       const input = draftInput({
         direction: "expense",
@@ -467,10 +475,13 @@ describe("authenticated mobile category flow", () => {
         currency,
         date: "2024-02-29",
         categoryId: category.id,
-        merchant: "Synthetic client shop",
+        accountId: selectedAccount.id,
         note: ""
       });
-      const row = await source.create(input);
+      const row = await source.create({
+        ...input,
+        clientRequestId: randomUUID()
+      });
       expect(row.amountMinor).toBe(
         exponent === 3 ? 1001 : exponent === 2 ? 101 : 1
       );
@@ -492,10 +503,12 @@ describe("authenticated mobile category flow", () => {
         (await source.update(row.id, { ...input, amountMinor: 2 })).amountMinor
       ).toBe(2);
       await source.remove(row.id);
+      expect((await source.list({})).items).toEqual([]);
+      await d.controller.logout();
+      await expect(source.list({})).rejects.toMatchObject({
+        kind: "cancelled"
+      });
     }
-    expect((await source.list({})).items).toEqual([]);
-    await d.controller.logout();
-    await expect(source.list({})).rejects.toMatchObject({ kind: "cancelled" });
   });
   it("creates, validates, paginates, renames and archives while preserving history", async () => {
     const d = device();
@@ -507,7 +520,9 @@ describe("authenticated mobile category flow", () => {
     );
     const source = d.source();
     await source.create("  Daily\tfood ");
-    const original = (await source.list())[0]!;
+    const original = (await source.list()).find(
+      (row) => row.name === "Daily food"
+    )!;
     expect(original.name).toBe("Daily food");
     await expect(source.create("daily FOOD")).rejects.toMatchObject({
       code: "duplicate"
@@ -526,11 +541,13 @@ describe("authenticated mobile category flow", () => {
         amountMinor: 100,
         currency: "USD",
         date: new Date("2026-01-01"),
-        merchant: "Synthetic shop"
+        accountId: (await testAccount(db, user.user.id, "USD")).id
       }
     });
     await source.archive(original.id);
-    expect((await source.list())[0]?.archivedAt).not.toBeNull();
+    expect(
+      (await source.list()).find((row) => row.id === original.id)?.archivedAt
+    ).not.toBeNull();
     await source.create("GROCERIES");
     const history = await db.transaction.findUniqueOrThrow({
       where: { id: tx.id },
@@ -545,7 +562,9 @@ describe("authenticated mobile category flow", () => {
       }))
     });
     const pages = requests.length;
-    expect(await source.list()).toHaveLength(104);
+    expect((await source.list()).filter((row) => !row.isDefault)).toHaveLength(
+      104
+    );
     expect(requests.slice(pages)).toEqual([
       "GET /v1/categories",
       "GET /v1/categories"
@@ -588,7 +607,7 @@ describe("authenticated mobile category flow", () => {
       "synthetic mobile passphrase"
     );
     const bobSource = d.source(restored);
-    expect(await bobSource.list()).toEqual([]);
+    expect((await bobSource.list()).every((row) => row.isDefault)).toBe(true);
     await expect(bobSource.rename(aliceId, "Intrusion")).rejects.toMatchObject({
       code: "unavailable"
     });
@@ -608,8 +627,10 @@ describe("authenticated mobile category flow", () => {
     ).toBe(0);
     await expect(bobSource.list()).rejects.toMatchObject({ kind: "cancelled" });
     await restored.signIn("login", aliceEmail, "synthetic mobile passphrase");
-    expect((await d.source(restored).list()).map((row) => row.name)).toEqual([
-      "Alice private category"
-    ]);
+    expect(
+      (await d.source(restored).list())
+        .filter((row) => !row.isDefault)
+        .map((row) => row.name)
+    ).toEqual(["Alice private category"]);
   });
 });

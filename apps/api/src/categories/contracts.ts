@@ -4,10 +4,10 @@ import { financeName, normalizeFinanceName } from "../finance/names.js";
 // Match the migration's explicit ASCII whitespace set, independent of DB locale.
 export const normalizeCategoryName = normalizeFinanceName;
 
-export const categoryInput = z.strictObject({
+const baseInput = z.strictObject({
   name: financeName
 });
-export const categorySchema = z.object({
+const baseSchema = z.object({
   id: z.uuid(),
   name: z.string(),
   isDefault: z.boolean(),
@@ -15,12 +15,11 @@ export const categorySchema = z.object({
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime()
 });
-export const categoryQuery = z.strictObject({
+const baseQuery = z.strictObject({
   status: z.enum(["active", "archived", "all"]).default("active"),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   after: z.uuid().optional()
 });
-export type CategoryQuery = z.infer<typeof categoryQuery>;
 
 // Semantic identifiers, never arbitrary CSS, SVG or image URLs. Neutral defaults
 // are intentional until #67/#71 supply the visual vocabulary.
@@ -30,22 +29,22 @@ const presentation = {
   colorKey: presentationKey.optional(),
   sortOrder: z.number().int().min(0).max(1000000).optional()
 };
-export const hierarchyCategoryInput = categoryInput.extend({
+export const categoryInput = baseInput.extend({
   parentId: z.uuid().nullable().optional(),
   ...presentation
 });
-export const hierarchyCategoryPatch = categoryInput
+export const categoryPatch = baseInput
   .extend(presentation)
   .partial()
   .refine((value) => Object.keys(value).length > 0);
-export const hierarchyCategorySchema = categorySchema.extend({
+export const categorySchema = baseSchema.extend({
   parentId: z.uuid().nullable(),
   defaultKey: z.string().nullable(),
   iconKey: presentationKey,
   colorKey: presentationKey,
   sortOrder: z.number().int().min(0).max(1000000)
 });
-export const hierarchyCategoryQuery = categoryQuery.extend({
+export const categoryQuery = baseQuery.extend({
   parentId: z.union([z.uuid(), z.literal("root")]).optional(),
   q: z
     .string()
@@ -57,6 +56,6 @@ export const hierarchyCategoryQuery = categoryQuery.extend({
 export const recentCategoryQuery = z.strictObject({
   limit: z.coerce.number().int().min(1).max(20).default(8)
 });
-export type HierarchyCategoryInput = z.infer<typeof hierarchyCategoryInput>;
-export type HierarchyCategoryPatch = z.infer<typeof hierarchyCategoryPatch>;
-export type HierarchyCategoryQuery = z.infer<typeof hierarchyCategoryQuery>;
+export type CategoryInput = z.infer<typeof categoryInput>;
+export type CategoryPatch = z.infer<typeof categoryPatch>;
+export type CategoryQuery = z.infer<typeof categoryQuery>;

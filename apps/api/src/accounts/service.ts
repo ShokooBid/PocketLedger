@@ -29,20 +29,11 @@ async function owned(tx: Prisma.TransactionClient, userId: string, id: string) {
   return row;
 }
 
-export function createAccountService(db: PrismaClient, enabled = false) {
-  function available() {
-    if (!enabled)
-      throw new ApiError(
-        409,
-        "FINANCE_FEATURE_DISABLED",
-        "Financial accounts are not enabled in this release."
-      );
-  }
+export function createAccountService(db: PrismaClient) {
   async function write<T>(
     userId: string,
     action: (tx: Prisma.TransactionClient) => Promise<T>
   ) {
-    available();
     try {
       return await db.$transaction(async (tx) => {
         await lockFinanceOwner(tx, userId);
@@ -65,7 +56,6 @@ export function createAccountService(db: PrismaClient, enabled = false) {
   }
   return {
     async list(userId: string, query: AccountQuery) {
-      available();
       const rows = await db.account.findMany({
         where: {
           userId,
@@ -90,18 +80,34 @@ export function createAccountService(db: PrismaClient, enabled = false) {
       id: string,
       asOf = new Date().toISOString().slice(0, 10)
     ) {
-      available();
-      const row = serialize(await owned(db, userId, id));
-      if (asOf < row.openingDate)
-        throw new ApiError(
-          422,
-          "INVALID_ACCOUNT",
-          "The balance date cannot precede the account opening date."
-        );
-      // #69 adds transaction/account linkage and the exact posting aggregation.
-      // No posting can reference an account yet, so its tracked balance is its
-      // opening baseline. Never attribute unassigned legacy history to it.
-      return { ...row, asOf, balanceMinor: row.openingBalanceMinor };
+      return db.$transaction(
+        async (tx) => {
+          const row = serialize(await owned(tx, userId, id));
+          if (asOf < row.openingDate)
+            throw new ApiError(
+              422,
+              "INVALID_ACCOUNT",
+              "The balance date cannot precede the account opening date."
+            );
+          const [total] = await tx.$queryRaw<{ postings: string }[]>`
+        SELECT COALESCE(SUM(CASE WHEN direction = 'income' THEN "amountMinor"::numeric
+          ELSE -"amountMinor"::numeric END), 0)::text AS postings
+        FROM "Transaction" WHERE "userId" = ${userId}::uuid AND "accountId" = ${id}::uuid
+          AND currency = ${row.currency} AND date <= ${asOf}::date
+      `;
+          const balance =
+            BigInt(row.openingBalanceMinor) + BigInt(total!.postings);
+          const bound = BigInt(Number.MAX_SAFE_INTEGER);
+          if (balance < -bound || balance > bound)
+            throw new ApiError(
+              422,
+              "SUMMARY_AMOUNT_OUT_OF_RANGE",
+              "The account balance exceeds the supported integer range."
+            );
+          return { ...row, asOf, balanceMinor: Number(balance) };
+        },
+        { isolationLevel: "RepeatableRead" }
+      );
     },
     create(userId: string, input: AccountInput) {
       return write(userId, async (tx) => {

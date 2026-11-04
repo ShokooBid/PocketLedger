@@ -1,172 +1,284 @@
+import { createHash } from "node:crypto";
 import type {
+  Prisma,
   PrismaClient,
-  Transaction,
-  Prisma
+  Transaction as StoredTransaction
 } from "../generated/prisma/client.js";
 import { ApiError } from "../errors.js";
-import type {
-  TransactionInput,
-  TransactionPatch,
-  HierarchyTransactionQuery
-} from "./contracts.js";
-import { currencySchema } from "./contracts.js";
 import {
   assertNewTransactionCurrency,
   lockFinanceOwner
 } from "../preferences/service.js";
+import { currencySchema } from "./contracts.js";
+import type {
+  TransactionCreate,
+  TransactionPatch,
+  TransactionQuery
+} from "./contracts.js";
 
-const unavailable = () => new ApiError(404, "NOT_FOUND", "Resource not found.");
-const invalidCategory = () =>
-  new ApiError(
-    422,
-    "INVALID_CATEGORY",
-    "Choose an active category belonging to your account."
-  );
-export const serializeTransaction = (row: Transaction) => ({
-  id: row.id,
-  categoryId: row.categoryId,
-  direction: row.direction,
-  amountMinor: row.amountMinor,
-  currency: currencySchema.parse(row.currency),
-  date: row.date.toISOString().slice(0, 10),
-  merchant: row.merchant,
-  note: row.note,
-  createdAt: row.createdAt.toISOString(),
-  updatedAt: row.updatedAt.toISOString()
-});
+const missing = () => new ApiError(404, "NOT_FOUND", "Resource not found.");
+export function serializeTransaction(row: StoredTransaction) {
+  return {
+    id: row.id,
+    accountId: row.accountId,
+    categoryId: row.categoryId,
+    direction: row.direction,
+    amountMinor: row.amountMinor,
+    currency: currencySchema.parse(row.currency),
+    date: row.date.toISOString().slice(0, 10),
+    note: row.note,
+    importId: row.importId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  };
+}
 async function checkCategory(
   tx: Prisma.TransactionClient,
   userId: string,
   id: string
 ) {
-  // Caller holds the owner lock, also used by hierarchy mutations and triggers.
-  const rows = await tx.$queryRaw<
-    { id: string }[]
-  >`SELECT c.id FROM "Category" c
-    LEFT JOIN "Category" p ON p.id = c."parentId" AND p."userId" = c."userId"
-    WHERE c.id = ${id}::uuid AND c."userId" = ${userId}::uuid AND c."archivedAt" IS NULL
-      AND (c."parentId" IS NULL OR p."archivedAt" IS NULL)`;
-  if (!rows.length) throw invalidCategory();
+  const category = await tx.category.findFirst({
+    where: { id, userId },
+    include: { parent: true }
+  });
+  if (!category) throw missing();
+  if (category.archivedAt || category.parent?.archivedAt)
+    throw new ApiError(
+      422,
+      "INVALID_CATEGORY",
+      "Choose an active category and ancestor."
+    );
 }
-export function createTransactionService(
-  db: PrismaClient,
-  currencyPreferencesEnabled = false
+async function checkAccount(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  id: string,
+  currency: string,
+  date: string,
+  previousId?: string | null
 ) {
+  const account = await tx.account.findFirst({ where: { id, userId } });
+  if (!account) throw missing();
+  if (
+    (account.archivedAt && account.id !== previousId) ||
+    date < account.openingDate.toISOString().slice(0, 10)
+  )
+    throw new ApiError(
+      422,
+      "INVALID_ACCOUNT",
+      "Choose an active account and a date on or after its opening date."
+    );
+  if (account.currency !== currency)
+    throw new ApiError(
+      422,
+      "CURRENCY_MISMATCH",
+      "The account and transaction currencies must match."
+    );
+}
+export function createTransactionService(db: PrismaClient) {
+  const run = <T>(action: (tx: Prisma.TransactionClient) => Promise<T>) =>
+    db.$transaction(action);
   return {
-    async list(userId: string, query: HierarchyTransactionQuery) {
-      const boundary = query.after
-        ? {
-            date: new Date(query.after.slice(0, 10)),
-            id: query.after.slice(11)
-          }
-        : null;
-      const rows = await db.transaction.findMany({
-        where: {
-          userId,
-          ...(query.categoryId
-            ? query.includeSubcategories
-              ? {
-                  category: {
-                    userId,
-                    OR: [
-                      { id: query.categoryId },
-                      { parentId: query.categoryId }
-                    ]
+    list(userId: string, query: TransactionQuery) {
+      return run(async (tx) => {
+        if (
+          query.accountId &&
+          !(await tx.account.findFirst({
+            where: { id: query.accountId, userId },
+            select: { id: true }
+          }))
+        )
+          throw missing();
+        if (
+          query.categoryId &&
+          !(await tx.category.findFirst({
+            where: { id: query.categoryId, userId },
+            select: { id: true }
+          }))
+        )
+          throw missing();
+        const boundary = query.after
+          ? {
+              date: new Date(query.after.slice(0, 10)),
+              id: query.after.slice(11)
+            }
+          : null;
+        const rows = await tx.transaction.findMany({
+          where: {
+            userId,
+            ...(query.accountId ? { accountId: query.accountId } : {}),
+            ...(query.currency ? { currency: query.currency } : {}),
+            ...(query.categoryId
+              ? query.includeSubcategories
+                ? {
+                    category: {
+                      userId,
+                      OR: [
+                        { id: query.categoryId },
+                        { parentId: query.categoryId }
+                      ]
+                    }
                   }
+                : { categoryId: query.categoryId }
+              : {}),
+            ...(query.direction ? { direction: query.direction } : {}),
+            ...(query.from && query.to
+              ? { date: { gte: new Date(query.from), lte: new Date(query.to) } }
+              : {}),
+            ...(boundary
+              ? {
+                  OR: [
+                    { date: { lt: boundary.date } },
+                    { date: boundary.date, id: { lt: boundary.id } }
+                  ]
                 }
-              : { categoryId: query.categoryId }
-            : {}),
-          ...(query.direction ? { direction: query.direction } : {}),
-          ...(query.from && query.to
-            ? { date: { gte: new Date(query.from), lte: new Date(query.to) } }
-            : {}),
-          ...(boundary
-            ? {
-                OR: [
-                  { date: { lt: boundary.date } },
-                  { date: boundary.date, id: { lt: boundary.id } }
-                ]
-              }
-            : {})
-        },
-        orderBy: [{ date: "desc" }, { id: "desc" }],
-        take: query.limit + 1
+              : {})
+          },
+          orderBy: [{ date: "desc" }, { id: "desc" }],
+          take: query.limit + 1
+        });
+        const items = rows.slice(0, query.limit).map(serializeTransaction),
+          last = items.at(-1);
+        return {
+          items,
+          nextCursor:
+            rows.length > query.limit && last ? `${last.date}_${last.id}` : null
+        };
       });
-      const items = rows.slice(0, query.limit).map(serializeTransaction);
-      const last = items.at(-1);
-      return {
-        items,
-        nextCursor:
-          rows.length > query.limit && last ? `${last.date}_${last.id}` : null
-      };
     },
-    async get(userId: string, id: string) {
-      const row = await db.transaction.findFirst({ where: { id, userId } });
-      if (!row) throw unavailable();
-      return serializeTransaction(row);
+    get(userId: string, id: string) {
+      return run(async (tx) => {
+        const row = await tx.transaction.findFirst({ where: { id, userId } });
+        if (!row) throw missing();
+        return serializeTransaction(row);
+      });
     },
-    async create(userId: string, input: TransactionInput) {
-      return db.$transaction(async (tx) => {
-        await assertNewTransactionCurrency(
+    create(userId: string, input: TransactionCreate) {
+      return run(async (tx) => {
+        await lockFinanceOwner(tx, userId);
+        const { clientRequestId, ...fields } = input;
+        const payload = { ...fields, note: fields.note || null };
+        // Fixed field order and canonical UUID case; never hash JSON property order.
+        const fingerprint = createHash("sha256")
+          .update(
+            JSON.stringify([
+              payload.accountId.toLowerCase(),
+              payload.categoryId.toLowerCase(),
+              payload.direction,
+              payload.amountMinor,
+              payload.currency,
+              payload.date,
+              payload.note
+            ])
+          )
+          .digest("hex");
+        const prior = await tx.transactionCreation.findUnique({
+          where: { userId_clientRequestId: { userId, clientRequestId } }
+        });
+        if (prior) {
+          if (prior.fingerprint !== fingerprint)
+            throw new ApiError(
+              409,
+              "IDEMPOTENCY_KEY_REUSED",
+              "This creation key already belongs to a different payload."
+            );
+          const row = await tx.transaction.findFirst({
+            where: { id: prior.resourceId, userId }
+          });
+          if (!row)
+            throw new ApiError(
+              409,
+              "OPERATION_ALREADY_APPLIED",
+              "The original transaction was already applied and later deleted."
+            );
+          return { resource: serializeTransaction(row), replayed: true };
+        }
+        await assertNewTransactionCurrency(tx, userId, payload.currency);
+        await checkCategory(tx, userId, payload.categoryId);
+        await checkAccount(
           tx,
           userId,
-          input.currency,
-          currencyPreferencesEnabled
+          payload.accountId,
+          payload.currency,
+          payload.date
         );
-        await checkCategory(tx, userId, input.categoryId);
-        return serializeTransaction(
-          await tx.transaction.create({
-            data: { ...input, userId, date: new Date(input.date) }
-          })
-        );
+        const row = await tx.transaction.create({
+          data: {
+            ...payload,
+            userId,
+            date: new Date(payload.date),
+            merchant: null
+          }
+        });
+        await tx.transactionCreation.create({
+          data: { userId, clientRequestId, fingerprint, resourceId: row.id }
+        });
+        return { resource: serializeTransaction(row), replayed: false };
       });
     },
-    async update(userId: string, id: string, input: TransactionPatch) {
-      return db.$transaction(async (tx) => {
+    update(userId: string, id: string, patch: TransactionPatch) {
+      return run(async (tx) => {
         await lockFinanceOwner(tx, userId);
-        // Lock the owned row before comparing historical category associations.
-        const rows = await tx.$queryRaw<
-          { categoryId: string; currency: string }[]
-        >`SELECT "categoryId", currency FROM "Transaction" WHERE id = ${id}::uuid AND "userId" = ${userId}::uuid FOR UPDATE`;
-        const row = rows[0];
-        if (!row) throw unavailable();
-        if (
-          input.currency &&
-          input.currency !== row.currency &&
-          (currencyPreferencesEnabled ||
-            (await tx.financePreferences.findUnique({ where: { userId } })))
-        )
+        const row = await tx.transaction.findFirst({ where: { id, userId } });
+        if (!row) throw missing();
+        if (patch.currency && patch.currency !== row.currency)
           throw new ApiError(
             422,
             "CURRENCY_IMMUTABLE",
             "A saved transaction keeps its recorded currency."
           );
-        if (input.categoryId && input.categoryId !== row.categoryId)
-          await checkCategory(tx, userId, input.categoryId);
-        const data: Prisma.TransactionUncheckedUpdateInput = {
-          ...(input.direction !== undefined
-            ? { direction: input.direction }
-            : {}),
-          ...(input.amountMinor !== undefined
-            ? { amountMinor: input.amountMinor }
-            : {}),
-          ...(input.currency !== undefined ? { currency: input.currency } : {}),
-          ...(input.categoryId !== undefined
-            ? { categoryId: input.categoryId }
-            : {}),
-          ...(input.merchant !== undefined ? { merchant: input.merchant } : {}),
-          ...(input.note !== undefined ? { note: input.note } : {}),
-          ...(input.date !== undefined ? { date: new Date(input.date) } : {})
-        };
+        const accountId = patch.accountId ?? row.accountId;
+        const date = patch.date ?? row.date.toISOString().slice(0, 10);
+        await checkAccount(
+          tx,
+          userId,
+          accountId,
+          row.currency,
+          date,
+          row.accountId
+        );
+        if (
+          patch.categoryId &&
+          patch.categoryId.toLowerCase() !== row.categoryId
+        )
+          await checkCategory(tx, userId, patch.categoryId);
         return serializeTransaction(
-          await tx.transaction.update({ where: { id, userId }, data })
+          await tx.transaction.update({
+            where: { id, userId },
+            data: {
+              ...(patch.accountId !== undefined
+                ? { accountId: patch.accountId }
+                : {}),
+              ...(patch.categoryId !== undefined
+                ? { categoryId: patch.categoryId }
+                : {}),
+              ...(patch.direction !== undefined
+                ? { direction: patch.direction }
+                : {}),
+              ...(patch.amountMinor !== undefined
+                ? { amountMinor: patch.amountMinor }
+                : {}),
+              ...(patch.currency !== undefined
+                ? { currency: patch.currency }
+                : {}),
+              ...(patch.note !== undefined ? { note: patch.note || null } : {}),
+              ...(patch.date !== undefined
+                ? { date: new Date(patch.date) }
+                : {})
+            }
+          })
         );
       });
     },
-    async remove(userId: string, id: string) {
-      const result = await db.transaction.deleteMany({ where: { id, userId } });
-      if (!result.count) throw unavailable();
-      return { ok: true as const };
+    remove(userId: string, id: string) {
+      return run(async (tx) => {
+        await lockFinanceOwner(tx, userId);
+        const result = await tx.transaction.deleteMany({
+          where: { id, userId }
+        });
+        if (!result.count) throw missing();
+        return { ok: true as const };
+      });
     }
   };
 }

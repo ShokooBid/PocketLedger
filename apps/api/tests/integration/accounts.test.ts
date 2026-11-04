@@ -10,11 +10,11 @@ import { disposableDatabase } from "../support/disposable.js";
 
 const database = disposableDatabase();
 const db = database.db;
-const accounts = createAccountService(db, true);
-const preferences = createPreferencesService(db, true, true);
+const accounts = createAccountService(db);
+const preferences = createPreferencesService(db);
 let app: Awaited<ReturnType<typeof buildApp>>;
 type Owner = { id: string; token: string };
-const base = "/v2/accounts";
+const base = "/v1/accounts";
 const input = (extra: object = {}) => ({
   name: "My bank",
   type: "bank",
@@ -24,11 +24,7 @@ const input = (extra: object = {}) => ({
 });
 beforeAll(async () => {
   await database.start();
-  const config = {
-    ...testConfig(),
-    currencyPreferencesEnabled: true,
-    accountsEnabled: true
-  };
+  const config = testConfig();
   const auth = await createAuthService(db, config, async () => {
     throw new Error("No provider calls.");
   });
@@ -85,7 +81,7 @@ async function create(user: Owner, extra: object = {}) {
 }
 
 describe("owned named accounts and defaults", () => {
-  it("authenticates every route before validation and keeps disabled services dormant", async () => {
+  it("authenticates every route before validation", async () => {
     for (const [method, url, payload] of [
       ["GET", base, undefined],
       ["GET", `${base}/${randomUUID()}`, undefined],
@@ -99,17 +95,6 @@ describe("owned named accounts and defaults", () => {
       ).toBe(401);
     const user = await owner();
     expect(await db.account.count({ where: { userId: user.id } })).toBe(0);
-    await expect(
-      createAccountService(db).list(user.id, { status: "all", limit: 50 })
-    ).rejects.toMatchObject({ code: "FINANCE_FEATURE_DISABLED" });
-    await expect(
-      createPreferencesService(db, true).update(user.id, {
-        defaultAccountId: null
-      })
-    ).rejects.toMatchObject({ code: "FINANCE_FEATURE_DISABLED" });
-    expect(
-      await db.financePreferences.findUnique({ where: { userId: user.id } })
-    ).toBeNull();
   });
 
   it("creates user-defined accounts with Settings currency, exact signed baselines and no income or lock", async () => {
@@ -289,7 +274,7 @@ describe("owned named accounts and defaults", () => {
       }
       expect(
         (
-          await request(user, "PATCH", "/v2/preferences", {
+          await request(user, "PATCH", "/v1/preferences", {
             defaultAccountId: id
           })
         ).statusCode
@@ -302,18 +287,17 @@ describe("owned named accounts and defaults", () => {
     const account = await create(user, { openingBalanceMinor: 1000 });
     expect(
       (
-        await request(user, "PATCH", "/v2/preferences", {
+        await request(user, "PATCH", "/v1/preferences", {
           defaultAccountId: account.id
         })
       ).json().defaultAccountId
     ).toBe(account.id);
     expect(
-      (await createPreferencesService(db, true, true).get(user.id))
-        .defaultAccountId
+      (await createPreferencesService(db).get(user.id)).defaultAccountId
     ).toBe(account.id);
     expect(
       (
-        await request(user, "PATCH", "/v2/preferences", {
+        await request(user, "PATCH", "/v1/preferences", {
           defaultAccountId: null
         })
       ).json().defaultAccountId
@@ -328,14 +312,14 @@ describe("owned named accounts and defaults", () => {
     });
     expect(
       (
-        await request(user, "PATCH", "/v2/preferences", {
+        await request(user, "PATCH", "/v1/preferences", {
           defaultAccountId: account.id
         })
       ).json().error.code
     ).toBe("INVALID_ACCOUNT");
     expect(
       (
-        await request(user, "PATCH", "/v2/preferences", {
+        await request(user, "PATCH", "/v1/preferences", {
           entryCurrency: "CAD",
           defaultAccountId: account.id
         })
@@ -368,7 +352,7 @@ describe("owned named accounts and defaults", () => {
     ).toBe("ACCOUNT_ARCHIVED");
     expect(
       (
-        await request(user, "PATCH", "/v2/preferences", {
+        await request(user, "PATCH", "/v1/preferences", {
           defaultAccountId: account.id
         })
       ).json().error.code
@@ -387,7 +371,7 @@ describe("owned named accounts and defaults", () => {
     const user = await owner();
     const account = await create(user);
     const [selection, archive] = await Promise.all([
-      request(user, "PATCH", "/v2/preferences", {
+      request(user, "PATCH", "/v1/preferences", {
         defaultAccountId: account.id
       }),
       request(user, "POST", `${base}/${account.id}/archive`, {})
@@ -397,10 +381,10 @@ describe("owned named accounts and defaults", () => {
     expect((await preferences.get(user.id)).defaultAccountId).toBeNull();
     const active = await create(user, { name: "Active" });
     const [select, currency] = await Promise.all([
-      request(user, "PATCH", "/v2/preferences", {
+      request(user, "PATCH", "/v1/preferences", {
         defaultAccountId: active.id
       }),
-      request(user, "PATCH", "/v2/preferences", { entryCurrency: "USD" })
+      request(user, "PATCH", "/v1/preferences", { entryCurrency: "USD" })
     ]);
     expect([200, 422]).toContain(select.statusCode);
     expect(currency.statusCode).toBe(200);
@@ -412,7 +396,7 @@ describe("owned named accounts and defaults", () => {
         base,
         input({ name: "Racing creation", currency: "USD" })
       ),
-      request(user, "PATCH", "/v2/preferences", { entryCurrency: "EUR" })
+      request(user, "PATCH", "/v1/preferences", { entryCurrency: "EUR" })
     ]);
     expect(change.statusCode).toBe(200);
     expect([201, 409]).toContain(createResult.statusCode);

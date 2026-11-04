@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { readConfig } from "../src/config.js";
+import type { PrismaClient } from "../src/generated/prisma/client.js";
 
 export function testConfig() {
   return readConfig({
@@ -9,5 +10,28 @@ export function testConfig() {
     GOOGLE_CLIENT_IDS: "synthetic-web-client",
     GOOGLE_PRESENTER_IDS: "synthetic-native-client",
     CORS_ORIGINS: "https://app.example.invalid"
+  });
+}
+
+// Valid persisted fixtures use the same currency/account invariants as the API.
+export async function testAccount(
+  db: PrismaClient,
+  userId: string,
+  currency = "CAD"
+) {
+  await db.financePreferences.upsert({
+    where: { userId },
+    update: {},
+    create: { userId, entryCurrency: currency }
+  });
+  return db.account.create({
+    data: {
+      userId,
+      name: `Test ${currency} ${crypto.randomUUID()}`,
+      type: "cash",
+      currency,
+      openingDate: new Date("0001-01-01"),
+      openingBalanceMinor: 0
+    }
   });
 }

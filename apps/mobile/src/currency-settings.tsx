@@ -13,33 +13,31 @@ export function CurrencySettings({
   state?: CurrencySettingsState;
   disabled?: boolean;
 }) {
-  const enabled = state?.enabled === true;
   return (
     <>
       <Body>Default currency: {defaultCurrency}</Body>
       <Body>
-        {enabled
-          ? "Your currency is saved for this account. The first saved transaction locks it. Existing amounts are never converted."
-          : "This default applies to the dashboard and new transactions during this app session. It resets to USD when you leave the session or restart. Existing transactions keep their currency."}
+        Your currency is saved for this account. The first saved transaction
+        locks it. Existing amounts are never converted.
       </Body>
-      {enabled && state.locked && (
+      {state?.locked && (
         <Body>Currency is locked after the first saved transaction.</Body>
       )}
-      {enabled && state.status === "loading" && (
+      {state?.status === "loading" && (
         <StateNotice
           kind="loading"
           title="Loading currency settings"
           message="Checking the saved currency and lock."
         />
       )}
-      {enabled && state.saving && (
+      {state?.saving && (
         <StateNotice
           kind="loading"
           title="Saving currency"
           message="Waiting for confirmation."
         />
       )}
-      {enabled && state.error && (
+      {state?.error && (
         <StateNotice
           kind="error"
           title="Currency settings need attention"
@@ -54,7 +52,7 @@ export function CurrencySettings({
           selected={currency === defaultCurrency}
           disabled={
             disabled ||
-            (enabled &&
+            (state !== undefined &&
               (state.locked || state.saving || state.status !== "ready"))
           }
           onPress={() => void setDefaultCurrency(currency)}

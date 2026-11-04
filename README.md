@@ -47,18 +47,18 @@ npm run db:generate --workspace=@pocketledger/api
 ```text
 apps/mobile       Expo + React Native app
 apps/api          Fastify API, authentication service, Prisma schema and tests
-packages/shared   Portable shared types, schemas, and utilities
 ```
 
-Do not import server-only modules, database clients, or secrets from
-`packages/shared`; it is used by both the API and mobile app.
+The API owns persistence and server-only validation. The mobile app validates the
+HTTP boundary without importing Prisma or backend modules. A shared workspace can
+be introduced when there is reusable portable code; the placeholder was removed.
 
 ### Commands
 
 | Command                    | Purpose                                            |
 | -------------------------- | -------------------------------------------------- |
 | `npm run dev:mobile`       | Start the Expo development server.                 |
-| `npm run dev:api`          | Run the API in watch mode (needs process env).     |
+| `npm run dev:api`          | Run the API in watch mode using the root `.env`.   |
 | `npm run start:api`        | Run the API using the root `.env` file.            |
 | `npm run dev`              | Run every available workspace development command. |
 | `npm run format`           | Format supported files with Prettier.              |
@@ -94,26 +94,24 @@ Mobile screens use white surfaces, violet controls and pink-to-lilac organic
 shapes. See the [purple/pink UI walkthrough](docs/purple-pink-ui-walkthrough.md)
 for design tokens, component responsibilities and verification details.
 
-### Currency redesign preview (#65)
+### Canonical finance API
 
-Persisted currency settings are implemented behind the #64 rollout gate. Both
-`FINANCE_CURRENCY_ENABLED` (API) and `EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED`
-(mobile) default to `false`. Keep them off for normal use until the account-aware
-finance rollout is ready. The existing session-local currency flow remains active.
+The authenticated application uses one `/v1` API for preferences, accounts,
+categories, transactions and dashboard summaries. CAD is the initial Settings
+currency. Create a named financial account in Settings, optionally select it as
+default, and record transactions with that account and an active category.
+The first committed transaction permanently locks entry currency. Opening
+balances affect tracked balances without becoming income. The form uses one
+optional note and no merchant field. Historical stored merchant values remain.
 
-For isolated preview/testing, apply the migrations and generate Prisma Client,
-then enable both flags in your local environment and restart the API and Expo.
-Use a fresh test user/ledger: non-CAD legacy histories return
-`CURRENCY_SETUP_REQUIRED`; no records are automatically deleted or converted.
-The preview starts at CAD, persists Settings changes per user, shows one currency
-on entry, and permanently locks changes when the first transaction commits.
-Demo uses the same rules in memory and resets when its session ends.
+The old finance implementations, `/v2` paths and rollout flags are removed. This
+is an intentional pre-release contract replacement; API and app must be updated
+together. Existing ledgers need the [one-time account backfill](docs/mobile-redesign/issue-69.md)
+before the final migration. Future transfers, custom keypad and statement
+processing remain separate issues.
 
-See [#65 implementation and verification](docs/mobile-redesign/issue-65.md) for
-contracts, draft behavior, tests and remaining account-related dependencies.
-
-`npm run typecheck --workspace=@pocketledger/mobile` generates ignored Expo route
-types before checking strict TypeScript, including negative navigation assertions.
+`npm run typecheck --workspace=@pocketledger/mobile` runs TypeScript directly.
+Expo generates its ignored navigation types when its development server runs.
 `npm run test --workspace=@pocketledger/mobile` runs Expo/Jest screen and navigation
 tests and requires tests to exist. See the [Issue #9 walkthrough](docs/issue-9-implementation-walkthrough.md)
 for file responsibilities, commands, learning notes, and device-verification limits.
@@ -162,7 +160,8 @@ after installing dependencies or changing the schema. Migration SQL is tracked.
 Add `DATABASE_URL` to your existing ignored `.env` using `.env.example` as a
 reference; do not overwrite an existing `.env`. Match your local PostgreSQL
 credentials and URL-encode reserved characters in the password. To apply the
-reviewed migration to your development database when ready:
+reviewed migrations to an empty development database when ready (existing ledgers
+must first follow the [#69 backfill sequence](docs/mobile-redesign/issue-69.md)):
 
 ```powershell
 npm run db:validate --workspace=@pocketledger/api
@@ -178,13 +177,12 @@ require `$env:ALLOW_SYNTHETIC_SEED = 'true'` followed by
 `Remove-Item Env:ALLOW_SYNTHETIC_SEED`. Seeds contain fictional records and a
 disabled account, not a working login.
 
-There are four migrations: the original finance schema, the additive
-authentication upgrade with `AuthIdentity`, `Session`, and `RefreshToken`, then
-Google nonce challenges, recent-reauthentication state and normalized email uniqueness,
-then active category-name uniqueness and archived-category assignment protection.
-Google-only users may have no password. The upgrade preserves existing finance
-records. Demo seeds
-also set `disabledAt`, and never seed provider credentials or usable tokens.
+Migration history includes authentication, finance preferences, category catalog/
+hierarchy, accounts and account-linked transactions. Applied SQL files are never
+rewritten. The latest migration enforces required account links and removes the
+temporary rollout table after an explicit backfill. Read the [migration sequence](docs/mobile-redesign/issue-69.md)
+before deploying to a database containing old transactions. Fresh empty databases
+can deploy the complete history directly.
 
 To run both API and mobile integration suites using your existing local
 PostgreSQL database and the root `.env`, use:
@@ -193,24 +191,17 @@ PostgreSQL database and the root `.env`, use:
 npm run test:integration:local
 ```
 
-This command enables `TEST_USE_LOCAL_DATABASE` only for its child process. The
-existing harness requires a loopback database URL, creates disposable test schemas,
-and removes those schemas afterward without changing application rows.
+The runner passes the local `DATABASE_URL` to its child as `TEST_DATABASE_URL`.
+Each suite creates a random `pocketledger_test_*` schema, deploys its own migrations
+and drops only that schema afterward. Application schemas and rows are preserved.
+**You do not need to run `db:deploy` on your development database first.**
+The PostgreSQL role needs permission to create schemas in this local database.
 
-Alternatively, run integration tests against a separate disposable PostgreSQL service:
-
-```powershell
-docker compose -f compose.test.yaml up -d --wait
-$env:TEST_DATABASE_URL = 'postgresql://pocketledger_test:disposable_test_password@127.0.0.1:55432/pocketledger_test'
-npm run test:integration
-```
-
-**Warning:** each test run creates and then deletes its own randomly named
-synthetic database. `docker compose -f compose.test.yaml down` removes the
-test container and all of its temporary data. The development Compose service
-and its named volume are separate and are not touched. The standard
-`test:integration` command requires an explicit `TEST_DATABASE_URL`; local schema
-mode requires the explicit `test:integration:local` command or environment opt-in.
+For a different local test instance, set `TEST_DATABASE_URL` to its loopback
+PostgreSQL URL without query parameters and run `npm run test:integration`. Both
+commands use the same schema harness. The unused `compose.test.yaml` is removed;
+CI retains its PostgreSQL service and supplies a loopback URL. No running container
+or volume is deleted by this refactor.
 
 See the [Issue #6 walkthrough](docs/issue-6-implementation-walkthrough.md) for
 the ownership constraints, schema choices, generated files, and commands.
@@ -225,7 +216,7 @@ configuration; the API requires validated server configuration.
 
 GitHub Actions runs the **`quality`** check on pull requests to `main` and pushes
 to `main`: locked install, formatting, lint, type checks, unit/integration test
-commands, Prisma validation/generation, and API/shared builds. Database integration
+commands, Prisma validation/generation, and the API build. Database integration
 tests apply migrations from zero and test ownership and authentication. API unit
 tests verify contracts, safe errors/logs, rate limiting and local Google signatures;
 mobile tests cover sessions, client boundaries, category UI and navigation; the shared suite still permits zero
@@ -275,7 +266,7 @@ Use synthetic identities only; the optional disabled seed is not a login account
 See the [walkthrough](docs/issue-7-implementation-walkthrough.md) for Google
 proof/linking requests, lifetimes, maintenance, limitations and command explanations.
 
-## Category management (Issue #10)
+## Category management
 
 All category routes require a real PocketLedger bearer token. The server derives
 the owner from that session; request bodies never accept `userId`.
@@ -284,12 +275,12 @@ the owner from that session; request bodies never accept `userId`.
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /v1/categories`              | Active owned categories. `status=archived` or `all` includes history; `limit` is 1–100 (default 50); pass `nextCursor` as `after` for the next page. |
 | `GET /v1/categories/:id`          | Owned category, including archived; foreign and missing IDs both return 404.                                                                         |
-| `POST /v1/categories`             | Create with `{ "name": "Groceries" }`; returns 201.                                                                                                  |
+| `POST /v1/categories`             | Create with `name` and optional `parentId`; returns 201.                                                                                             |
 | `PATCH /v1/categories/:id`        | Rename an active category with `{ "name": "Food" }`.                                                                                                 |
 | `POST /v1/categories/:id/archive` | Send `{}` after confirmation; repeated archive preserves its timestamp.                                                                              |
 
 Names collapse ASCII whitespace and trim it, preserving display case. Active
-duplicates compare ASCII letters without case, within one owner. Non-ASCII
+duplicates compare ASCII letters without case, within one owner and sibling group. Non-ASCII
 letters, accents and Unicode normalization forms remain distinct. Names must
 contain visible text, have 1–100 UTF-16 units after normalization, and contain no
 control/format/surrogate characters; raw input is bounded at 1000 units.
@@ -302,11 +293,11 @@ ID. A database trigger rejects new transaction assignments to archived categorie
 History reads must include archived associations; historical renames are not
 snapshotted (renaming an active category changes its displayed name on history).
 
-The fourth migration is hand-written and stops atomically on legacy active-name
-collisions. Review them explicitly; do not merge IDs or reset data to deploy.
-Neither the third nor fourth migration was applied to the development database
-as part of this implementation. See the detailed [Issue #10 walkthrough](docs/issue-10-implementation-walkthrough.md)
-for the dependency sequence, files, commands, tests and migration review.
+Categories form two levels: select a root or child. Fixed catalog records cannot
+be renamed or archived; personal children may be added under fixed or personal
+roots. Root archival also archives its personal children. New assignments require
+an active ancestor. See the [current contract](docs/mobile-redesign/finance-contracts.md)
+and [walkthrough](docs/mobile-redesign/issue-69.md).
 
 ## Native sign-in and live categories
 
@@ -352,35 +343,37 @@ for signing fingerprints, restart/logout tests, file responsibilities and limits
 
 `npm run test:integration` now runs API database tests followed by the real portable
 mobile client against Fastify and disposable PostgreSQL. It uses only
-`TEST_DATABASE_URL`, never the development database. These tests verify the live
+`TEST_DATABASE_URL`; the local runner derives it from the development URL but
+isolates every suite in its own schema. These tests verify the live
 contracts; OS storage and provider/device behavior still need native verification.
 
-## Transactions (Issue #12)
+## Transactions
 
 Verified sessions can list, add, edit and delete income/expenses. Demo transactions
 stay in memory for the current demo session. The dashboard summarizes those records;
 CSV import remains a preview.
-No new migration is required; the existing category/history migration must be deployed
-before running this feature against a development database.
+Existing ledgers need the explicit account backfill before final deployment;
+see the [migration runbook](docs/mobile-redesign/issue-69.md).
 
 | Method and path               | Contract                                                                                                               |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `GET /v1/transactions`        | Owned rows, newest calendar date first, then UUID descending. `limit` 1-100, default 50. Pass `nextCursor` as `after`. |
 | `GET /v1/transactions/:id`    | Owned row; foreign/missing IDs both return 404.                                                                        |
-| `POST /v1/transactions`       | Create; returns 201 with the saved row.                                                                                |
+| `POST /v1/transactions`       | Create; returns 201, or 200 when the same operation is replayed.                                                       |
 | `PATCH /v1/transactions/:id`  | Partial update with at least one field; omitted fields stay unchanged.                                                 |
 | `DELETE /v1/transactions/:id` | Delete owned row; returns `{ "ok": true }`. Mobile asks for confirmation.                                              |
 
 Create fields: `direction` (`income`/`expense`), positive `amountMinor` integer
 (1-2147483647), `currency`, `date` (`YYYY-MM-DD`, real calendar day, years 0001-9999),
-`categoryId`, `merchant`, and optional nullable `note`. Merchant requires visible
-text and at most 200 UTF-16 units; note allows 2000. Text is preserved, with control,
-format and unpaired surrogate characters rejected. No owner/import fields are accepted.
-Supported currencies are USD, EUR, GBP, INR (two decimal places), JPY (zero), and
-KWD (three). Other codes are rejected. Decimal input is converted by concatenating
-digits and checking the resulting integer; no floating-point monetary construction.
+`categoryId`, required `accountId`, UUID `clientRequestId`, and optional nullable
+`note` (up to 2000 UTF-16 units). No merchant, owner or client import fields are
+accepted. Supported currencies are CAD/USD/EUR/GBP/INR (two decimal places), JPY
+(zero), and KWD (three). Money conversion uses digits and integer bounds rather
+than floating-point arithmetic. New postings match both the selected account and
+Settings currency; historical edits preserve recorded currency.
 
-List filters combine with AND: `direction`, `categoryId`, and inclusive `from`/`to`.
+List filters combine with AND: `accountId`, `currency`, `direction`, `categoryId`, and inclusive `from`/`to`.
+`includeSubcategories=true` explicitly includes children of a selected category.
 Supply both dates or neither; a range may span at most 366 days. Pagination uses
 `YYYY-MM-DD_UUID` sort boundaries and is live, not a snapshot: editing dates during
 paging can move rows. Refresh to reconcile concurrent changes. Archived categories
@@ -389,7 +382,8 @@ allowed, while a new/different assignment requires an active owned category.
 
 Failed submissions retain form values. Pending submissions are locked. An ambiguous
 write requires reloading and reviewing saved rows before explicitly enabling another
-write; there are no automatic network write retries or idempotency keys. A confirmed
+write. Creates retain the original key and payload for an explicit safe retry;
+there are no automatic network write retries. A confirmed
 save appears immediately, even if the subsequent list reload fails. Logout/account
 changes unmount transaction data alongside category data. Routine API logs contain
 no transaction bodies, IDs, date/category queries or credentials.
@@ -408,7 +402,7 @@ the user's intended accounting calendar: the API does not shift them using the
 server timezone, UTC offsets or daylight-saving rules. Audit timestamps do not
 determine inclusion. No `timezone` parameter or implicit current month is accepted.
 
-Required `currency` selects one supported currency (USD/EUR/GBP/INR/JPY/KWD).
+Required `currency` selects one supported currency (CAD/USD/EUR/GBP/INR/JPY/KWD).
 All totals, categories and recent rows use that currency and period. There is no
 conversion or mixed-currency grand total. Optional `recentLimit` is 1-20 (default 5).
 Unknown query fields, including `userId`, are rejected with 422.
@@ -436,14 +430,15 @@ for the workflow, file responsibilities, SQL, interview concepts and checks.
 After signing in on the mobile app, Dashboard shows income, expenses, net,
 category spending and up to five recent transactions for the selected month and
 currency. It starts with the device's current calendar month and session default
-currency (USD until changed in Settings). Use Previous
+currency (CAD for a fresh ledger). Use Previous
 month/Next month or Choose month (`YYYY-MM`), and Change currency to select another
 supported currency. Each summary covers the first through last accounting date of
 that month; there is no currency conversion.
 
 Empty months explain the absence of records and offer Add transaction. That action
 opens the existing transaction form with the selected currency and the month's
-first date, both editable. Recent activity opens the transaction detail screen.
+first date. Date remains editable; entry uses Settings currency, and a different
+report currency requires explicit draft replacement rather than conversion. Recent activity opens the transaction detail screen.
 Returning to the dashboard retains the selection and reloads the summary. Refresh
 summary also reloads explicitly. Month/currency changes clear the old figures;
 late responses cannot overwrite a newer selection. Read failures show safe retry

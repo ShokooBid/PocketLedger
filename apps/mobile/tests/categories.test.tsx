@@ -42,23 +42,6 @@ async function add(value: string) {
 }
 
 describe("category management", () => {
-  it("explains the supported-client gate when loading a legacy category source", async () => {
-    const source: CategorySource = {
-      list: async () => {
-        throw new CategoryFailure("upgrade");
-      },
-      create: async () => {},
-      rename: async () => {},
-      archive: async () => {}
-    };
-    render(<CategoryManagement source={source} demo={false} />);
-    await waitFor(() =>
-      expect(
-        screen.getByText(/require a newer version of PocketLedger/)
-      ).toBeVisible()
-    );
-    expect(screen.queryByRole("button", { name: "Add category" })).toBeNull();
-  });
   it("shows hierarchy paths, protects defaults and creates personal children under either root kind", async () => {
     const rows = [
       {

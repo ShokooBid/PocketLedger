@@ -46,32 +46,25 @@ try {
   process.exitCode = 1;
 }
 if (options) {
-  if (options.apply && process.env.FINANCE_CATEGORIES_ENABLED !== "true") {
+  const db = createDatabaseClient(process.env.DATABASE_URL ?? "");
+  try {
+    const result = await backfillCategoryCatalog(db, options);
+    // IDs and fixed catalog keys only; no emails or personal category names.
+    console.info(
+      JSON.stringify(
+        { mode: options.apply ? "apply" : "preview", ...result },
+        null,
+        2
+      )
+    );
+    if (result.results.some((owner) => owner.conflicts.length))
+      process.exitCode = 2;
+  } catch {
     console.error(
-      "Enable category preview before applying the catalog; the rollout remains disabled by default."
+      "Catalog backfill failed. No partial owner tree was committed; retry the same page after resolving the database problem."
     );
     process.exitCode = 1;
-  } else {
-    const db = createDatabaseClient(process.env.DATABASE_URL ?? "");
-    try {
-      const result = await backfillCategoryCatalog(db, options);
-      // IDs and fixed catalog keys only; no emails or personal category names.
-      console.info(
-        JSON.stringify(
-          { mode: options.apply ? "apply" : "preview", ...result },
-          null,
-          2
-        )
-      );
-      if (result.results.some((owner) => owner.conflicts.length))
-        process.exitCode = 2;
-    } catch {
-      console.error(
-        "Catalog backfill failed. No partial owner tree was committed; retry the same page after resolving the database problem."
-      );
-      process.exitCode = 1;
-    } finally {
-      await db.$disconnect();
-    }
+  } finally {
+    await db.$disconnect();
   }
 }

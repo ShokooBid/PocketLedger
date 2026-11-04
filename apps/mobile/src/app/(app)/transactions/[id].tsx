@@ -2,7 +2,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { z } from "zod";
 import { Body, Button, Screen } from "../../../ui";
 import { useCategories } from "../../../category-context";
-import { useTransactions } from "../../../transaction-context";
+import { useTransactions, useAccounts } from "../../../transaction-context";
 import { useSession } from "../../../session";
 import { TransactionManagement } from "../../../transaction-management";
 import { PreferencesReady, usePreferences } from "../../../preferences";
@@ -18,9 +18,10 @@ function TransactionDetailScreen() {
   const { id } = useLocalSearchParams();
   const parsed = z.uuid().safeParse(id);
   const source = useTransactions();
+  const accounts = useAccounts();
   const categories = useCategories();
   const { session } = useSession();
-  const { currencyState } = usePreferences();
+  const { defaultCurrency, defaultAccountId, currencyState } = usePreferences();
   const router = useRouter();
   return (
     <Screen title="Transaction details">
@@ -37,10 +38,11 @@ function TransactionDetailScreen() {
           source={source}
           categories={categories}
           detailId={parsed.data}
-          singleCurrency={currencyState.enabled}
+          defaultCurrency={defaultCurrency}
+          defaultAccountId={defaultAccountId}
+          accounts={accounts}
           preferencesReady={
-            !currencyState.enabled ||
-            (currencyState.status === "ready" && !currencyState.saving)
+            currencyState.status === "ready" && !currencyState.saving
           }
           demo={session.status === "demo"}
         />

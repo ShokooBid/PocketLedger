@@ -6,18 +6,43 @@ import { createAuthService } from "../../src/auth/service.js";
 import { createDashboardService } from "../../src/dashboard/service.js";
 import { summarySchema } from "../../src/dashboard/contracts.js";
 import { createTransactionService } from "../../src/transactions/service.js";
-import { testConfig } from "../fixtures.js";
+import { testConfig, testAccount } from "../fixtures.js";
 import { disposableDatabase } from "../support/disposable.js";
 
 const database = disposableDatabase();
 const db = database.db;
 let app: Awaited<ReturnType<typeof buildApp>>;
-type Owner = { token: string; id: string; categoryId: string };
+type Owner = {
+  token: string;
+  id: string;
+  categoryId: string;
+  accountId: string;
+};
 let alice: Owner;
 let bob: Owner;
 const root = "/v1/dashboard/summary";
 const period = "from=2026-10-01&to=2026-10-31&currency=USD";
 const logs: string[] = [];
+async function owner(): Promise<Owner> {
+  const email = `${randomUUID()}@example.invalid`;
+  const response = await app.inject({
+    method: "POST",
+    url: "/v1/auth/register",
+    payload: { email, password: "synthetic dashboard password" }
+  });
+  expect(response.statusCode).toBe(201);
+  const user = await db.user.findUniqueOrThrow({ where: { email } });
+  const category = await db.category.create({
+    data: { userId: user.id, name: "Synthetic category" }
+  });
+  return {
+    token: response.json().accessToken as string,
+    id: user.id,
+    categoryId: category.id,
+    accountId: (await testAccount(db, user.id, "USD")).id
+  };
+}
+
 beforeAll(async () => {
   await database.start();
   const config = testConfig();
@@ -37,24 +62,6 @@ beforeAll(async () => {
     dashboard: createDashboardService(db),
     transactions: createTransactionService(db)
   });
-  async function owner(): Promise<Owner> {
-    const email = `${randomUUID()}@example.invalid`;
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/auth/register",
-      payload: { email, password: "synthetic dashboard password" }
-    });
-    expect(response.statusCode).toBe(201);
-    const user = await db.user.findUniqueOrThrow({ where: { email } });
-    const category = await db.category.create({
-      data: { userId: user.id, name: "Synthetic category" }
-    });
-    return {
-      token: response.json().accessToken as string,
-      id: user.id,
-      categoryId: category.id
-    };
-  }
   alice = await owner();
   bob = await owner();
 });
@@ -83,7 +90,8 @@ async function create(owner: Owner, extra: object = {}) {
       currency: "USD",
       date: "2026-10-01",
       categoryId: owner.categoryId,
-      merchant: "private-dashboard-merchant",
+      accountId: owner.accountId,
+      clientRequestId: randomUUID(),
       note: "private-dashboard-note",
       ...extra
     }
@@ -182,7 +190,7 @@ describe("protected dashboard summary", () => {
     });
     await create(alice, { date: "2026-09-30", amountMinor: 99999 });
     await create(alice, { date: "2026-11-01", amountMinor: 99999 });
-    await create(alice, { currency: "JPY", amountMinor: 700 });
+
     const foreign = await create(bob, { amountMinor: 123456 });
     const response = await request();
     expect(response.statusCode).toBe(200);
@@ -225,8 +233,8 @@ describe("protected dashboard summary", () => {
     });
     expect((await request(period.replace("USD", "JPY"))).json()).toMatchObject({
       incomeMinor: 0,
-      expensesMinor: 700,
-      netMinor: -700
+      expensesMinor: 0,
+      netMinor: 0
     });
     expect((await request(period.replace("USD", "EUR"))).json()).toMatchObject({
       incomeMinor: 0,
@@ -260,6 +268,7 @@ describe("protected dashboard summary", () => {
     }
   });
   it("uses accounting dates across leap/DST dates and the supported year bounds", async () => {
+    const calendarOwner = await owner();
     for (const date of [
       "0001-01-01",
       "9999-12-31",
@@ -267,12 +276,15 @@ describe("protected dashboard summary", () => {
       "2026-03-08",
       "2026-11-01"
     ]) {
-      const row = await create(alice, {
+      const row = await create(calendarOwner, {
         date,
-        currency: "KWD",
+        currency: "USD",
         amountMinor: 1234
       });
-      const response = await request(`from=${date}&to=${date}&currency=KWD`);
+      const response = await request(
+        `from=${date}&to=${date}&currency=USD`,
+        calendarOwner.token
+      );
       expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({
         expensesMinor: 1234,

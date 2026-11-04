@@ -3,7 +3,6 @@ import { buildApp } from "./app.js";
 import { readConfig } from "./config.js";
 import type { AuthService } from "./auth/service.js";
 import type { CategoryService } from "./categories/service.js";
-import type { HierarchyCategoryService } from "./categories/hierarchy-service.js";
 import type { TransactionService } from "./transactions/service.js";
 import type { DashboardService } from "./dashboard/service.js";
 import type { PreferencesService } from "./preferences/service.js";
@@ -18,7 +17,6 @@ const config = readConfig({
 const app = await buildApp(config, {} as AuthService, {
   logger: false,
   categories: {} as CategoryService,
-  hierarchyCategories: {} as HierarchyCategoryService,
   transactions: {} as TransactionService,
   dashboard: {} as DashboardService,
   preferences: {} as PreferencesService,

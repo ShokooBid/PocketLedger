@@ -276,7 +276,7 @@ export function Dashboard({
               </Body>
               {summary.recentTransactions.map((row) => (
                 <View key={row.id} style={styles.card}>
-                  <Body>{row.merchant}</Body>
+                  <Body>{row.note || "Transaction"}</Body>
                   <Body>
                     {row.direction === "income" ? "Income" : "Expense"}:{" "}
                     {moneyLabel(row.amountMinor, currency)}
@@ -288,7 +288,7 @@ export function Dashboard({
                     )?.categoryName ?? "Unavailable category"}
                   </Body>
                   <Button
-                    label={`View ${row.merchant} on ${row.date}`}
+                    label={`View ${row.note || "Transaction"} on ${row.date}`}
                     onPress={() => onOpenDetail(row.id)}
                   />
                 </View>

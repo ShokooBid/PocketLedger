@@ -5,7 +5,6 @@ import { createDatabaseClient } from "./database.js";
 import { googleVerifier } from "./auth/google.js";
 import { createAuthService } from "./auth/service.js";
 import { createCategoryService } from "./categories/service.js";
-import { createHierarchyCategoryService } from "./categories/hierarchy-service.js";
 import { createTransactionService } from "./transactions/service.js";
 import { createDashboardService } from "./dashboard/service.js";
 import { createPreferencesService } from "./preferences/service.js";
@@ -17,17 +16,9 @@ const db = createDatabaseClient(config.databaseUrl);
 const auth = await createAuthService(db, config, googleVerifier(config));
 const app = await buildApp(config, auth, {
   categories: createCategoryService(db),
-  hierarchyCategories: createHierarchyCategoryService(
-    db,
-    config.categoryHierarchyEnabled
-  ),
-  transactions: createTransactionService(db, config.currencyPreferencesEnabled),
-  preferences: createPreferencesService(
-    db,
-    config.currencyPreferencesEnabled,
-    config.accountsEnabled
-  ),
-  accounts: createAccountService(db, config.accountsEnabled),
+  transactions: createTransactionService(db),
+  preferences: createPreferencesService(db),
+  accounts: createAccountService(db),
   dashboard: createDashboardService(db)
 });
 app.addHook("onClose", async () => {

@@ -1,343 +1,61 @@
-import { useCallback, useEffect, useRef, useState } from "react";
 import { View } from "react-native";
-import type { Category, CategorySource } from "./category-data";
-import { categoryPath } from "./category-hierarchy";
 import { CategoryIcon } from "./category-icon";
 import { Body, Button, Field, StateNotice } from "./ui";
-import { ClientFailure } from "./auth/transport";
+import { amountText, currencyExponents } from "./transaction-data";
 import {
-  appendTransactionPage,
-  matchesFilter,
-  reconcileTransactions
-} from "./transaction-history";
-import {
-  amountText,
-  validDateFilter,
-  currencyExponents,
-  draftInput,
-  transactionFailureMessage,
-  uncertainWrite,
-  type Currency,
-  type Transaction,
-  type TransactionDraft,
-  type TransactionFilter,
-  type TransactionSource
-} from "./transaction-data";
-
-function newDraft(): TransactionDraft {
-  const now = new Date();
-  return {
-    direction: "expense",
-    amount: "",
-    currency: "USD",
-    date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`,
-    categoryId: "",
-    merchant: "",
-    note: ""
-  };
-}
-export function TransactionManagement({
-  source,
-  categories,
-  demo = false,
-  initialCreate,
-  defaultCurrency = "USD",
-  singleCurrency = false,
-  preferencesReady = true,
-  onCurrencySettings,
-  detailId,
-  onOpenDetail
-}: {
-  source: TransactionSource;
-  categories: CategorySource;
-  demo?: boolean;
-  initialCreate?: { date: string; currency: Currency };
-  defaultCurrency?: Currency;
-  singleCurrency?: boolean;
-  preferencesReady?: boolean;
-  onCurrencySettings?: () => void;
-  detailId?: string;
-  onOpenDetail?: (id: string) => void;
-}) {
-  const [rows, setRows] = useState<Transaction[]>([]);
-  const [choices, setChoices] = useState<Category[]>([]);
-  function categoryLabel(
-    id: string | undefined,
-    fallback = "Category unavailable"
-  ) {
-    const row = choices.find((category) => category.id === id);
-    return row
-      ? categories.hierarchy
-        ? categoryPath(row, choices)
-        : row.name
-      : fallback;
-  }
-  const [after, setAfter] = useState<string | null>(null);
-  const [filter, setFilter] = useState<TransactionFilter>({});
-  const [applied, setApplied] = useState<TransactionFilter>({});
-  const [draft, setDraft] = useState<TransactionDraft | null>(() =>
-    initialCreate ? { ...newDraft(), ...initialCreate } : null
-  );
-  const [editing, setEditing] = useState<Transaction | null>(null);
-  const [deleting, setDeleting] = useState<Transaction | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [ready, setReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [uncertain, setUncertain] = useState(false);
-  const [reviewed, setReviewed] = useState(false);
-  const lock = useRef(false);
-  const mounted = useRef(false);
-  const revision = useRef(0);
-  const appliedRef = useRef(applied);
-  appliedRef.current = applied;
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [retryFilter, setRetryFilter] = useState<TransactionFilter | null>(
-    null
-  );
-  const [deleted, setDeleted] = useState(false);
-
-  useEffect(
-    () =>
-      source.subscribe((change) => {
-        if (
-          detailId &&
-          (change.type === "saved" ? change.row.id : change.id) !== detailId
-        )
-          return;
-        revision.current++;
-        if (detailId) {
-          if (change.type === "saved" && change.row.id === detailId)
-            setRows([change.row]);
-          if (change.type === "deleted" && change.id === detailId) {
-            setRows([]);
-            setDeleted(true);
-            setDraft(null);
-            setEditing(null);
-            setDeleting(null);
-          }
-        } else {
-          setRows((previous) =>
-            reconcileTransactions(previous, change, appliedRef.current)
-          );
-          // Local edits can move dates across the cursor. Keep the loaded history,
-          // but require a fresh first page before continuing this pagination chain.
-          if (change.type === "saved") {
-            setAfter(null);
-            setNotice("History changed. Reload to continue paging.");
-          }
-        }
-      }),
-    [source, detailId]
-  );
-
-  const read = useCallback(
-    async (filter: TransactionFilter, cursor?: string) => {
-      if (!detailId) return source.list(filter, cursor);
-      try {
-        return { items: [await source.get(detailId)], nextCursor: null };
-      } catch (error) {
-        if (error instanceof ClientFailure && error.kind === "unavailable")
-          return { items: [], nextCursor: null };
-        throw error;
-      }
-    },
-    [source, detailId]
-  );
-
-  useEffect(() => {
-    mounted.current = true;
-    let active = true;
-    lock.current = true;
-    setBusy(true);
-    const version = revision.current;
-    Promise.all([read({}), categories.list()])
-      .then(([page, items]) => {
-        if (!active) return;
-        if (version !== revision.current) {
-          setChoices(items);
-          setReady(true);
-          return;
-        }
-        setRows(appendTransactionPage([], page));
-        setAfter(page.nextCursor);
-        setChoices(items);
-        setReady(true);
-      })
-      .catch(() => {
-        if (active)
-          setError(
-            "Transactions could not be loaded. Check your connection and reload."
-          );
-      })
-      .finally(() => {
-        if (active) {
-          lock.current = false;
-          setBusy(false);
-        }
-      });
-    return () => {
-      active = false;
-      mounted.current = false;
-    };
-  }, [read, categories]);
-
-  async function load(nextFilter: TransactionFilter, more = false) {
-    if (lock.current) return;
-    if (!validDateFilter(nextFilter)) {
-      setError(
-        "Enter both real dates as YYYY-MM-DD, in order and no more than 366 days apart."
-      );
-      return;
-    }
-    lock.current = true;
-    setBusy(true);
-    setLoadingMore(more);
-    setError(null);
-    const version = revision.current;
-    try {
-      const [page, items] = await Promise.all([
-        read(nextFilter, more ? (after ?? undefined) : undefined),
-        categories.list()
-      ]);
-      if (!mounted.current) return;
-      if (version !== revision.current) {
-        setError(
-          "Transactions changed while loading. Reload to see the latest history."
-        );
-        return;
-      }
-      const merged = appendTransactionPage(
-        more ? rows : [],
-        page,
-        more ? (after ?? undefined) : undefined
-      );
-      setRows(merged);
-      setAfter(page.nextCursor);
-      setChoices(items);
-      setApplied(nextFilter);
-      setFilter(nextFilter);
-      setRetryFilter(null);
-      setReady(true);
-      if (uncertain && !more) setReviewed(true);
-    } catch {
-      if (mounted.current) {
-        setError(
-          more
-            ? "More transactions could not be loaded. Your current rows are unchanged. Try Load more transactions again."
-            : "Transactions could not be loaded. Check your connection and reload."
-        );
-        if (!more) setReady(false);
-        setRetryFilter(nextFilter);
-      }
-    } finally {
-      lock.current = false;
-      if (mounted.current) setBusy(false);
-      if (mounted.current) setLoadingMore(false);
-    }
-  }
-  async function mutate(remove = false) {
-    if (lock.current || uncertain || !ready) return;
-    if (
-      !remove &&
-      singleCurrency &&
-      (!preferencesReady || (!editing && draft?.currency !== defaultCurrency))
-    ) {
-      setError(
-        "Reload currency settings or explicitly start a new draft in the configured currency. Your current draft is unchanged."
-      );
-      return;
-    }
-    let input;
-    if (!remove) {
-      try {
-        input = draftInput(draft!);
-      } catch {
-        setError(
-          "Check amount (positive, within 2147483647 minor units), currency decimals, real date, category, merchant (1–200) and note (up to 2000). Text cannot contain control characters."
-        );
-        return;
-      }
-    }
-    lock.current = true;
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      if (remove) {
-        await source.remove(deleting!.id);
-        if (!mounted.current) return;
-        setRows((previous) =>
-          previous.filter((row) => row.id !== deleting!.id)
-        );
-        setDeleting(null);
-        setNotice("Transaction deleted.");
-      } else {
-        const saved = editing
-          ? await source.update(editing.id, input!)
-          : await source.create(input!);
-        if (!mounted.current) return;
-        // Keep the current filters and loaded rows. The confirmed response is
-        // authoritative; edits that leave the filter disappear from history.
-        setRows((previous) =>
-          detailId
-            ? [saved]
-            : reconcileTransactions(
-                previous,
-                { type: "saved", row: saved },
-                applied
-              )
-        );
-        setAfter(null);
-        setDraft(null);
-        setEditing(null);
-        setNotice(
-          detailId || matchesFilter(saved, applied)
-            ? "Transaction saved. Reload history to continue paging."
-            : "Transaction saved. It no longer matches the active filters; clear filters to find it."
-        );
-      }
-    } catch (failure) {
-      if (!mounted.current) return;
-      setError(transactionFailureMessage(failure));
-      if (uncertainWrite(failure)) {
-        setUncertain(true);
-        setReviewed(false);
-      }
-    } finally {
-      lock.current = false;
-      if (mounted.current) setBusy(false);
-    }
-  }
-  function edit(row?: Transaction) {
-    setError(null);
-    setNotice(null);
-    setDeleting(null);
-    setEditing(row ?? null);
-    setDraft(
-      row
-        ? {
-            direction: row.direction,
-            amount: amountText(row.amountMinor, row.currency),
-            currency: row.currency,
-            date: row.date,
-            categoryId: row.categoryId,
-            merchant: row.merchant,
-            note: row.note ?? ""
-          }
-        : { ...newDraft(), currency: defaultCurrency }
-    );
-  }
-  const draftCurrencyMismatch =
-    singleCurrency &&
-    draft !== null &&
-    !editing &&
-    draft.currency !== defaultCurrency;
-  const disabled =
-    busy || uncertain || !ready || (singleCurrency && !preferencesReady);
+  useTransactionManagement,
+  newDraft
+} from "./use-transaction-management";
+export function TransactionManagement(
+  props: Parameters<typeof useTransactionManagement>[0]
+) {
+  const {
+    demo = false,
+    initialCreate,
+    defaultCurrency = "CAD",
+    defaultAccountId = null,
+    preferencesReady = true,
+    onCurrencySettings,
+    detailId,
+    onOpenDetail
+  } = props;
+  const {
+    rows,
+    choices,
+    accountChoices,
+    accountLabel,
+    categoryLabel,
+    after,
+    filter,
+    setFilter,
+    applied,
+    draft,
+    setDraft,
+    editing,
+    setEditing,
+    deleting,
+    setDeleting,
+    busy,
+    ready,
+    error,
+    notice,
+    uncertain,
+    setUncertain,
+    reviewed,
+    retryFilter,
+    loadingMore,
+    deleted,
+    disabled,
+    draftCurrencyMismatch,
+    load,
+    mutate,
+    edit,
+    setError,
+    pendingCreate
+  } = useTransactionManagement(props);
   return (
     <>
-      {singleCurrency && !preferencesReady && (
+      {!preferencesReady && (
         <StateNotice
           kind="error"
           title="Currency settings need attention"
@@ -380,15 +98,23 @@ export function TransactionManagement({
             Review the reloaded list before another submission; no write is
             retried automatically.
           </Body>
-          <Button
-            label="I reviewed the list; enable changes"
-            disabled={busy || !reviewed || !ready}
-            onPress={() => {
-              setUncertain(false);
-              setError(null);
-              setDeleting(null);
-            }}
-          />
+          {pendingCreate.current ? (
+            <Button
+              label="Retry original save"
+              disabled={busy || !reviewed || !ready}
+              onPress={() => void mutate(false, true)}
+            />
+          ) : (
+            <Button
+              label="I reviewed the list; enable changes"
+              disabled={busy || !reviewed || !ready}
+              onPress={() => {
+                setUncertain(false);
+                setError(null);
+                setDeleting(null);
+              }}
+            />
+          )}
         </>
       )}
       {!detailId && !(initialCreate && draft) && (
@@ -487,19 +213,7 @@ export function TransactionManagement({
             editable={!busy && !uncertain}
             onChangeText={(amount) => setDraft({ ...draft, amount })}
           />
-          {singleCurrency ? (
-            <Body>Currency: {draft.currency}</Body>
-          ) : (
-            (Object.keys(currencyExponents) as Currency[]).map((currency) => (
-              <Button
-                key={currency}
-                label={`Currency ${currency}`}
-                selected={draft.currency === currency}
-                disabled={busy || uncertain}
-                onPress={() => setDraft({ ...draft, currency })}
-              />
-            ))
-          )}
+          <Body>Currency: {draft.currency}</Body>
           {draftCurrencyMismatch && (
             <>
               <Body>
@@ -517,7 +231,11 @@ export function TransactionManagement({
                 label={`Discard draft and start in ${defaultCurrency}`}
                 disabled={busy || uncertain || !preferencesReady}
                 onPress={() => {
-                  setDraft({ ...newDraft(), currency: defaultCurrency });
+                  setDraft({
+                    ...newDraft(),
+                    currency: defaultCurrency,
+                    accountId: defaultAccountId ?? ""
+                  });
                   setEditing(null);
                   setError(null);
                 }}
@@ -534,6 +252,28 @@ export function TransactionManagement({
             editable={!busy && !uncertain}
             onChangeText={(date) => setDraft({ ...draft, date })}
           />
+          {!accountChoices.some(
+            (row) => !row.archivedAt && row.currency === draft.currency
+          ) && (
+            <Body>
+              Create a compatible account in Settings, then reload here.
+            </Body>
+          )}
+          {accountChoices
+            .filter(
+              (row) =>
+                (!row.archivedAt && row.currency === draft.currency) ||
+                row.id === editing?.accountId
+            )
+            .map((row) => (
+              <Button
+                key={row.id}
+                label={`Account: ${row.name}${row.archivedAt ? " (archived history)" : ""}`}
+                selected={draft.accountId === row.id}
+                disabled={busy || uncertain}
+                onPress={() => setDraft({ ...draft, accountId: row.id })}
+              />
+            ))}
           {!choices.some((category) => !category.archivedAt) && (
             <Body>
               Create an active category on the Categories screen, then reload
@@ -559,13 +299,6 @@ export function TransactionManagement({
                 onPress={() => setDraft({ ...draft, categoryId: category.id })}
               />
             ))}
-          <Field
-            label="Merchant or payee"
-            value={draft.merchant}
-            maxLength={200}
-            editable={!busy && !uncertain}
-            onChangeText={(merchant) => setDraft({ ...draft, merchant })}
-          />
           <Field
             label="Note (optional)"
             value={draft.note}
@@ -603,10 +336,11 @@ export function TransactionManagement({
           <Body>
             {row.date} · {row.direction} ·{" "}
             {amountText(row.amountMinor, row.currency)} {row.currency} ·{" "}
-            {row.merchant}
+            {row.note || `Transaction on ${row.date}`}
           </Body>
-          <Body>{categoryLabel(row.categoryId)}</Body>
-          {row.note && <Body>{row.note}</Body>}
+          <Body>
+            {accountLabel(row.accountId)} · {categoryLabel(row.categoryId)}
+          </Body>
           {detailId && (
             <>
               <Body>Created: {row.createdAt}</Body>
@@ -615,18 +349,18 @@ export function TransactionManagement({
           )}
           {!detailId && onOpenDetail && (
             <Button
-              label={`View details for ${row.merchant}`}
+              label={`View details for ${row.note || `Transaction on ${row.date}`}`}
               disabled={disabled}
               onPress={() => onOpenDetail(row.id)}
             />
           )}
           <Button
-            label={`Edit ${row.merchant}`}
+            label={`Edit ${row.note || `Transaction on ${row.date}`}`}
             disabled={disabled}
             onPress={() => edit(row)}
           />
           <Button
-            label={`Delete ${row.merchant}`}
+            label={`Delete ${row.note || `Transaction on ${row.date}`}`}
             disabled={disabled}
             onPress={() => {
               setDeleting(row);
@@ -645,8 +379,8 @@ export function TransactionManagement({
       {deleting && (
         <View>
           <Body>
-            Delete {deleting.merchant}? This permanently removes the
-            transaction.
+            Delete {deleting.note || `Transaction on ${deleting.date}`}? This
+            permanently removes the transaction.
           </Body>
           <Button
             label="Confirm delete transaction"

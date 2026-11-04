@@ -97,11 +97,17 @@ export function createTransport(
       if (
         !origin ||
         !(
-          /^\/v1\/[A-Za-z0-9/?=&_.%-]+$/.test(path) ||
-          path === "/v2/preferences" ||
-          /^\/v2\/categories(?:\/[A-Za-z0-9-]+(?:\/archive)?)?(?:\?[A-Za-z0-9=&_.%+-]+)?$/.test(
+          /^\/v1\/(?:me|preferences|auth\/(?:register|login|refresh|logout|reauthenticate|google(?:\/challenges|\/link)?))$/.test(
             path
-          )
+          ) ||
+          /^\/v1\/(?:accounts|categories)(?:\/[0-9a-f-]{36}(?:\/archive)?)?(?:\?[A-Za-z0-9=&_.%+-]+)?$/i.test(
+            path
+          ) ||
+          /^\/v1\/categories\/recent(?:\?[A-Za-z0-9=&_.%+-]+)?$/.test(path) ||
+          /^\/v1\/transactions(?:\/[0-9a-f-]{36})?(?:\?[A-Za-z0-9=&_.%+-]+)?$/i.test(
+            path
+          ) ||
+          /^\/v1\/dashboard\/summary\?[A-Za-z0-9=&_.%+-]+$/.test(path)
         ) ||
         path.includes("..")
       )
@@ -144,12 +150,17 @@ export function createTransport(
                 data.error.code === "CATEGORY_ARCHIVED" ||
                 data.error.code === "DEFAULT_CATEGORY_READ_ONLY" ||
                 data.error.code === "INVALID_CATEGORY" ||
-                data.error.code === "FINANCE_UPGRADE_REQUIRED" ||
                 data.error.code === "CURRENCY_LOCKED" ||
                 data.error.code === "CURRENCY_MISMATCH" ||
                 data.error.code === "CURRENCY_IMMUTABLE" ||
-                data.error.code === "CURRENCY_SETUP_REQUIRED" ||
-                data.error.code === "FINANCE_FEATURE_DISABLED")
+                data.error.code === "ACCOUNT_NAME_CONFLICT" ||
+                data.error.code === "ACCOUNT_ARCHIVED" ||
+                data.error.code === "INVALID_ACCOUNT" ||
+                data.error.code === "PREFERENCE_CHANGED" ||
+                data.error.code === "IDEMPOTENCY_KEY_REUSED" ||
+                data.error.code === "OPERATION_ALREADY_APPLIED" ||
+                data.error.code === "SUMMARY_AMOUNT_OUT_OF_RANGE" ||
+                data.error.code === "PREFERENCES_NOT_READY")
             )
               code = data.error.code;
           } catch {

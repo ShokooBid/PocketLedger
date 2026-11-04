@@ -1,4 +1,5 @@
 node_modules/
+.npm-cache/
 apps/api/src/generated/prisma/
 dist/
 coverage/

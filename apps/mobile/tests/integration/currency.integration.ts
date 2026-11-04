@@ -5,7 +5,7 @@ import { createAuthService } from "../../../api/src/auth/service.js";
 import { createPreferencesService } from "../../../api/src/preferences/service.js";
 import { createAccountService } from "../../../api/src/accounts/service.js";
 import { createTransactionService } from "../../../api/src/transactions/service.js";
-import { testConfig } from "../../../api/tests/fixtures.js";
+import { testConfig, testAccount } from "../../../api/tests/fixtures.js";
 import { disposableDatabase } from "../../../api/tests/support/disposable.js";
 import { createApiPreferencesSource } from "../../src/preference-data";
 import { createApiTransactionSource } from "../../src/transaction-api";
@@ -21,14 +21,14 @@ const db = database.db;
 let app: Awaited<ReturnType<typeof buildApp>>;
 beforeAll(async () => {
   await database.start();
-  const config = { ...testConfig(), currencyPreferencesEnabled: true };
+  const config = testConfig();
   const auth = await createAuthService(db, config, async () => {
     throw new Error("No provider");
   });
   app = await buildApp(config, auth, {
     logger: false,
-    preferences: createPreferencesService(db, true, true),
-    transactions: createTransactionService(db, true)
+    preferences: createPreferencesService(db),
+    transactions: createTransactionService(db)
   });
 });
 afterAll(async () => {
@@ -66,20 +66,25 @@ async function owner() {
     send: (method, path, schema, body) =>
       transport.send(method, path, schema, body, registered.json().accessToken)
   };
-  return { client, categoryId: category.id, id: user.id };
+  return {
+    client,
+    categoryId: category.id,
+    id: user.id,
+    accountId: (await testAccount(db, user.id)).id
+  };
 }
 
 describe("mobile currency contracts against real API/PostgreSQL", () => {
   it("reads a selected account without breaking existing currency Settings", async () => {
     const user = await owner();
-    const account = await createAccountService(db, true).create(user.id, {
+    const account = await createAccountService(db).create(user.id, {
       name: "User cash",
       type: "cash",
       currency: "CAD",
       openingDate: "2026-01-01",
       openingBalanceMinor: -100
     });
-    await createPreferencesService(db, true, true).update(user.id, {
+    await createPreferencesService(db).update(user.id, {
       defaultAccountId: account.id
     });
     const source = createApiPreferencesSource(user.client);
@@ -114,7 +119,8 @@ describe("mobile currency contracts against real API/PostgreSQL", () => {
       currency: "CAD",
       direction: "expense",
       date: "2026-10-30",
-      merchant: "Synthetic mobile shop",
+      accountId: user.accountId,
+      clientRequestId: randomUUID(),
       note: null
     });
     expect(amountText(created.amountMinor, created.currency)).toBe("123.45");

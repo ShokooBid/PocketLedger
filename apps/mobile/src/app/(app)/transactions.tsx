@@ -1,6 +1,6 @@
 import { Screen, StateNotice } from "../../ui";
 import { useCategories } from "../../category-context";
-import { useTransactions } from "../../transaction-context";
+import { useTransactions, useAccounts } from "../../transaction-context";
 import { TransactionManagement } from "../../transaction-management";
 import { useSession } from "../../session";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -16,9 +16,10 @@ export default function TransactionsRoute() {
 }
 function TransactionsScreen() {
   const source = useTransactions();
+  const accounts = useAccounts();
   const categories = useCategories();
   const { session } = useSession();
-  const { defaultCurrency, currencyState } = usePreferences();
+  const { defaultCurrency, defaultAccountId, currencyState } = usePreferences();
   const router = useRouter();
   const { action, date, currency } = useLocalSearchParams();
   const parsedDate = calendarDate.safeParse(date);
@@ -47,10 +48,10 @@ function TransactionsScreen() {
         }
         {...(initialCreate ? { initialCreate } : {})}
         defaultCurrency={defaultCurrency}
-        singleCurrency={currencyState.enabled}
+        defaultAccountId={defaultAccountId}
+        accounts={accounts}
         preferencesReady={
-          !currencyState.enabled ||
-          (currencyState.status === "ready" && !currencyState.saving)
+          currencyState.status === "ready" && !currencyState.saving
         }
         onCurrencySettings={() => router.push("/settings")}
         source={source}

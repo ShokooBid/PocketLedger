@@ -11,6 +11,8 @@ export type TransactionChange =
 export const transactionKey = (row: Transaction) => `${row.date}_${row.id}`;
 export function matchesFilter(row: Transaction, filter: TransactionFilter) {
   return (
+    (!filter.accountId || row.accountId === filter.accountId) &&
+    (!filter.currency || row.currency === filter.currency) &&
     (!filter.from || row.date >= filter.from) &&
     (!filter.to || row.date <= filter.to) &&
     (!filter.categoryId || row.categoryId === filter.categoryId) &&

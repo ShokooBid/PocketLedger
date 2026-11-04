@@ -1,151 +1,214 @@
 import type {
-  PrismaClient,
   Category,
-  Prisma
+  Prisma,
+  PrismaClient
 } from "../generated/prisma/client.js";
 import { ApiError } from "../errors.js";
 import { lockFinanceOwner } from "../preferences/service.js";
-import type { CategoryQuery } from "./contracts.js";
+import type {
+  CategoryInput,
+  CategoryPatch,
+  CategoryQuery
+} from "./contracts.js";
 
-const unavailable = () => new ApiError(404, "NOT_FOUND", "Resource not found.");
-const serialize = (category: Category) => ({
-  id: category.id,
-  name: category.name,
-  isDefault: category.isDefault,
-  archivedAt: category.archivedAt?.toISOString() ?? null,
-  createdAt: category.createdAt.toISOString(),
-  updatedAt: category.updatedAt.toISOString()
+export const serializeCategory = (row: Category) => ({
+  id: row.id,
+  name: row.name,
+  parentId: row.parentId,
+  isDefault: row.isDefault,
+  defaultKey: row.defaultKey,
+  iconKey: row.iconKey,
+  colorKey: row.colorKey,
+  sortOrder: row.sortOrder,
+  archivedAt: row.archivedAt?.toISOString() ?? null,
+  createdAt: row.createdAt.toISOString(),
+  updatedAt: row.updatedAt.toISOString()
 });
-
-async function uniqueWrite<T>(write: () => Promise<T>): Promise<T> {
-  try {
-    return await write();
-  } catch (error) {
-    // The partial unique index is the authority, including concurrent writes.
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "P2002"
-    )
-      throw new ApiError(
-        409,
-        "CATEGORY_NAME_CONFLICT",
-        "An active category already uses this name."
-      );
-    throw error;
-  }
+const missing = () => new ApiError(404, "NOT_FOUND", "Resource not found.");
+const invalid = () =>
+  new ApiError(422, "INVALID_CATEGORY", "Choose an active root category.");
+async function owned(tx: Prisma.TransactionClient, userId: string, id: string) {
+  const row = await tx.category.findFirst({ where: { id, userId } });
+  if (!row) throw missing();
+  return row;
+}
+function writable(row: Category) {
+  if (row.isDefault)
+    throw new ApiError(
+      409,
+      "DEFAULT_CATEGORY_READ_ONLY",
+      "Default categories cannot be changed."
+    );
 }
 
 export function createCategoryService(db: PrismaClient) {
-  async function legacy<T>(
+  async function write<T>(
     userId: string,
     action: (tx: Prisma.TransactionClient) => Promise<T>
   ) {
-    return db.$transaction(async (tx) => {
-      await lockFinanceOwner(tx, userId);
+    try {
+      return await db.$transaction(async (tx) => {
+        await lockFinanceOwner(tx, userId);
+        return action(tx);
+      });
+    } catch (error) {
       if (
-        await tx.category.findFirst({
-          where: {
-            userId,
-            OR: [{ parentId: { not: null } }, { defaultKey: { not: null } }]
-          },
-          select: { id: true }
-        })
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "P2002"
       )
         throw new ApiError(
           409,
-          "FINANCE_UPGRADE_REQUIRED",
-          "Use the supported category client."
+          "CATEGORY_NAME_CONFLICT",
+          "An active sibling category already uses this name."
         );
-      return action(tx);
-    });
-  }
-  function writable(row: Category) {
-    if (row.isDefault)
-      throw new ApiError(
-        409,
-        "DEFAULT_CATEGORY_READ_ONLY",
-        "Default categories cannot be changed."
-      );
+      throw error;
+    }
   }
   return {
+    async assertMutable(userId: string, id: string) {
+      writable(await owned(db, userId, id));
+    },
     async list(userId: string, query: CategoryQuery) {
-      return legacy(userId, async (tx) => {
-        const rows = await tx.category.findMany({
-          where: {
-            userId,
-            ...(query.status === "active"
-              ? { archivedAt: null }
-              : query.status === "archived"
-                ? { archivedAt: { not: null } }
-                : {}),
-            ...(query.after ? { id: { gt: query.after } } : {})
-          },
-          orderBy: { id: "asc" },
-          take: query.limit + 1
-        });
-        const items = rows.slice(0, query.limit).map(serialize);
-        return {
-          items,
-          nextCursor: rows.length > query.limit ? items.at(-1)!.id : null
-        };
+      // A parent filter is an owned root lookup, including archived roots for history.
+      if (query.parentId && query.parentId !== "root") {
+        const parent = await owned(db, userId, query.parentId);
+        if (parent.parentId) throw invalid();
+      }
+      const rows = await db.category.findMany({
+        where: {
+          userId,
+          ...(query.status === "active"
+            ? {
+                archivedAt: null,
+                OR: [{ parentId: null }, { parent: { archivedAt: null } }]
+              }
+            : query.status === "archived"
+              ? { archivedAt: { not: null } }
+              : {}),
+          ...(query.parentId
+            ? { parentId: query.parentId === "root" ? null : query.parentId }
+            : {}),
+          ...(query.q
+            ? { name: { contains: query.q, mode: "insensitive" as const } }
+            : {}),
+          ...(query.after ? { id: { gt: query.after } } : {})
+        },
+        orderBy: { id: "asc" },
+        take: query.limit + 1
       });
+      const items = rows.slice(0, query.limit).map(serializeCategory);
+      return {
+        items,
+        nextCursor: rows.length > query.limit ? items.at(-1)!.id : null
+      };
     },
     async get(userId: string, id: string) {
-      return legacy(userId, async (tx) => {
-        const row = await tx.category.findFirst({ where: { id, userId } });
-        if (!row) throw unavailable();
-        return serialize(row);
+      return serializeCategory(await owned(db, userId, id));
+    },
+    async recent(userId: string, limit: number) {
+      return db.$transaction(
+        async (tx) => {
+          // Independent of history pagination. GROUP BY yields one selection each;
+          // both active category and active ancestor are required.
+          const selections = await tx.$queryRaw<{ id: string }[]>`
+        SELECT c.id FROM "Category" c
+        JOIN "Transaction" t ON t."categoryId" = c.id AND t."userId" = c."userId"
+        LEFT JOIN "Category" p ON p.id = c."parentId" AND p."userId" = c."userId"
+        WHERE c."userId" = ${userId}::uuid AND c."archivedAt" IS NULL
+          AND (c."parentId" IS NULL OR p."archivedAt" IS NULL)
+        GROUP BY c.id ORDER BY MAX(t."updatedAt") DESC, c.id ASC LIMIT ${limit}
+      `;
+          const rows = await tx.category.findMany({
+            where: { userId, id: { in: selections.map((row) => row.id) } },
+            include: { parent: true }
+          });
+          return {
+            items: selections.flatMap(({ id }) => {
+              const row = rows.find((row) => row.id === id);
+              return row
+                ? [
+                    {
+                      ...serializeCategory(row),
+                      parent: row.parent ? serializeCategory(row.parent) : null
+                    }
+                  ]
+                : [];
+            })
+          };
+        },
+        { isolationLevel: "RepeatableRead" }
+      );
+    },
+    create(userId: string, input: CategoryInput) {
+      return write(userId, async (tx) => {
+        if (input.parentId) {
+          const parent = await owned(tx, userId, input.parentId);
+          if (parent.parentId || parent.archivedAt) throw invalid();
+        }
+        return serializeCategory(
+          await tx.category.create({
+            data: {
+              userId,
+              name: input.name,
+              parentId: input.parentId ?? null,
+              ...(input.iconKey !== undefined
+                ? { iconKey: input.iconKey }
+                : {}),
+              ...(input.colorKey !== undefined
+                ? { colorKey: input.colorKey }
+                : {}),
+              ...(input.sortOrder !== undefined
+                ? { sortOrder: input.sortOrder }
+                : {})
+            }
+          })
+        );
       });
     },
-    async create(userId: string, name: string) {
-      return uniqueWrite(async () =>
-        legacy(userId, async (tx) =>
-          serialize(await tx.category.create({ data: { userId, name } }))
-        )
-      );
-    },
-    async rename(userId: string, id: string, name: string) {
-      return uniqueWrite(() =>
-        legacy(userId, async (tx) => {
-          const row = await tx.category.findFirst({ where: { id, userId } });
-          if (!row) throw unavailable();
-          writable(row);
-          const changed = await tx.category.updateMany({
-            where: { id, userId, archivedAt: null },
-            data: { name }
-          });
-          if (!changed.count) {
-            const owned = await tx.category.findFirst({
-              where: { id, userId }
-            });
-            if (!owned) throw unavailable();
-            throw new ApiError(
-              409,
-              "CATEGORY_ARCHIVED",
-              "Archived categories cannot be renamed."
-            );
-          }
-          return serialize(
-            await tx.category.findFirstOrThrow({ where: { id, userId } })
+    update(userId: string, id: string, input: CategoryPatch) {
+      return write(userId, async (tx) => {
+        const row = await owned(tx, userId, id);
+        writable(row);
+        if (row.archivedAt)
+          throw new ApiError(
+            409,
+            "CATEGORY_ARCHIVED",
+            "Archived categories cannot be changed."
           );
-        })
-      );
+        return serializeCategory(
+          await tx.category.update({
+            where: { id, userId },
+            data: {
+              ...(input.name !== undefined ? { name: input.name } : {}),
+              ...(input.iconKey !== undefined
+                ? { iconKey: input.iconKey }
+                : {}),
+              ...(input.colorKey !== undefined
+                ? { colorKey: input.colorKey }
+                : {}),
+              ...(input.sortOrder !== undefined
+                ? { sortOrder: input.sortOrder }
+                : {})
+            }
+          })
+        );
+      });
     },
-    async archive(userId: string, id: string) {
-      return legacy(userId, async (tx) => {
-        const owned = await tx.category.findFirst({ where: { id, userId } });
-        if (!owned) throw unavailable();
-        writable(owned);
-        // Idempotent: a second archive preserves the original timestamp.
-        await tx.category.updateMany({
-          where: { id, userId, archivedAt: null },
-          data: { archivedAt: new Date() }
-        });
-        const row = await tx.category.findFirst({ where: { id, userId } });
-        if (!row) throw unavailable();
-        return serialize(row);
+    archive(userId: string, id: string) {
+      return write(userId, async (tx) => {
+        const row = await owned(tx, userId, id);
+        writable(row);
+        // The DB trigger archives active children in this same transaction.
+        return serializeCategory(
+          row.archivedAt
+            ? row
+            : await tx.category.update({
+                where: { id, userId },
+                data: { archivedAt: new Date() }
+              })
+        );
       });
     }
   };

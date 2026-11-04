@@ -4,15 +4,21 @@ import { buildApp } from "../../src/app.js";
 import { createAuthService } from "../../src/auth/service.js";
 import { createPreferencesService } from "../../src/preferences/service.js";
 import { createTransactionService } from "../../src/transactions/service.js";
-import { testConfig } from "../fixtures.js";
+import { testConfig, testAccount } from "../fixtures.js";
 import { disposableDatabase } from "../support/disposable.js";
 
 const database = disposableDatabase();
 const db = database.db;
-const config = { ...testConfig(), currencyPreferencesEnabled: true };
+const config = testConfig();
 let app: Awaited<ReturnType<typeof buildApp>>;
-let disabled: typeof app;
-type Owner = { id: string; token: string; categoryId: string; email: string };
+
+type Owner = {
+  id: string;
+  token: string;
+  categoryId: string;
+  accountId: string;
+  email: string;
+};
 beforeAll(async () => {
   await database.start();
   const auth = await createAuthService(db, config, async () => {
@@ -21,24 +27,13 @@ beforeAll(async () => {
   app = await buildApp(config, auth, {
     logger: false,
     rateLimitMax: 10000,
-    preferences: createPreferencesService(db, true),
-    transactions: createTransactionService(db, true)
+    preferences: createPreferencesService(db),
+    transactions: createTransactionService(db)
   });
-  disabled = await buildApp(
-    { ...config, currencyPreferencesEnabled: false },
-    auth,
-    {
-      logger: false,
-      rateLimitMax: 10000,
-      preferences: createPreferencesService(db, false),
-      transactions: createTransactionService(db)
-    }
-  );
 });
 afterAll(async () => {
   try {
     await app?.close();
-    await disabled?.close();
   } finally {
     await database.close();
   }
@@ -61,6 +56,7 @@ async function owner(): Promise<Owner> {
   return {
     id: user.id,
     categoryId: category.id,
+    accountId: (await testAccount(db, user.id)).id,
     token: result.json().accessToken,
     email
   };
@@ -68,7 +64,7 @@ async function owner(): Promise<Owner> {
 function request(
   user: Owner,
   method: "GET" | "PATCH" | "POST" | "DELETE",
-  url = "/v2/preferences",
+  url = "/v1/preferences",
   payload?: object,
   server = app
 ) {
@@ -85,17 +81,29 @@ const input = (user: Owner, extra: object = {}) => ({
   currency: "CAD",
   date: "2026-10-30",
   categoryId: user.categoryId,
-  merchant: "Synthetic shop",
+  accountId: user.accountId,
+  clientRequestId: randomUUID(),
   note: null,
   ...extra
 });
+const storedInput = (user: Owner) => {
+  return {
+    accountId: user.accountId,
+    categoryId: user.categoryId,
+    amountMinor: 1250,
+    currency: "CAD",
+    direction: "expense" as const,
+    date: "2026-10-30",
+    note: null
+  };
+};
 
-describe("gated persisted currency preferences", () => {
+describe("persisted currency preferences", () => {
   it("requires verified authentication and rejects owner/lock injection and invalid currencies", async () => {
     const user = await owner();
     for (const method of ["GET", "PATCH"] as const)
       expect(
-        (await app.inject({ method, url: "/v2/preferences" })).statusCode
+        (await app.inject({ method, url: "/v1/preferences" })).statusCode
       ).toBe(401);
     for (const payload of [
       {},
@@ -110,7 +118,7 @@ describe("gated persisted currency preferences", () => {
       ).toBe(422);
     expect(
       await db.financePreferences.findUnique({ where: { userId: user.id } })
-    ).toBeNull();
+    ).toMatchObject({ entryCurrency: "CAD", currencyLockedAt: null });
   });
 
   it("starts at CAD, preserves updates across login/client recreation and isolates owners", async () => {
@@ -136,7 +144,7 @@ describe("gated persisted currency preferences", () => {
     const restored = { ...alice, token: login.json().accessToken };
     expect((await request(restored, "GET")).json().entryCurrency).toBe("KWD");
     expect(
-      (await createPreferencesService(db, true).get(alice.id)).entryCurrency
+      (await createPreferencesService(db).get(alice.id)).entryCurrency
     ).toBe("KWD");
     expect((await request(bob, "GET")).json().entryCurrency).toBe("CAD");
   });
@@ -154,13 +162,13 @@ describe("gated persisted currency preferences", () => {
           input(user, { categoryId: foreign.categoryId })
         )
       ).statusCode
-    ).toBe(422);
+    ).toBe(404);
     expect((await request(user, "GET")).json().currencyLocked).toBe(false);
     // This fails a DB CHECK after the before-insert trigger has run.
     await expect(
       db.transaction.create({
         data: {
-          ...input(user),
+          ...storedInput(user),
           direction: "expense",
           userId: user.id,
           amountMinor: 0,
@@ -267,40 +275,13 @@ describe("gated persisted currency preferences", () => {
     }
   });
 
-  it("keeps the default rollout dormant and never relabels or deletes legacy test rows", async () => {
-    const user = await owner();
-    const result = await request(
-      user,
-      "POST",
-      "/v1/transactions",
-      input(user, { currency: "USD" }),
-      disabled
-    );
-    expect(result.statusCode).toBe(201);
-    expect(
-      (await request(user, "GET", undefined, undefined, disabled)).json().error
-        .code
-    ).toBe("FINANCE_FEATURE_DISABLED");
-    expect(
-      await db.financePreferences.findUnique({ where: { userId: user.id } })
-    ).toBeNull();
-    expect((await request(user, "GET")).json().error.code).toBe(
-      "CURRENCY_SETUP_REQUIRED"
-    );
-    expect(
-      await db.transaction.findUniqueOrThrow({
-        where: { id: result.json().id }
-      })
-    ).toMatchObject({ currency: "USD", amountMinor: 1250 });
-  });
-
   it("enforces activated currency and permanent locks for direct database postings", async () => {
     const user = await owner();
     await request(user, "GET");
     await expect(
       db.transaction.create({
         data: {
-          ...input(user),
+          ...storedInput(user),
           userId: user.id,
           direction: "expense",
           currency: "USD",
@@ -310,7 +291,7 @@ describe("gated persisted currency preferences", () => {
     ).rejects.toThrow();
     await db.transaction.create({
       data: {
-        ...input(user),
+        ...storedInput(user),
         userId: user.id,
         direction: "expense",
         date: new Date("2026-10-30T00:00:00Z")
@@ -323,17 +304,5 @@ describe("gated persisted currency preferences", () => {
         data: { entryCurrency: "USD" }
       })
     ).rejects.toThrow();
-    // Disabling the rollout cannot bypass a previously activated owner's lock.
-    expect(
-      (
-        await request(
-          user,
-          "POST",
-          "/v1/transactions",
-          input(user, { currency: "USD" }),
-          disabled
-        )
-      ).statusCode
-    ).toBe(422);
   });
 });

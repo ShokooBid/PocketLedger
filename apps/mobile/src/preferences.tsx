@@ -20,6 +20,8 @@ import { NavigationLink, Screen, StateNotice } from "./ui";
 
 type Preferences = {
   defaultCurrency: Currency;
+  defaultAccountId: string | null;
+  setDefaultAccount: (id: string | null) => Promise<void>;
   setDefaultCurrency: (currency: Currency) => Promise<void>;
   currencyState: CurrencySettingsState;
   assertNewCurrency: (currency: Currency) => void;
@@ -37,23 +39,20 @@ const Context = createContext<Preferences | null>(null);
 // The session-keyed parent clears these closures/data on account/demo changes.
 export function PreferencesProvider({ children }: PropsWithChildren) {
   const { session, controller } = useSession();
-  const [enabled] = useState(
-    () => process.env.EXPO_PUBLIC_FINANCE_CURRENCY_ENABLED === "true"
-  );
   const [source] = useState(() => {
-    if (!enabled || session.status === "demo") return null;
+    if (session.status === "demo") return null;
     if (session.status !== "authenticated")
       throw new Error("Preferences require an application session.");
     return createApiPreferencesSource(controller.client(session.generation));
   });
   const [state, setState] = useState<State>(() => ({
     data: {
-      entryCurrency: enabled ? "CAD" : "USD",
+      entryCurrency: "CAD",
       currencyLocked: false,
       defaultAccountId: null
     },
-    initialized: !enabled,
-    status: enabled ? "loading" : "ready",
+    initialized: session.status === "demo",
+    status: session.status === "demo" ? "ready" : "loading",
     saving: false,
     error: null
   }));
@@ -66,7 +65,7 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
     if (mounted.current) setState(next);
   }, []);
   const reload = useCallback(async () => {
-    if (!enabled || inFlight.current) return;
+    if (inFlight.current) return;
     inFlight.current = true;
     const version = revision.current;
     apply({ ...current.current, status: "loading", error: null });
@@ -90,7 +89,7 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
     } finally {
       if (version === revision.current) inFlight.current = false;
     }
-  }, [enabled, source, apply]);
+  }, [source, apply]);
   useEffect(() => {
     mounted.current = true;
     void reload();
@@ -105,13 +104,6 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
       if (!mounted.current) return;
       const currency = currencySchema.parse(value);
       if (inFlight.current) return;
-      if (!enabled) {
-        apply({
-          ...current.current,
-          data: { ...current.current.data, entryCurrency: currency }
-        });
-        return;
-      }
       if (
         current.current.status !== "ready" ||
         current.current.data.currencyLocked
@@ -123,7 +115,14 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
       try {
         const data = source
           ? await source.update(currency)
-          : { ...current.current.data, entryCurrency: currency };
+          : {
+              ...current.current.data,
+              entryCurrency: currency,
+              defaultAccountId:
+                currency === current.current.data.entryCurrency
+                  ? current.current.data.defaultAccountId
+                  : null
+            };
         if (mounted.current && version === revision.current)
           apply({
             data,
@@ -144,20 +143,15 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
         if (version === revision.current) inFlight.current = false;
       }
     },
-    [enabled, source, apply]
+    [source, apply]
   );
-  const assertNewCurrency = useCallback(
-    (currency: Currency) => {
-      if (!enabled) return;
-      if (current.current.status !== "ready" || current.current.saving)
-        throw new ClientFailure("validation", "PREFERENCES_NOT_READY");
-      if (current.current.data.entryCurrency !== currency)
-        throw new ClientFailure("validation", "CURRENCY_MISMATCH");
-    },
-    [enabled]
-  );
+  const assertNewCurrency = useCallback((currency: Currency) => {
+    if (current.current.status !== "ready" || current.current.saving)
+      throw new ClientFailure("validation", "PREFERENCES_NOT_READY");
+    if (current.current.data.entryCurrency !== currency)
+      throw new ClientFailure("validation", "CURRENCY_MISMATCH");
+  }, []);
   const transactionSaved = useCallback(() => {
-    if (!enabled) return;
     revision.current++;
     inFlight.current = false;
     apply({
@@ -166,16 +160,43 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
       status: "ready",
       saving: false
     });
-  }, [enabled, apply]);
+  }, [apply]);
+  const setDefaultAccount = useCallback(
+    async (id: string | null) => {
+      if (inFlight.current || current.current.status !== "ready") return;
+      inFlight.current = true;
+      const version = revision.current;
+      apply({ ...current.current, saving: true, error: null });
+      try {
+        const data = source
+          ? await source.selectAccount(id)
+          : { ...current.current.data, defaultAccountId: id };
+        if (mounted.current && version === revision.current)
+          apply({ ...current.current, data, saving: false });
+      } catch (error) {
+        if (mounted.current && version === revision.current)
+          apply({
+            ...current.current,
+            status: "error",
+            saving: false,
+            error: preferenceFailureMessage(error)
+          });
+      } finally {
+        if (version === revision.current) inFlight.current = false;
+      }
+    },
+    [source, apply]
+  );
   return (
     <Context.Provider
       value={{
         defaultCurrency: state.data.entryCurrency,
+        defaultAccountId: state.data.defaultAccountId,
+        setDefaultAccount,
         setDefaultCurrency,
         assertNewCurrency,
         transactionSaved,
         currencyState: {
-          enabled,
           initialized: state.initialized,
           status: state.status,
           locked: state.data.currencyLocked,
@@ -198,8 +219,7 @@ export function usePreferences() {
 export function PreferencesReady({ children }: PropsWithChildren) {
   const { currencyState } = usePreferences();
   // A failed refresh after initialization must not unmount and erase a draft.
-  if (!currencyState.enabled || currencyState.initialized)
-    return <>{children}</>;
+  if (currencyState.initialized) return <>{children}</>;
   return (
     <Screen title="Currency settings">
       <StateNotice

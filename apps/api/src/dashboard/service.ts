@@ -90,7 +90,7 @@ export function createDashboardService(db: PrismaClient) {
             ...totals(income, expenses),
             categoryBreakdown,
             // Kept separate from exact totals. The v1 serializer omits this
-            // primitive; #75 will expose it with account-aware v2 reporting.
+            // primitive; #75 will expose it with account-aware reporting.
             rootCategoryBreakdown: [...roots.values()]
               .sort((a, b) => a.categoryId.localeCompare(b.categoryId))
               .map((root) => ({

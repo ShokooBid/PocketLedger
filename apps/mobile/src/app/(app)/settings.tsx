@@ -1,3 +1,5 @@
+import { AccountManagement } from "../../account-management";
+import { useAccounts } from "../../transaction-context";
 import { useCallback, useState } from "react";
 import { useSession } from "../../session";
 import { Button, Screen } from "../../ui";
@@ -12,11 +14,12 @@ export default function SettingsScreen() {
   const { session, controller, exitDemo } = useSession();
   const [shouldFail, setShouldFail] = useState(false);
   const preferences = usePreferences();
-  const { enabled, reload } = preferences.currencyState;
+  const accounts = useAccounts();
+  const { reload } = preferences.currencyState;
   useFocusEffect(
     useCallback(() => {
-      if (enabled) void reload();
-    }, [enabled, reload])
+      void reload();
+    }, [reload])
   );
   const router = useRouter();
   if (shouldFail) throw new Error("Synthetic rendering failure.");
@@ -29,6 +32,16 @@ export default function SettingsScreen() {
         version={Constants.expoConfig?.version ?? "Development"}
         onPrivacy={() => router.push("/privacy")}
         onExitDemo={exitDemo}
+      />
+      <AccountManagement
+        source={accounts}
+        currency={preferences.defaultCurrency}
+        defaultAccountId={preferences.defaultAccountId}
+        onDefault={preferences.setDefaultAccount}
+        preferencesReady={
+          preferences.currencyState.status === "ready" &&
+          !preferences.currencyState.saving
+        }
       />
       {session.status === "demo" && (
         <Button
