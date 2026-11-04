@@ -23,7 +23,14 @@ import {
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useState } from "react";
 import { transactionFailureMessage } from "../src/transaction-data";
-import { alice, bob, deferred, harness, response } from "./auth-fixtures";
+import {
+  alice,
+  bob,
+  deferred,
+  harness,
+  response,
+  accountId
+} from "./auth-fixtures";
 
 afterEach(() => {
   jest.restoreAllMocks();
@@ -45,6 +52,41 @@ async function login(user = alice) {
   });
   return h;
 }
+
+it("rejects a failed default selection so account management cannot announce success", async () => {
+  const h = await login();
+  h.fetcher.mockResolvedValueOnce(
+    response({
+      entryCurrency: "CAD",
+      currencyLocked: false,
+      defaultAccountId: null
+    })
+  );
+  let preferences!: ReturnType<typeof usePreferences>;
+  function DefaultProbe() {
+    preferences = usePreferences();
+    return null;
+  }
+  render(
+    <PreferencesProvider>
+      <DefaultProbe />
+    </PreferencesProvider>
+  );
+  await waitFor(() => expect(preferences.currencyState.status).toBe("ready"));
+  h.fetcher.mockResolvedValueOnce(
+    response(
+      { error: { code: "INVALID_ACCOUNT", message: "Unavailable" } },
+      422
+    )
+  );
+  await act(async () => {
+    await expect(
+      preferences.setDefaultAccount(accountId("CAD"))
+    ).rejects.toBeDefined();
+  });
+  expect(preferences.defaultAccountId).toBeNull();
+  expect(preferences.currencyState.status).toBe("error");
+});
 function Probe() {
   const p = usePreferences();
   return (

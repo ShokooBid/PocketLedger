@@ -44,15 +44,28 @@ async function openShell(initialUrl = "/") {
 }
 
 async function press(name: string) {
-  const button = await screen.findByRole("button", { name });
-  await act(async () => {
-    fireEvent.press(button);
-  });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name })).toBeEnabled()
+  );
+  await tap(screen.getByRole("button", { name }));
 }
 
 async function tap(element: Parameters<typeof fireEvent.press>[0]) {
   await act(async () => {
     fireEvent.press(element);
+  });
+}
+
+// Focus effects can start asynchronous reads even when router methods return void.
+async function navigate(action: () => void) {
+  await act(async () => {
+    action();
+  });
+}
+
+async function field(label: string, value: string) {
+  await act(async () => {
+    fireEvent.changeText(screen.getByLabelText(label), value);
   });
 }
 
@@ -68,6 +81,117 @@ afterEach(() => {
 });
 
 describe("session navigation", () => {
+  it("creates an account through Settings and returns to every unchanged draft field", async () => {
+    await openShell();
+    await enterDemo();
+    await tap(screen.getByRole("link", { name: "Manage categories" }));
+    await press("Add category");
+    await field("Category name", "Onboarding food");
+    await press("Save category");
+    await screen.findByText("Onboarding food");
+    await press("Back to dashboard");
+    await press("Add transaction");
+    await screen.findByText("New transaction");
+    await field("Amount", "12.34");
+    await field("Transaction date (YYYY-MM-DD)", "2026-11-01");
+    await field("Note (optional)", "Keep this draft");
+    await press("Category: Onboarding food");
+    await press("Add an account in Settings");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Create account" })
+      ).toBeEnabled()
+    );
+    await field("Account name", "BMO Chequing");
+    await field("Account opening date (YYYY-MM-DD)", "2026-01-01");
+    await press("Create account");
+    expect(
+      screen.getByRole("button", {
+        name: "Use BMO Chequing as default",
+        selected: false
+      })
+    ).toBeVisible();
+    await press("Return to transaction draft");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Account: BMO Chequing" })
+      ).toBeEnabled()
+    );
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
+    expect(screen.getByLabelText("Transaction date (YYYY-MM-DD)")).toHaveProp(
+      "value",
+      "2026-11-01"
+    );
+    expect(screen.getByLabelText("Note (optional)")).toHaveProp(
+      "value",
+      "Keep this draft"
+    );
+    expect(
+      screen.getByRole("button", {
+        name: "Category: Onboarding food",
+        selected: true
+      })
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", {
+        name: "Account: BMO Chequing",
+        selected: false
+      })
+    ).toBeVisible();
+    await press("Account: BMO Chequing");
+    await press("Save transaction");
+    await screen.findByText(/Transaction saved/);
+    await navigate(() => router.push("/settings"));
+    await screen.findByText(/BMO Chequing · CAD/);
+    await press("View balance for BMO Chequing");
+    expect(
+      screen.getByText(/Tracked balance as of .*: -12.34 CAD/)
+    ).toBeVisible();
+  }, 15000);
+
+  it("returns with system Back after choosing an explicit default without erasing the draft", async () => {
+    await openShell();
+    await enterDemo();
+    await press("Add transaction");
+    await screen.findByText("New transaction");
+    await field("Amount", "8.50");
+    await field("Note (optional)", "System Back draft");
+    await press("Add an account in Settings");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Create account" })
+      ).toBeEnabled()
+    );
+    await field("Account name", "Cash");
+    await press("Create account");
+    await press("Use Cash as default");
+    await navigate(() => router.back());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", {
+          name: "Account: Cash",
+          selected: true
+        })
+      ).toBeVisible()
+    );
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "8.50");
+    expect(screen.getByLabelText("Note (optional)")).toHaveProp(
+      "value",
+      "System Back draft"
+    );
+  });
+
+  it("uses a safe fallback for a directly opened draft-return link", async () => {
+    await openShell();
+    await enterDemo();
+    await navigate(() =>
+      router.replace("/settings?returnTo=transaction-draft")
+    );
+    jest.spyOn(router, "canGoBack").mockReturnValue(false);
+    await press("Return to transaction draft");
+    expect(shell.getPathname()).toBe("/transactions");
+  });
+
   // This full navigation flow also pays for the first cold router render.
   // Allow slower Windows/CI runs without relaxing individual lookup timeouts.
   it("keeps a demo draft unchanged across Settings and locks currency after saving", async () => {
@@ -75,10 +199,7 @@ describe("session navigation", () => {
     await enterDemo();
     await tap(screen.getByRole("link", { name: "Manage categories" }));
     await press("Add category");
-    await fireEvent.changeText(
-      screen.getByLabelText("Category name"),
-      "Currency food"
-    );
+    await field("Category name", "Currency food");
     await press("Save category");
     await screen.findByText("Currency food");
     await press("Back to dashboard");
@@ -86,15 +207,12 @@ describe("session navigation", () => {
     await screen.findByText("New transaction");
     expect(screen.getByText("Currency: CAD")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Currency USD" })).toBeNull();
-    await fireEvent.changeText(screen.getByLabelText("Amount"), "12.34");
-    await act(() => router.push("/settings"));
+    await field("Amount", "12.34");
+    await navigate(() => router.push("/settings"));
     await press("Default currency EUR");
-    await fireEvent.changeText(
-      screen.getByLabelText("Account name"),
-      "Demo cash"
-    );
+    await field("Account name", "Demo cash");
     await press("Create account");
-    await act(() => router.back());
+    await navigate(() => router.back());
     expect(screen.getByText("Currency: CAD")).toBeVisible();
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
     expect(
@@ -105,15 +223,12 @@ describe("session navigation", () => {
     await press("Account: Demo cash");
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "");
     expect(screen.getByText("Currency: EUR")).toBeVisible();
-    await fireEvent.changeText(screen.getByLabelText("Amount"), "5.67");
-    await fireEvent.changeText(
-      screen.getByLabelText("Note (optional)"),
-      "Currency demo"
-    );
+    await field("Amount", "5.67");
+    await field("Note (optional)", "Currency demo");
     await press("Category: Currency food");
     await press("Save transaction");
     await screen.findByText(/Transaction saved/);
-    await act(() => router.push("/settings"));
+    await navigate(() => router.push("/settings"));
     expect(
       await screen.findByText(
         "Currency is locked after the first saved transaction."
@@ -186,14 +301,8 @@ describe("session navigation", () => {
     });
     try {
       await openShell();
-      await fireEvent.changeText(
-        screen.getByLabelText("Email address"),
-        alice.email
-      );
-      await fireEvent.changeText(
-        screen.getByLabelText("Password"),
-        "synthetic password"
-      );
+      await field("Email address", alice.email);
+      await field("Password", "synthetic password");
       await press("Sign in with email");
       await screen.findByRole("header", { name: "Dashboard screen" });
       await tap(screen.getByRole("link", { name: "Manage categories" }));
@@ -203,14 +312,8 @@ describe("session navigation", () => {
       await tap(screen.getByRole("link", { name: "Open settings" }));
       await press("Sign out");
       await screen.findByRole("header", { name: "Sign in screen" });
-      await fireEvent.changeText(
-        screen.getByLabelText("Email address"),
-        bob.email
-      );
-      await fireEvent.changeText(
-        screen.getByLabelText("Password"),
-        "synthetic password"
-      );
+      await field("Email address", bob.email);
+      await field("Password", "synthetic password");
       await press("Sign in with email");
       await screen.findByRole("header", { name: "Dashboard screen" });
       const pending = deferred<Response>();
@@ -282,13 +385,13 @@ describe("session navigation", () => {
     await openShell();
     await enterDemo();
     await tap(screen.getByRole("link", { name: "View transactions" }));
-    await act(() => router.back());
+    await navigate(() => router.back());
     expect(shell.getPathname()).toBe("/");
     await tap(screen.getByRole("link", { name: "Open settings" }));
     await press("Exit demo and return to sign in");
     expect(shell.getPathname()).toBe("/sign-in");
     expect(router.canGoBack()).toBe(false);
-    await act(() => router.push("/transactions"));
+    await navigate(() => router.push("/transactions"));
     expect(shell.getPathname()).toBe("/sign-in");
   });
 
@@ -297,10 +400,7 @@ describe("session navigation", () => {
     await enterDemo();
     await tap(screen.getByRole("link", { name: "Manage categories" }));
     await press("Add category");
-    await fireEvent.changeText(
-      screen.getByLabelText("Category name"),
-      "Synthetic demo category"
-    );
+    await field("Category name", "Synthetic demo category");
     await press("Save category");
     expect(await screen.findByText("Synthetic demo category")).toBeVisible();
     await press("Back to dashboard");
@@ -319,30 +419,18 @@ describe("session navigation", () => {
     await enterDemo();
     await tap(screen.getByRole("link", { name: "Manage categories" }));
     await press("Add category");
-    await fireEvent.changeText(
-      screen.getByLabelText("Category name"),
-      "Dashboard food"
-    );
+    await field("Category name", "Dashboard food");
     await press("Save category");
     await screen.findByText("Dashboard food");
     await press("Back to dashboard");
-    await act(() => router.push("/settings"));
+    await navigate(() => router.push("/settings"));
     await press("Default currency JPY");
-    await fireEvent.changeText(
-      screen.getByLabelText("Account name"),
-      "History cash"
-    );
-    await fireEvent.changeText(
-      screen.getByLabelText("Account opening date (YYYY-MM-DD)"),
-      "2024-01-01"
-    );
+    await field("Account name", "History cash");
+    await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
     await press("Create account");
-    await act(() => router.back());
+    await navigate(() => router.back());
     await press("Choose month");
-    await fireEvent.changeText(
-      screen.getByLabelText("Month (YYYY-MM)"),
-      "2024-02"
-    );
+    await field("Month (YYYY-MM)", "2024-02");
     await press("Show selected month");
 
     await press("Add transaction");
@@ -353,11 +441,8 @@ describe("session navigation", () => {
     );
     expect(screen.getByText("Currency: JPY")).toBeVisible();
     await press("Account: History cash");
-    await fireEvent.changeText(screen.getByLabelText("Amount"), "250");
-    await fireEvent.changeText(
-      screen.getByLabelText("Note (optional)"),
-      "Dashboard shop"
-    );
+    await field("Amount", "250");
+    await field("Note (optional)", "Dashboard shop");
     await press("Category: Dashboard food");
     await press("Save transaction");
     await screen.findByText(/Transaction saved/);
@@ -369,7 +454,7 @@ describe("session navigation", () => {
       await screen.findByRole("header", { name: "Transaction details screen" })
     ).toBeVisible();
     await press("Edit Dashboard shop");
-    await fireEvent.changeText(screen.getByLabelText("Amount"), "300");
+    await field("Amount", "300");
     await press("Save transaction");
     await screen.findByText(/Transaction saved/);
     await press("Back to previous screen");
@@ -433,7 +518,7 @@ describe("session navigation", () => {
   it("rejects malformed add links without echoing external values", async () => {
     await openShell();
     await enterDemo();
-    await act(() =>
+    await navigate(() =>
       router.push(
         "/transactions?action=add&date=private-invalid-value&currency=USD"
       )
@@ -538,7 +623,7 @@ describe("placeholder screens", () => {
   it("rejects an external invalid query and recovers without echoing it", async () => {
     await openShell();
     await enterDemo();
-    await act(() => router.push("/import?state=unexpected-value"));
+    await navigate(() => router.push("/import?state=unexpected-value"));
     expect(screen.getByText("Invalid preview state")).toBeVisible();
     expect(screen.queryByText(/unexpected-value/)).toBeNull();
     await press("Try again");

@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { useSession } from "../../session";
 import { Button, Screen } from "../../ui";
 import Constants from "expo-constants";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { usePreferences } from "../../preferences";
 import { Settings } from "../../settings";
 
@@ -15,16 +15,34 @@ export default function SettingsScreen() {
   const [shouldFail, setShouldFail] = useState(false);
   const preferences = usePreferences();
   const accounts = useAccounts();
+  const [active, setActive] = useState(false);
+  const { returnTo } = useLocalSearchParams();
+  const returningToDraft = returnTo === "transaction-draft";
   const { reload } = preferences.currencyState;
   useFocusEffect(
     useCallback(() => {
-      void reload();
-    }, [reload])
+      setActive(true);
+      return () => setActive(false);
+    }, [])
   );
   const router = useRouter();
   if (shouldFail) throw new Error("Synthetic rendering failure.");
   return (
-    <Screen title="Settings" back>
+    <Screen
+      title="Settings"
+      back
+      {...(returningToDraft
+        ? {
+            backAction: {
+              label: "Return to transaction draft",
+              onPress: () =>
+                router.canGoBack()
+                  ? router.back()
+                  : router.replace("/transactions")
+            }
+          }
+        : {})}
+    >
       <Settings
         user={session.status === "authenticated" ? session.user : null}
         controller={controller}
@@ -38,6 +56,8 @@ export default function SettingsScreen() {
         currency={preferences.defaultCurrency}
         defaultAccountId={preferences.defaultAccountId}
         onDefault={preferences.setDefaultAccount}
+        onReloadPreferences={reload}
+        active={active}
         preferencesReady={
           preferences.currencyState.status === "ready" &&
           !preferences.currencyState.saving

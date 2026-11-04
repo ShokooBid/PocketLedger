@@ -3,9 +3,10 @@ import { useCategories } from "../../category-context";
 import { useTransactions, useAccounts } from "../../transaction-context";
 import { TransactionManagement } from "../../transaction-management";
 import { useSession } from "../../session";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { calendarDate, currencySchema } from "../../transaction-data";
 import { PreferencesReady, usePreferences } from "../../preferences";
+import { useCallback, useState } from "react";
 
 export default function TransactionsRoute() {
   return (
@@ -21,6 +22,14 @@ function TransactionsScreen() {
   const { session } = useSession();
   const { defaultCurrency, defaultAccountId, currencyState } = usePreferences();
   const router = useRouter();
+  const [active, setActive] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      setActive(true);
+      void currencyState.reload();
+      return () => setActive(false);
+    }, [currencyState.reload])
+  );
   const { action, date, currency } = useLocalSearchParams();
   const parsedDate = calendarDate.safeParse(date);
   const parsedCurrency = currencySchema.safeParse(currency);
@@ -28,6 +37,11 @@ function TransactionsScreen() {
     action === "add" && parsedDate.success && parsedCurrency.success
       ? { date: parsedDate.data, currency: parsedCurrency.data }
       : undefined;
+  const openDraftSettings = () =>
+    router.push({
+      pathname: "/settings",
+      params: { returnTo: "transaction-draft" }
+    });
   if (action !== undefined && !initialCreate)
     return (
       <Screen title="Transactions" back>
@@ -50,10 +64,12 @@ function TransactionsScreen() {
         defaultCurrency={defaultCurrency}
         defaultAccountId={defaultAccountId}
         accounts={accounts}
+        active={active}
         preferencesReady={
           currencyState.status === "ready" && !currencyState.saving
         }
-        onCurrencySettings={() => router.push("/settings")}
+        onCurrencySettings={openDraftSettings}
+        onAccountSettings={openDraftSettings}
         source={source}
         categories={categories}
         demo={session.status === "demo"}
