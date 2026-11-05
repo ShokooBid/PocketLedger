@@ -1,5 +1,12 @@
 import type { Category } from "./category-data";
 
+export function selectableCategory(row: Category, rows: Category[]) {
+  if (row.archivedAt) return false;
+  if (!row.parentId) return true;
+  const parent = rows.find((item) => item.id === row.parentId);
+  return !!parent && !parent.archivedAt && !parent.parentId;
+}
+
 export function categoryPath(row: Category, rows: Category[]) {
   const parent = row.parentId
     ? rows.find((item) => item.id === row.parentId)

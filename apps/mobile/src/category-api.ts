@@ -66,9 +66,19 @@ export function createApiCategorySource(client: Transport): CategorySource {
       } while (after);
       return rows;
     },
-    create: async (name) => {
-      await mutate("POST", base, { name });
+    async recent() {
+      const result = await client.send(
+        "GET",
+        `${base}/recent?limit=8`,
+        z.object({
+          items: z
+            .array(rowSchema.extend({ parent: rowSchema.nullable() }))
+            .max(8)
+        })
+      );
+      return result.items;
     },
+    create: async (name) => (await mutate("POST", base, { name })).id,
     createChild: async (name: string, parentId: string) =>
       (await mutate("POST", base, { name, parentId })).id,
     rename: async (id, name) => {

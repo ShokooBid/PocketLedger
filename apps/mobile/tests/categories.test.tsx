@@ -79,7 +79,8 @@ describe("category management", () => {
     await open({
       hierarchy: true,
       list: async () => rows,
-      create: async () => {},
+      create: async () => "created-id",
+      recent: async () => [],
       createChild,
       rename: async () => {},
       archive: async () => {}
@@ -131,7 +132,8 @@ describe("category management", () => {
     await open({
       hierarchy: true,
       list: async () => rows,
-      create: async () => {},
+      create: async () => "created-id",
+      recent: async () => [],
       rename: async () => {},
       archive
     });
@@ -236,11 +238,11 @@ describe("category management", () => {
   });
 
   it("disables duplicate submissions while a change is pending", async () => {
-    let finish!: () => void;
+    let finish!: (id: string) => void;
     const demo = createDemoCategorySource();
     const create = jest.fn<CategorySource["create"]>().mockImplementation(
       () =>
-        new Promise<void>((resolve) => {
+        new Promise<string>((resolve) => {
           finish = resolve;
         })
     );
@@ -252,7 +254,7 @@ describe("category management", () => {
     await press("Save category");
     expect(create).toHaveBeenCalledTimes(1);
     await act(async () => {
-      finish();
+      finish("created-id");
     });
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Add category" })).toBeVisible()

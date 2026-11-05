@@ -69,6 +69,18 @@ async function field(label: string, value: string) {
   });
 }
 
+async function chooseCategory(label: string) {
+  await press("Choose category");
+  await field("Search categories", label);
+  await press(`Category: ${label}`);
+  await press(`Use this category: ${label}`);
+}
+async function chooseAccount(label: string) {
+  await press("Choose account");
+  await field("Search accounts", label);
+  await press(`Account: ${label}`);
+}
+
 async function enterDemo() {
   await press("Explore demo screens without signing in");
   expect(
@@ -95,7 +107,12 @@ describe("session navigation", () => {
     await field("Amount", "12.34");
     await field("Transaction date (YYYY-MM-DD)", "2026-11-01");
     await field("Note (optional)", "Keep this draft");
-    await press("Category: Onboarding food");
+    await chooseCategory("Onboarding food");
+    await press("Choose account");
+    expect(screen.queryByLabelText("Amount")).toBeNull();
+    expect(
+      screen.getAllByRole("button", { name: "Add an account in Settings" })
+    ).toHaveLength(1);
     await press("Add an account in Settings");
     await waitFor(() =>
       expect(
@@ -114,7 +131,7 @@ describe("session navigation", () => {
     await press("Return to transaction draft");
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "Account: BMO Chequing" })
+        screen.getByRole("button", { name: "Choose account" })
       ).toBeEnabled()
     );
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
@@ -134,11 +151,11 @@ describe("session navigation", () => {
     ).toBeVisible();
     expect(
       screen.getByRole("button", {
-        name: "Account: BMO Chequing",
+        name: "Choose account",
         selected: false
       })
     ).toBeVisible();
-    await press("Account: BMO Chequing");
+    await chooseAccount("BMO Chequing");
     await press("Save transaction");
     await screen.findByText(/Transaction saved/);
     await navigate(() => router.push("/settings"));
@@ -220,12 +237,12 @@ describe("session navigation", () => {
     ).toBeDisabled();
     await press("Reload transactions and categories");
     await press("Discard draft and start in EUR");
-    await press("Account: Demo cash");
+    await chooseAccount("Demo cash");
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "");
     expect(screen.getByText("Currency: EUR")).toBeVisible();
     await field("Amount", "5.67");
     await field("Note (optional)", "Currency demo");
-    await press("Category: Currency food");
+    await chooseCategory("Currency food");
     await press("Save transaction");
     await screen.findByText(/Transaction saved/);
     await navigate(() => router.push("/settings"));
@@ -440,10 +457,10 @@ describe("session navigation", () => {
       "2024-02-01"
     );
     expect(screen.getByText("Currency: JPY")).toBeVisible();
-    await press("Account: History cash");
+    await chooseAccount("History cash");
     await field("Amount", "250");
     await field("Note (optional)", "Dashboard shop");
-    await press("Category: Dashboard food");
+    await chooseCategory("Dashboard food");
     await press("Save transaction");
     await screen.findByText(/Transaction saved/);
     await press("Back to dashboard");

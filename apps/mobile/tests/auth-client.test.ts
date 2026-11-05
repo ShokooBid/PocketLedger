@@ -141,7 +141,7 @@ describe("category API adapter", () => {
     await h.controller.restore();
     const source = createApiCategorySource(h.client());
     h.fetcher.mockResolvedValueOnce(response(category(first), 201));
-    await source.create("Food");
+    await expect(source.create("Food")).resolves.toBe(first);
     expect(h.fetcher.mock.calls.at(-1)?.[1]).toMatchObject({
       method: "POST",
       body: '{"name":"Food"}',
@@ -180,6 +180,26 @@ describe("category API adapter", () => {
         String(url).endsWith("/categories")
       )
     ).toHaveLength(2);
+  });
+  it("reads bounded owner-scoped recent categories independently of history", async () => {
+    const h = harness();
+    await h.controller.restore();
+    h.fetcher.mockResolvedValueOnce(
+      response({
+        items: [
+          { ...category(second), parentId: first, parent: category(first) }
+        ]
+      })
+    );
+    const rows = await createApiCategorySource(h.client()).recent();
+    expect(rows).toMatchObject([{ id: second, parentId: first }]);
+    expect(h.fetcher.mock.calls.at(-1)?.[0]).toContain(
+      "/v1/categories/recent?limit=8"
+    );
+    expect(h.fetcher.mock.calls.at(-1)?.[1]).toMatchObject({
+      method: "GET",
+      headers: { Authorization: "Bearer synthetic-access" }
+    });
   });
 });
 

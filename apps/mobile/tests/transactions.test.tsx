@@ -32,6 +32,22 @@ async function field(label: string, value: string) {
     await fireEvent.changeText(screen.getByLabelText(label), value);
   });
 }
+async function chooseCategory(label: string) {
+  await act(async () => {
+    fireEvent.press(
+      screen.queryByRole("button", { name: "Choose category" }) ??
+        screen.getByRole("button", { name: /^Category: / })
+    );
+  });
+  await field("Search categories", label.split(" / ").at(-1)!);
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: `Category: ${label}` })
+    ).toBeEnabled()
+  );
+  await press(`Category: ${label}`);
+  if (!label.includes(" / ")) await press(`Use this category: ${label}`);
+}
 async function setup(wrap?: (source: TransactionSource) => TransactionSource) {
   const categories = createDemoCategorySource();
   await categories.create("Food");
@@ -60,7 +76,7 @@ async function fill() {
   await field("Amount", "1.01");
   await field("Transaction date (YYYY-MM-DD)", "2024-02-29");
   await field("Note (optional)", "Retained note");
-  await press("Category: Food");
+  await chooseCategory("Food");
 }
 
 it("refreshes choices on return, keeps every draft field and only prefills an explicitly selected default", async () => {
@@ -86,7 +102,7 @@ it("refreshes choices on return, keeps every draft field and only prefills an ex
   await screen.findByText("Add an account to continue");
   await field("Amount", "1.01");
   await field("Note (optional)", "Keep these values");
-  await press("Category: Food");
+  await chooseCategory("Food");
   view.rerender(<TransactionManagement {...props} active={false} />);
   available = [row];
   view.rerender(
@@ -117,6 +133,12 @@ it("refreshes choices on return, keeps every draft field and only prefills an ex
   ).toBeVisible();
   // Clearing a default does not erase an explicit selection in an existing draft.
   await press(`Account: ${row.name}`);
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: `Account: ${row.name} (selected)` })
+    ).toBeEnabled()
+  );
+  await press(`Account: ${row.name} (selected)`);
   view.rerender(<TransactionManagement {...props} defaultAccountId={null} />);
   await waitFor(() =>
     expect(
@@ -158,8 +180,8 @@ it("blocks a newly archived account and reports failed refreshes while retaining
     screen.getByRole("button", { name: "Save transaction" })
   ).toBeDisabled();
   expect(
-    screen.queryByRole("button", { name: `Account: ${row.name}` })
-  ).toBeNull();
+    screen.getByText(`Selected account: ${row.name} (unavailable)`)
+  ).toBeVisible();
   view.rerender(<TransactionManagement {...props} active={false} />);
   list.mockRejectedValueOnce(new Error("offline"));
   view.rerender(<TransactionManagement {...props} active />);
@@ -212,7 +234,8 @@ it("saves parent or child selections with unambiguous hierarchy paths in authent
         archivedAt: null
       }
     ],
-    create: async () => {},
+    create: async () => "created-id",
+    recent: async () => [],
     rename: async () => {},
     archive: async () => {}
   };
@@ -265,7 +288,7 @@ it("saves parent or child selections with unambiguous hierarchy paths in authent
     await press("Add transaction");
     await field("Amount", "1.01");
     await field("Note (optional)", "Synthetic");
-    await press(`Category: ${label}`);
+    await chooseCategory(label);
     await press("Save transaction");
     expect(create).toHaveBeenLastCalledWith(
       expect.objectContaining({ categoryId: id, amountMinor: 101 })
