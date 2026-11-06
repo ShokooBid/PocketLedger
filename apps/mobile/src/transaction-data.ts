@@ -296,6 +296,7 @@ export function createDemoTransactionSource(
           updatedAt: new Date().toISOString()
         };
         rows.push(row);
+        categories.recordPosting?.(row.id, row.categoryId);
         return serialize(row);
       });
     },
@@ -321,6 +322,7 @@ export function createDemoTransactionSource(
           updatedAt: new Date().toISOString()
         };
         rows = rows.map((row) => (row.id === id ? updated : row));
+        categories.recordPosting?.(updated.id, updated.categoryId);
         return serialize(updated);
       });
     },
@@ -329,6 +331,7 @@ export function createDemoTransactionSource(
         if (!rows.some((row) => row.id === id))
           throw new ClientFailure("unavailable");
         rows = rows.filter((row) => row.id !== id);
+        categories.recordPosting?.(id, null);
       });
     }
   });

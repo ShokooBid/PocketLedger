@@ -15,7 +15,7 @@ export const serializeCategory = (row: Category) => ({
   id: row.id,
   name: row.name,
   parentId: row.parentId,
-  isDefault: row.isDefault,
+  isDefault: row.userId === null,
   defaultKey: row.defaultKey,
   iconKey: row.iconKey,
   colorKey: row.colorKey,
@@ -27,13 +27,22 @@ export const serializeCategory = (row: Category) => ({
 const missing = () => new ApiError(404, "NOT_FOUND", "Resource not found.");
 const invalid = () =>
   new ApiError(422, "INVALID_CATEGORY", "Choose an active root category.");
-async function owned(tx: Prisma.TransactionClient, userId: string, id: string) {
-  const row = await tx.category.findFirst({ where: { id, userId } });
+export const visibleCategory = (userId: string): Prisma.CategoryWhereInput => ({
+  OR: [{ userId: null }, { userId }]
+});
+async function visible(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  id: string
+) {
+  const row = await tx.category.findFirst({
+    where: { id, AND: [visibleCategory(userId)] }
+  });
   if (!row) throw missing();
   return row;
 }
 function writable(row: Category) {
-  if (row.isDefault)
+  if (row.userId === null)
     throw new ApiError(
       409,
       "DEFAULT_CATEGORY_READ_ONLY",
@@ -68,17 +77,17 @@ export function createCategoryService(db: PrismaClient) {
   }
   return {
     async assertMutable(userId: string, id: string) {
-      writable(await owned(db, userId, id));
+      writable(await visible(db, userId, id));
     },
     async list(userId: string, query: CategoryQuery) {
-      // A parent filter is an owned root lookup, including archived roots for history.
+      // A parent filter is a shared-or-owned root lookup, including archived roots for history.
       if (query.parentId && query.parentId !== "root") {
-        const parent = await owned(db, userId, query.parentId);
+        const parent = await visible(db, userId, query.parentId);
         if (parent.parentId) throw invalid();
       }
       const rows = await db.category.findMany({
         where: {
-          userId,
+          AND: [visibleCategory(userId)],
           ...(query.status === "active"
             ? {
                 archivedAt: null,
@@ -105,7 +114,7 @@ export function createCategoryService(db: PrismaClient) {
       };
     },
     async get(userId: string, id: string) {
-      return serializeCategory(await owned(db, userId, id));
+      return serializeCategory(await visible(db, userId, id));
     },
     async recent(userId: string, limit: number) {
       return db.$transaction(
@@ -114,14 +123,17 @@ export function createCategoryService(db: PrismaClient) {
           // both active category and active ancestor are required.
           const selections = await tx.$queryRaw<{ id: string }[]>`
         SELECT c.id FROM "Category" c
-        JOIN "Transaction" t ON t."categoryId" = c.id AND t."userId" = c."userId"
-        LEFT JOIN "Category" p ON p.id = c."parentId" AND p."userId" = c."userId"
-        WHERE c."userId" = ${userId}::uuid AND c."archivedAt" IS NULL
-          AND (c."parentId" IS NULL OR p."archivedAt" IS NULL)
+        JOIN "Transaction" t ON t."categoryId" = c.id AND t."userId" = ${userId}::uuid
+        LEFT JOIN "Category" p ON p.id = c."parentId" AND (p."userId" IS NULL OR p."userId" = t."userId")
+        WHERE (c."userId" IS NULL OR c."userId" = ${userId}::uuid) AND c."archivedAt" IS NULL
+          AND (c."parentId" IS NULL OR (p.id IS NOT NULL AND p."archivedAt" IS NULL))
         GROUP BY c.id ORDER BY MAX(t."updatedAt") DESC, c.id ASC LIMIT ${limit}
       `;
           const rows = await tx.category.findMany({
-            where: { userId, id: { in: selections.map((row) => row.id) } },
+            where: {
+              AND: [visibleCategory(userId)],
+              id: { in: selections.map((row) => row.id) }
+            },
             include: { parent: true }
           });
           return {
@@ -144,7 +156,7 @@ export function createCategoryService(db: PrismaClient) {
     create(userId: string, input: CategoryInput) {
       return write(userId, async (tx) => {
         if (input.parentId) {
-          const parent = await owned(tx, userId, input.parentId);
+          const parent = await visible(tx, userId, input.parentId);
           if (parent.parentId || parent.archivedAt) throw invalid();
         }
         return serializeCategory(
@@ -169,7 +181,7 @@ export function createCategoryService(db: PrismaClient) {
     },
     update(userId: string, id: string, input: CategoryPatch) {
       return write(userId, async (tx) => {
-        const row = await owned(tx, userId, id);
+        const row = await visible(tx, userId, id);
         writable(row);
         if (row.archivedAt)
           throw new ApiError(
@@ -198,7 +210,7 @@ export function createCategoryService(db: PrismaClient) {
     },
     archive(userId: string, id: string) {
       return write(userId, async (tx) => {
-        const row = await owned(tx, userId, id);
+        const row = await visible(tx, userId, id);
         writable(row);
         // The DB trigger archives active children in this same transaction.
         return serializeCategory(

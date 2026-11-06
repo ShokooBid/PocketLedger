@@ -55,7 +55,7 @@ it.each([
 );
 
 it("rejects demo cross-currency moves without changing amounts and derives archived history currency", async () => {
-  const categories = createDemoCategorySource();
+  const categories = createDemoCategorySource({ catalog: false });
   await categories.create("Food");
   const rows = await accounts.list();
   const accountSource = { list: async () => rows };
@@ -94,7 +94,7 @@ it("rejects demo cross-currency moves without changing amounts and derives archi
 });
 
 it("serializes demo creates, preserves creation intent through edits and releases keys after deletion", async () => {
-  const categories = createDemoCategorySource();
+  const categories = createDemoCategorySource({ catalog: false });
   await categories.create("Food");
   const source = createDemoTransactionSource(categories, accounts);
   const payload = {
@@ -160,7 +160,7 @@ async function chooseCategory(label: string) {
   if (!label.includes(" / ")) await press(`Use this category: ${label}`);
 }
 async function setup(wrap?: (source: TransactionSource) => TransactionSource) {
-  const categories = createDemoCategorySource();
+  const categories = createDemoCategorySource({ catalog: false });
   await categories.create("Food");
   const source =
     wrap?.(createDemoTransactionSource(categories, accounts)) ??
@@ -191,7 +191,7 @@ async function fill() {
 }
 
 it("refreshes choices on return, keeps every draft field and only prefills an explicitly selected default", async () => {
-  const categories = createDemoCategorySource();
+  const categories = createDemoCategorySource({ catalog: false });
   await categories.create("Food");
   const owned = (await accounts.list()).filter((row) => row.currency === "USD");
   const row = owned[0]!;
@@ -262,7 +262,7 @@ it("refreshes choices on return, keeps every draft field and only prefills an ex
 });
 
 it("blocks a newly archived account and reports failed refreshes while retaining the draft", async () => {
-  const categories = createDemoCategorySource();
+  const categories = createDemoCategorySource({ catalog: false });
   await categories.create("Food");
   const row = (await accounts.list()).find(
     (row) => row.id === accountId("USD")
@@ -459,7 +459,7 @@ describe("exact amount conversion", () => {
 });
 describe("transaction management", () => {
   it("shows one configured currency and preserves a stale draft until explicit replacement", async () => {
-    const categories = createDemoCategorySource();
+    const categories = createDemoCategorySource({ catalog: false });
     await categories.create("Food");
     const source = createDemoTransactionSource(categories, accounts);
     const onCurrencySettings = jest.fn();
@@ -521,7 +521,7 @@ describe("transaction management", () => {
   });
 
   it("blocks saves during preference recovery without discarding entered values", async () => {
-    const categories = createDemoCategorySource();
+    const categories = createDemoCategorySource({ catalog: false });
     await categories.create("Food");
     const source = createDemoTransactionSource(categories, accounts);
     const list = jest

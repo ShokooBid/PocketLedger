@@ -17,6 +17,65 @@ import {
   categoryPath,
   orderedCategories
 } from "../src/category-hierarchy";
+import { defaultCategoryCatalog } from "../../api/src/categories/catalog.v1";
+import { createDemoTransactionSource } from "../src/transaction-data";
+import { accounts, accountId, requestId } from "./auth-fixtures";
+
+it("shares approved demo default identities while keeping personal trees and history isolated", async () => {
+  const alice = createDemoCategorySource(),
+    bob = createDemoCategorySource();
+  expect((await alice.list()).map((row) => row.id)).toEqual(
+    (await bob.list()).map((row) => row.id)
+  );
+  expect(await alice.list()).toHaveLength(80);
+  const root = defaultCategoryCatalog.items.find(
+    (row) => row.key === "food-drinks"
+  )!;
+  const child = defaultCategoryCatalog.items.find(
+    (row) => row.key === "food-drinks.groceries"
+  )!;
+  await expect(alice.rename(root.id, "Change")).rejects.toMatchObject({
+    code: "read-only"
+  });
+  await expect(bob.archive(child.id)).rejects.toMatchObject({
+    code: "read-only"
+  });
+  await expect(alice.create(" FOOD &\tDrinks ")).rejects.toMatchObject({
+    code: "duplicate"
+  });
+  await expect(alice.createChild!("Groceries", root.id)).rejects.toMatchObject({
+    code: "duplicate"
+  });
+  const personal = await alice.create("Private root");
+  const privateChild = await alice.createChild!("Private child", personal);
+  await alice.createChild!("Custom groceries", root.id);
+  await expect(bob.createChild!("Foreign", personal)).rejects.toMatchObject({
+    code: "unavailable"
+  });
+  await expect(alice.createChild!("Too deep", child.id)).rejects.toMatchObject({
+    code: "invalid-parent"
+  });
+  const transactions = createDemoTransactionSource(alice, accounts);
+  const payload = {
+    clientRequestId: requestId(),
+    accountId: accountId(),
+    categoryId: child.id,
+    amountMinor: 101,
+    direction: "expense" as const,
+    date: "2026-11-06",
+    note: null
+  };
+  const saved = await transactions.create(payload);
+  expect((await alice.recent()).map((row) => row.id)).toEqual([child.id]);
+  expect(await bob.recent()).toEqual([]);
+  await transactions.remove(saved.id);
+  expect(await alice.recent()).toEqual([]);
+  await alice.archive(personal);
+  expect(
+    (await alice.list()).find((row) => row.id === privateChild)!.archivedAt
+  ).not.toBeNull();
+  expect((await bob.list()).every((row) => row.isDefault)).toBe(true);
+});
 
 async function press(name: string) {
   await act(async () => {
@@ -28,7 +87,7 @@ async function name(value: string) {
     await fireEvent.changeText(screen.getByLabelText("Category name"), value);
   });
 }
-async function open(source = createDemoCategorySource()) {
+async function open(source = createDemoCategorySource({ catalog: false })) {
   render(<CategoryManagement source={source} />);
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Add category" })).toBeVisible()
@@ -207,7 +266,7 @@ describe("category management", () => {
   });
 
   it("recovers from list failure and retains input after a write failure without displaying raw errors", async () => {
-    const demo = createDemoCategorySource();
+    const demo = createDemoCategorySource({ catalog: false });
     const list = jest
       .fn<CategorySource["list"]>()
       .mockRejectedValueOnce(new Error("private diagnostic"))
@@ -239,7 +298,7 @@ describe("category management", () => {
 
   it("disables duplicate submissions while a change is pending", async () => {
     let finish!: (id: string) => void;
-    const demo = createDemoCategorySource();
+    const demo = createDemoCategorySource({ catalog: false });
     const create = jest.fn<CategorySource["create"]>().mockImplementation(
       () =>
         new Promise<string>((resolve) => {
@@ -262,7 +321,7 @@ describe("category management", () => {
   });
 
   it("reloads after a successful write followed by a read failure, without replaying the write", async () => {
-    const demo = createDemoCategorySource();
+    const demo = createDemoCategorySource({ catalog: false });
     const list = jest
       .fn<CategorySource["list"]>()
       .mockImplementationOnce(() => demo.list())
@@ -280,7 +339,7 @@ describe("category management", () => {
   });
 
   it("requires a read after an ambiguous API write before offering another submission", async () => {
-    const demo = createDemoCategorySource();
+    const demo = createDemoCategorySource({ catalog: false });
     const create = jest
       .fn<CategorySource["create"]>()
       .mockImplementation(async (value) => {
@@ -308,7 +367,7 @@ describe("category management", () => {
     "\ud800"
   ])("rejects invalid demo name %j", async (value) => {
     await expect(
-      createDemoCategorySource().create(value)
+      createDemoCategorySource({ catalog: false }).create(value)
     ).rejects.toMatchObject({ code: "validation" });
   });
 });

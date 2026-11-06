@@ -19,8 +19,7 @@ function fixture() {
     },
     defaultCurrency: "USD" as const,
     version: "0.1.0",
-    onPrivacy: jest.fn(),
-    onExitDemo: jest.fn()
+    onPrivacy: jest.fn()
   };
 }
 async function press(label: string) {
@@ -138,7 +137,7 @@ describe("settings account controls", () => {
     expect(screen.getByText("Google: linked")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Link Google" })).toBeNull();
   });
-  it("confirms all-device logout separately and leaves current logout available", async () => {
+  it("confirms all-device logout separately and keeps current logout in the avatar menu", async () => {
     const props = fixture();
     render(<Settings {...props} />);
     await press("Sign out on all devices");
@@ -148,16 +147,16 @@ describe("settings account controls", () => {
     await press("Sign out on all devices");
     await press("Confirm sign out on all devices");
     expect(props.controller.logout).toHaveBeenLastCalledWith(true);
-    await press("Sign out");
-    expect(props.controller.logout).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
   });
   it("keeps demo separate and explains retention without claiming deletion", async () => {
     const props = fixture();
     const view = render(<Settings {...props} user={null} />);
     expect(screen.getByText(/Demo only/)).toBeVisible();
     expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
-    await press("Exit demo and return to sign in");
-    expect(props.onExitDemo).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("button", { name: "Exit demo and return to sign in" })
+    ).toBeNull();
     view.unmount();
     render(<PrivacyInformation />);
     expect(screen.getByText(/no automatic retention expiry/)).toBeVisible();

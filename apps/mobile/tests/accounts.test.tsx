@@ -17,6 +17,7 @@ import { createTransport, type FetchRequest } from "../src/auth/transport";
 import { accounts, accountId, deferred, response } from "./auth-fixtures";
 import { createDemoCategorySource } from "../src/category-data";
 import { ClientFailure } from "../src/auth/transport";
+import { AppState } from "react-native";
 
 async function press(name: string) {
   await act(async () => {
@@ -51,6 +52,7 @@ it("creates a named account, selects its default and confirms archival while pre
     (row) => row.id === accountId("CAD")
   )!;
   const create = jest.fn<AccountSource["create"]>().mockResolvedValue(row);
+  const get = jest.fn<AccountSource["get"]>(accounts.get);
   const archive = jest
     .fn<AccountSource["archive"]>()
     .mockResolvedValue({ ...row, archivedAt: "2026-11-03T00:00:00Z" });
@@ -63,7 +65,7 @@ it("creates a named account, selects its default and confirms archival while pre
     .mockResolvedValue([row]);
   render(
     <AccountManagement
-      source={{ ...accounts, list, create, archive }}
+      source={{ ...accounts, list, create, archive, get }}
       currency="CAD"
       defaultAccountId={null}
       onDefault={onDefault}
@@ -72,6 +74,30 @@ it("creates a named account, selects its default and confirms archival while pre
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Create account" })).toBeEnabled()
   );
+  expect(screen.queryByText("Financial accounts")).toBeNull();
+  expect(screen.queryByText("No financial accounts yet")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Reload accounts" })).toBeNull();
+  expect(screen.queryByText(/No bank connection is created/)).toBeNull();
+  const accountHelp = screen.getByRole("button", { name: "Add account help" });
+  fireEvent(accountHelp, "hoverIn");
+  expect(
+    screen.getByText(/No bank connection is created.*Currency is CAD/)
+  ).toBeVisible();
+  fireEvent(accountHelp, "hoverOut");
+  expect(screen.queryByText(/No bank connection is created/)).toBeNull();
+  await press("Opening balance (optional) help");
+  expect(screen.getByText(/Your starting balance, not income/)).toBeVisible();
+  fireEvent(
+    screen.getByRole("button", { name: "Opening balance (optional) help" }),
+    "blur"
+  );
+  expect(screen.queryAllByRole("radio")).toHaveLength(0);
+  fireEvent.press(screen.getByRole("combobox", { name: "Account type" }));
+  fireEvent.press(screen.getByRole("radio", { name: "Credit" }));
+  expect(screen.queryAllByRole("radio")).toHaveLength(0);
+  expect(
+    screen.getByRole("combobox", { name: "Account type" })
+  ).toHaveAccessibilityValue({ text: "Credit" });
   await act(async () => {
     fireEvent.changeText(screen.getByLabelText("Account name"), "My cash");
     fireEvent.changeText(
@@ -86,11 +112,35 @@ it("creates a named account, selects its default and confirms archival while pre
   await press("Create account");
   expect(create).toHaveBeenCalledWith({
     name: "My cash",
-    type: "bank",
+    type: "credit",
     currency: "CAD",
     openingBalanceMinor: -1234,
     openingDate: "2026-01-01"
   });
+  expect(screen.queryByText(`Account details: ${row.name}`)).toBeNull();
+  for (const [label, tooltip] of [
+    [`View balance for ${row.name}`, "View balance"],
+    [`Rename ${row.name}`, `Rename ${row.name}`],
+    [`Use ${row.name} as default`, `Use ${row.name} as default`],
+    [`Archive ${row.name}`, `Archive ${row.name}`]
+  ] as const) {
+    const action = screen.getByRole("button", { name: label });
+    fireEvent(action, "longPress");
+    expect(screen.getByText(tooltip)).toBeVisible();
+    // Releasing a long press previews its label without executing its action.
+    fireEvent.press(action);
+  }
+  expect(get).not.toHaveBeenCalled();
+  expect(onDefault).not.toHaveBeenCalled();
+  expect(archive).not.toHaveBeenCalled();
+  expect(screen.queryByRole("header", { name: "Rename account" })).toBeNull();
+  const eye = screen.getByRole("button", {
+    name: `View balance for ${row.name}`
+  });
+  fireEvent(eye, "hoverIn");
+  expect(screen.getByText("View balance")).toBeVisible();
+  fireEvent(eye, "hoverOut");
+  expect(screen.queryByText("View balance")).toBeNull();
   await press("Use Test CAD as default");
   expect(onDefault).toHaveBeenCalledWith(row.id);
   await press("Archive Test CAD");
@@ -113,15 +163,15 @@ it("requires a successful account read before enabling mutations", async () => {
     />
   );
   await screen.findByText(
-    "Accounts could not be loaded. Reload before making changes."
+    "Accounts could not be loaded. Try again before making changes."
   );
   expect(screen.getByRole("button", { name: "Create account" })).toBeDisabled();
-  await press("Reload accounts");
+  await press("Try again");
   expect(screen.getByRole("button", { name: "Create account" })).toBeEnabled();
 });
 
 it("presents immutable opening information and refreshes tracked balances on focus", async () => {
-  const categories = createDemoCategorySource();
+  const categories = createDemoCategorySource({ catalog: false });
   await categories.create("Food");
   const { accounts: source, transactions } = createDemoFinanceSources(
     categories,
@@ -141,13 +191,25 @@ it("presents immutable opening information and refreshes tracked balances on foc
     onDefault: async () => {}
   };
   const view = render(<AccountManagement {...props} />);
-  await screen.findByText(/BMO Chequing · CAD/);
+  await screen.findByRole("header", { name: "BMO Chequing" });
+  expect(screen.queryByText("Opening balance: -12.34 CAD")).toBeNull();
+  const get = jest.spyOn(source, "get");
   await press("View balance for BMO Chequing");
   expect(screen.getByText("Opening date: 2024-01-01")).toBeVisible();
   expect(screen.getByText("Opening balance: -12.34 CAD")).toBeVisible();
   expect(
     screen.getByText(/Tracked balance as of .*: -12.34 CAD/)
   ).toBeVisible();
+  expect(
+    screen.getByRole("button", {
+      name: "Hide balance for BMO Chequing",
+      expanded: true
+    })
+  ).toBeVisible();
+  await press("Hide balance for BMO Chequing");
+  expect(screen.queryByText("Opening balance: -12.34 CAD")).toBeNull();
+  expect(get).toHaveBeenCalledTimes(1);
+  await press("View balance for BMO Chequing");
   view.rerender(<AccountManagement {...props} active={false} />);
   await transactions.create({
     direction: "expense",
@@ -163,15 +225,44 @@ it("presents immutable opening information and refreshes tracked balances on foc
   await press("Rename BMO Chequing");
   expect(screen.queryByLabelText("Opening balance (optional)")).toBeNull();
   fireEvent.changeText(screen.getByLabelText("Account name"), "BMO Savings");
-  await press("Account type cash");
+  fireEvent.press(screen.getByRole("combobox", { name: "Account type" }));
+  fireEvent.press(screen.getByRole("radio", { name: "Cash" }));
   await press("Save account changes");
   expect(await screen.findByText("Account details: BMO Savings")).toBeVisible();
-  expect(screen.getByText("Type: cash · Status: Active")).toBeVisible();
+  expect(screen.getByText("Cash · CAD · Active")).toBeVisible();
   expect((await source.get(row.id)).openingBalanceMinor).toBe(-1234);
 });
 
+it("refreshes accounts automatically when the app returns to the foreground", async () => {
+  const listener = jest.mocked(AppState.addEventListener);
+  const before = listener.mock.calls.length;
+  const row = (await accounts.list())[0]!;
+  const list = jest.fn<AccountSource["list"]>().mockResolvedValue([row]);
+  render(
+    <AccountManagement
+      source={{ ...accounts, list }}
+      currency={row.currency}
+      defaultAccountId={null}
+      onDefault={async () => {}}
+    />
+  );
+  await screen.findByRole("header", { name: row.name });
+  list.mockResolvedValue([{ ...row, name: "Updated elsewhere" }]);
+  const foreground = listener.mock.calls
+    .slice(before)
+    .find(([event]) => event === "change")?.[1];
+  expect(foreground).toBeDefined();
+  await act(async () => {
+    foreground?.("active");
+  });
+  expect(
+    await screen.findByRole("header", { name: "Updated elsewhere" })
+  ).toBeVisible();
+  expect(list).toHaveBeenCalledTimes(2);
+});
+
 it("limits defaults to active compatible accounts and preserves archived details", async () => {
-  const categories = createDemoCategorySource();
+  const categories = createDemoCategorySource({ catalog: false });
   let currency: "CAD" | "USD" = "CAD";
   const { accounts: source } = createDemoFinanceSources(
     categories,
@@ -203,7 +294,10 @@ it("limits defaults to active compatible accounts and preserves archived details
       onDefault={onDefault}
     />
   );
-  await screen.findByText(/Cash · CAD/);
+  await screen.findByRole("header", { name: "Cash" });
+  expect(
+    screen.getByRole("button", { name: "Use Cash as default", selected: true })
+  ).toBeVisible();
   expect(
     screen.queryByRole("button", { name: "Use CIBC as default" })
   ).toBeNull();
@@ -279,6 +373,7 @@ it("distinguishes a confirmed create followed by a failed refresh from an uncert
     .fn<AccountSource["list"]>()
     .mockResolvedValueOnce([])
     .mockRejectedValueOnce(new Error("offline"))
+    .mockRejectedValueOnce(new Error("offline"))
     .mockResolvedValue([row]);
   const create = jest.fn<AccountSource["create"]>().mockResolvedValue(row);
   render(
@@ -289,12 +384,14 @@ it("distinguishes a confirmed create followed by a failed refresh from an uncert
       onDefault={async () => {}}
     />
   );
-  await screen.findByText("No financial accounts yet");
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Create account" })).toBeEnabled()
+  );
   fireEvent.changeText(screen.getByLabelText("Account name"), "Cash");
   await press("Create account");
   expect(
     screen.getByText(
-      /The change was saved, but accounts could not be refreshed/
+      "Accounts could not be loaded. Try again before making changes."
     )
   ).toBeVisible();
   expect(screen.getByRole("button", { name: "Create account" })).toBeDisabled();
@@ -303,18 +400,25 @@ it("distinguishes a confirmed create followed by a failed refresh from an uncert
       name: "I reviewed accounts; enable changes"
     })
   ).toBeNull();
-  await press("Reload accounts");
+  expect(list).toHaveBeenCalledTimes(3);
+  await press("Try again");
   expect(create).toHaveBeenCalledTimes(1);
   expect(screen.getByLabelText("Account name")).toHaveProp("value", "");
 });
 
 it("requires explicit review after an uncertain account write", async () => {
+  const rows = await accounts.list();
+  const pending = deferred<typeof rows>();
+  const list = jest
+    .fn<AccountSource["list"]>()
+    .mockResolvedValueOnce(rows)
+    .mockReturnValueOnce(pending.promise);
   const create = jest
     .fn<AccountSource["create"]>()
     .mockRejectedValue(new ClientFailure("network"));
   render(
     <AccountManagement
-      source={{ ...accounts, create }}
+      source={{ ...accounts, create, list }}
       currency="CAD"
       defaultAccountId={null}
       onDefault={async () => {}}
@@ -328,7 +432,10 @@ it("requires explicit review after an uncertain account write", async () => {
   expect(
     screen.getByRole("button", { name: "I reviewed accounts; enable changes" })
   ).toBeDisabled();
-  await press("Reload accounts");
+  expect(list).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    pending.resolve(rows);
+  });
   expect(screen.getByRole("button", { name: "Create account" })).toBeDisabled();
   await press("I reviewed accounts; enable changes");
   expect(create).toHaveBeenCalledTimes(1);
@@ -356,7 +463,7 @@ it("reports a failed default change and recovers from an unavailable detail read
       onDefault={onDefault}
     />
   );
-  await screen.findByText(new RegExp(`${row.name} · ${row.currency}`));
+  await screen.findByRole("header", { name: row.name });
   await press(`Use ${row.name} as default`);
   expect(
     screen.getByText(
@@ -366,7 +473,7 @@ it("reports a failed default change and recovers from an unavailable detail read
   expect(screen.queryByText(`${row.name} is the default account.`)).toBeNull();
   await press(`View balance for ${row.name}`);
   expect(screen.getByText("Tracked balance unavailable")).toBeVisible();
-  await press("Reload accounts");
+  await press("Try again");
   expect(screen.queryByText("Tracked balance unavailable")).toBeNull();
   expect(screen.getByText(/Tracked balance as of/)).toBeVisible();
 });
@@ -385,7 +492,7 @@ it("queues a focus refresh when an older balance read is still pending", async (
     onDefault: async () => {}
   };
   const view = render(<AccountManagement {...props} />);
-  await screen.findByText(new RegExp(`${row.name} · ${row.currency}`));
+  await screen.findByRole("header", { name: row.name });
   await press(`View balance for ${row.name}`);
   view.rerender(<AccountManagement {...props} active={false} />);
   view.rerender(<AccountManagement {...props} active />);
@@ -394,4 +501,34 @@ it("queues a focus refresh when an older balance read is still pending", async (
   });
   await screen.findByText(/Tracked balance as of .*: 2.00 CAD/);
   expect(get).toHaveBeenCalledTimes(2);
+});
+
+it("hides details immediately during a pending read and keeps late balances hidden", async () => {
+  const row = (await accounts.list())[0]!;
+  const pending = deferred<Awaited<ReturnType<AccountSource["get"]>>>();
+  const get = jest.fn<AccountSource["get"]>().mockReturnValue(pending.promise);
+  render(
+    <AccountManagement
+      source={{ ...accounts, get }}
+      currency={row.currency}
+      defaultAccountId={null}
+      onDefault={async () => {}}
+    />
+  );
+  await screen.findByRole("header", { name: row.name });
+  await press(`View balance for ${row.name}`);
+  expect(screen.getByText(`Account details: ${row.name}`)).toBeVisible();
+  await press(`Hide balance for ${row.name}`);
+  expect(screen.queryByText(`Account details: ${row.name}`)).toBeNull();
+  await act(async () => {
+    pending.resolve({ ...row, asOf: row.openingDate, balanceMinor: 123456 });
+  });
+  expect(screen.queryByText(/Tracked balance as of/)).toBeNull();
+  expect(
+    screen.getByRole("button", {
+      name: `View balance for ${row.name}`,
+      expanded: false
+    })
+  ).toBeEnabled();
+  expect(get).toHaveBeenCalledTimes(1);
 });

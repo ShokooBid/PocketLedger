@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
 import { ClientFailure } from "./auth/transport";
 import {
   accountInput,
@@ -23,15 +24,15 @@ function actionMessage(failure: unknown) {
     if (failure.code === "ACCOUNT_NAME_CONFLICT")
       return "An active account already uses that name. Choose a distinct name, such as BMO Chequing or BMO Savings.";
     if (failure.code === "PREFERENCE_CHANGED")
-      return "This account must use your permanent currency. Reload accounts and review the inherited currency before creating it.";
+      return "This account must use your permanent currency. Review the currency before creating it.";
     if (failure.code === "ACCOUNT_ARCHIVED")
-      return "This account was archived. Reload accounts to review its history.";
+      return "This account was archived. Its history is preserved.";
     if (failure.kind === "unavailable")
-      return "This account is unavailable. Reload your accounts before continuing.";
+      return "This account is unavailable. Review your accounts before continuing.";
     if (failure.code === "INVALID_ACCOUNT")
       return "Choose an active account in the configured currency as the default.";
   }
-  return "The account action could not be confirmed. Reload accounts and review before another change.";
+  return "The account action could not be confirmed. Review your accounts before another change.";
 }
 
 // Settings owns presentation; this hook owns validation, read recovery and writes.
@@ -64,7 +65,7 @@ export function useAccountManagement({
   const [reviewed, setReviewed] = useState(false);
   const mounted = useRef(false),
     lock = useRef(false);
-  const refreshRequested = useRef(false);
+  const [refreshRequested, setRefreshRequested] = useState(false);
   const selected = useRef(selectedId);
   selected.current = selectedId;
 
@@ -78,12 +79,10 @@ export function useAccountManagement({
           .sort()
           .at(-1)!;
         const result = await source.get(row.id, asOf);
-        if (mounted.current) setDetail(result);
+        if (mounted.current && selected.current === row.id) setDetail(result);
       } catch {
-        if (mounted.current)
-          setDetailError(
-            "The tracked balance could not be loaded. Reload accounts to try again."
-          );
+        if (mounted.current && selected.current === row.id)
+          setDetailError("The tracked balance could not be loaded. Try again.");
       }
     },
     [source]
@@ -115,7 +114,9 @@ export function useAccountManagement({
     } catch {
       if (mounted.current) {
         setReady(false);
-        setError("Accounts could not be loaded. Reload before making changes.");
+        setError(
+          "Accounts could not be loaded. Try again before making changes."
+        );
       }
     } finally {
       lock.current = false;
@@ -130,15 +131,25 @@ export function useAccountManagement({
     };
   }, []);
   useEffect(() => {
-    if (active) refreshRequested.current = true;
+    if (active) setRefreshRequested(true);
   }, [active, reload]);
   useEffect(() => {
     // A focus event during an older read/write still needs a fresh read afterward.
-    if (active && !busy && refreshRequested.current) {
-      refreshRequested.current = false;
+    if (active && !busy && refreshRequested) {
+      setRefreshRequested(false);
       void reload();
     }
-  }, [active, busy, reload]);
+  }, [active, busy, reload, refreshRequested]);
+  useEffect(() => {
+    if (!active) return;
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        if (lock.current) setRefreshRequested(true);
+        else void reload();
+      }
+    });
+    return () => subscription.remove();
+  }, [active, reload]);
 
   async function viewDetails(row: Account) {
     if (lock.current) return;
@@ -149,6 +160,15 @@ export function useAccountManagement({
     await readDetail(row);
     lock.current = false;
     if (mounted.current) setBusy(false);
+  }
+
+  function toggleDetails(row: Account) {
+    if (selected.current === row.id) {
+      selected.current = null;
+      setSelectedId(null);
+      setDetail(null);
+      setDetailError(null);
+    } else if (!lock.current) void viewDetails(row);
   }
 
   async function action(
@@ -191,19 +211,17 @@ export function useAccountManagement({
     let confirmed = false;
     try {
       if (operation === "save") {
-        const saved = editing
-          ? await source.update(editing.id, {
-              name: input!.name,
-              type: input!.type
-            })
-          : await source.create(input!);
+        if (editing)
+          await source.update(editing.id, {
+            name: input!.name,
+            type: input!.type
+          });
+        else await source.create(input!);
         if (!mounted.current) return;
         setName("");
         setOpening("");
         setEditing(null);
         setType("bank");
-        selected.current = saved.id;
-        setSelectedId(saved.id);
         setNotice(
           editing
             ? "Account changes saved."
@@ -238,13 +256,15 @@ export function useAccountManagement({
         if (confirmed) {
           setReady(false);
           setError(
-            "The change was saved, but accounts could not be refreshed. Reload before making another change."
+            "The change was saved, but accounts could not be refreshed. Try again before making another change."
           );
+          setRefreshRequested(true);
         } else {
           setError(actionMessage(failure));
           if (uncertainWrite(failure)) {
             setUncertain(true);
             setReviewed(false);
+            setRefreshRequested(true);
           }
         }
       }
@@ -279,6 +299,7 @@ export function useAccountManagement({
     disabled,
     reload,
     viewDetails,
+    toggleDetails,
     action,
     edit(row: Account) {
       setEditing(row);

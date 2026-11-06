@@ -10,7 +10,11 @@ const baseInput = z.strictObject({
 const baseSchema = z.object({
   id: z.uuid(),
   name: z.string(),
-  isDefault: z.boolean(),
+  isDefault: z
+    .boolean()
+    .describe(
+      "True for a shared immutable catalog category; false for a visible personal category."
+    ),
   archivedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime()

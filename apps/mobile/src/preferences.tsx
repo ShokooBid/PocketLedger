@@ -16,7 +16,7 @@ import {
   type CurrencyPreferences,
   type CurrencySettingsState
 } from "./preference-data";
-import { NavigationLink, Screen, StateNotice } from "./ui";
+import { Screen, StateNotice } from "./ui";
 
 type Preferences = {
   selectedCurrency: Currency | null;
@@ -276,7 +276,6 @@ export function PreferencesReady({ children }: PropsWithChildren) {
           ? { onRetry: () => void currencyState.reload() }
           : {})}
       />
-      <NavigationLink href="/settings" label="Open settings" />
     </Screen>
   );
 }

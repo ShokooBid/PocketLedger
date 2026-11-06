@@ -14,8 +14,7 @@ export function Settings({
   defaultCurrency,
   currencyState,
   version,
-  onPrivacy,
-  onExitDemo
+  onPrivacy
 }: {
   user: User | null;
   controller: Pick<
@@ -26,7 +25,6 @@ export function Settings({
   currencyState?: CurrencySettingsState;
   version: string;
   onPrivacy: () => void;
-  onExitDemo: () => void;
 }) {
   const [linking, setLinking] = useState(false);
   const [password, setPassword] = useState("");
@@ -44,7 +42,7 @@ export function Settings({
     };
   }, []);
 
-  async function act(operation: "reload" | "link" | "logout" | "logout-all") {
+  async function act(operation: "reload" | "link" | "logout-all") {
     if (lock.current) return;
     lock.current = true;
     setBusy(true);
@@ -68,7 +66,7 @@ export function Settings({
         setNeedsReload(false);
         setMessage("Account status updated.");
       } else {
-        await controller.logout(operation === "logout-all");
+        await controller.logout(true);
       }
     } catch (failure) {
       if (!mounted.current) return;
@@ -201,13 +199,8 @@ export function Settings({
       <Body>App version: {version}</Body>
       <Button label="Privacy and data retention" onPress={onPrivacy} />
       <DeletionInstructions />
-      {user ? (
+      {user && (
         <>
-          <Button
-            label="Sign out"
-            disabled={busy}
-            onPress={() => void act("logout")}
-          />
           <Button
             label="Sign out on all devices"
             disabled={busy}
@@ -234,8 +227,6 @@ export function Settings({
             </>
           )}
         </>
-      ) : (
-        <Button label="Exit demo and return to sign in" onPress={onExitDemo} />
       )}
     </>
   );

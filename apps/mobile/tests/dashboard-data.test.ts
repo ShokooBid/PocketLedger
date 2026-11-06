@@ -93,7 +93,7 @@ describe("dashboard data boundaries", () => {
     expect(dashboardSchema.safeParse(empty).success).toBe(true);
   });
   it("keeps demo totals complete across pages, separates currencies, and retains archived names", async () => {
-    const categories = createDemoCategorySource();
+    const categories = createDemoCategorySource({ catalog: false });
     await categories.create("Food");
     const transactions = createDemoTransactionSource(categories, accounts);
     const source = createDemoDashboardSource(transactions, categories);

@@ -58,7 +58,7 @@ try {
       await tx.category.upsert({
         where: { id: category.id },
         update: {},
-        create: { ...category, userId, isDefault: true }
+        create: { ...category, userId, isDefault: false }
       });
     }
     await tx.import.upsert({

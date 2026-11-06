@@ -40,7 +40,7 @@ export function registerCategoryRoutes(
       schema: {
         ...secured,
         description:
-          "Gated two-level owned categories. Flat UUID-keyset pages; parentId=root explicitly fetches roots, UUID fetches children. Omit to list all levels. Search matches category names; fetch parents by ID for paths. A page is not the full tree.",
+          "Two-level shared defaults plus the authenticated user's personal categories. isDefault identifies the shared immutable catalog; no owner IDs are exposed. Flat UUID-keyset pages; parentId=root fetches roots, UUID fetches visible children. Search and pagination never include another user's personal rows. A page is not the full tree.",
         querystring: categoryQuery,
         response: {
           ...errors,
@@ -59,6 +59,8 @@ export function registerCategoryRoutes(
       onRequest: app.authenticate,
       schema: {
         ...secured,
+        description:
+          "Recent active category selections from this user's transactions only, including shared defaults. Sharing a category ID never shares transaction history.",
         querystring: recentCategoryQuery,
         response: {
           ...errors,
@@ -96,7 +98,7 @@ export function registerCategoryRoutes(
       schema: {
         ...secured,
         description:
-          "Create a personal root or child of an active owned root. Active sibling names are unique under ASCII case folding. No catalog/default identity input.",
+          "Create a personal root or child of an active shared root or this user's personal root. Active sibling names conflict with visible shared defaults and the user's personal siblings after ASCII whitespace normalization/case folding. Different users may reuse personal names. No catalog/default identity input.",
         body: categoryInput,
         querystring: empty,
         response: { ...errors, 201: categorySchema }

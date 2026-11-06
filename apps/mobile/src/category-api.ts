@@ -5,7 +5,7 @@ import { ClientFailure, type Transport } from "./auth/transport";
 const category = z.object({
   id: z.uuid(),
   name: z.string(),
-  isDefault: z.boolean(),
+  isDefault: z.boolean().describe("Shared immutable catalog membership."),
   archivedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime()

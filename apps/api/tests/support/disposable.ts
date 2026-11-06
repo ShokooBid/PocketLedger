@@ -5,11 +5,14 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import pg from "pg";
+import { initializeCategoryCatalog } from "../../src/categories/catalog-service.js";
 import { createDatabaseClient } from "../../src/database.js";
 
 // Local development and CI both supply a loopback PostgreSQL base URL. Every
 // suite owns one random schema; application tables are never reset or dropped.
-export function disposableDatabase(options: { migrate?: boolean } = {}) {
+export function disposableDatabase(
+  options: { migrate?: boolean; catalog?: boolean } = {}
+) {
   const base = process.env.TEST_DATABASE_URL;
   if (!base)
     throw new Error("Set TEST_DATABASE_URL, or run test:integration:local.");
@@ -57,6 +60,7 @@ export function disposableDatabase(options: { migrate?: boolean } = {}) {
           windowsHide: true
         }
       );
+      if (options.catalog !== false) await initializeCategoryCatalog(db);
     },
     async close() {
       try {
