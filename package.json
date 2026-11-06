@@ -20,7 +20,6 @@
     "db:status": "npm run db:status --workspace=@pocketledger/api",
     "db:seed": "npm run db:seed --workspace=@pocketledger/api",
     "categories:backfill": "node --env-file=.env --import tsx apps/api/src/categories/backfill.ts",
-    "finance:migrate": "node --env-file=.env --import tsx apps/api/src/finance/migrate.ts",
     "icons:generate": "node --import tsx scripts/generate-category-icons.mjs",
     "dev": "npm run dev --workspaces --if-present",
     "dev:api": "node --env-file=.env --import tsx --watch apps/api/src/index.ts",

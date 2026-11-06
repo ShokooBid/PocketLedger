@@ -80,7 +80,6 @@ try {
         categoryId: foodId,
         direction: "expense",
         amountMinor: 1234,
-        currency: "USD",
         date: new Date("2026-01-15T00:00:00Z"),
         note: "Synthetic manual transaction; no real purchase."
       }
@@ -96,7 +95,6 @@ try {
         importId,
         direction: "income",
         amountMinor: 250000,
-        currency: "USD",
         date: new Date("2026-01-01T00:00:00Z"),
         note: "Synthetic import example; no CSV or real employer."
       }

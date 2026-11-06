@@ -2,7 +2,7 @@ import { describe, expect, it, jest } from "@jest/globals";
 import { z } from "zod";
 import { createTransport, type FetchRequest } from "../src/auth/transport";
 import { createApiTransactionSource } from "../src/transaction-api";
-import { transactionCreate } from "../src/transaction-data";
+import { transactionCreate, transactionPatch } from "../src/transaction-data";
 import { response } from "./auth-fixtures";
 
 const id = "10000000-0000-4000-8000-000000000001";
@@ -12,7 +12,6 @@ const input = {
   categoryId: id,
   direction: "expense" as const,
   amountMinor: 1250,
-  currency: "CAD" as const,
   date: "2026-11-03",
   note: null
 };
@@ -88,5 +87,39 @@ describe("canonical bridge transport and adapter", () => {
     expect(
       transactionCreate.safeParse({ ...input, merchant: "forged" }).success
     ).toBe(false);
+    expect(
+      transactionCreate.safeParse({ ...input, currency: "CAD" }).success
+    ).toBe(false);
+    expect(transactionPatch.safeParse({ currency: "CAD" }).success).toBe(false);
+  });
+  it("sends currency-free writes while requiring derived currency on responses", async () => {
+    const saved = {
+      ...input,
+      id,
+      currency: "CAD",
+      importId: null,
+      createdAt: "2026-11-03T00:00:00Z",
+      updatedAt: "2026-11-03T00:00:00Z"
+    };
+    const { clientRequestId: _key, ...resource } = saved;
+    expect(_key).toBe(id);
+    const fetcher = jest
+      .fn<FetchRequest>()
+      .mockResolvedValue(response(resource));
+    const api = createApiTransactionSource(
+      createTransport("https://api.example.invalid", fetcher)
+    );
+    expect((await api.create(input)).currency).toBe("CAD");
+    expect((await api.update(id, { amountMinor: 1234 })).currency).toBe("CAD");
+    expect(
+      JSON.parse(String(fetcher.mock.calls[0]?.[1].body))
+    ).not.toHaveProperty("currency");
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1].body))).toEqual({
+      amountMinor: 1234
+    });
+    const { currency: _currency, ...invalid } = resource;
+    expect(_currency).toBe("CAD");
+    fetcher.mockResolvedValueOnce(response(invalid));
+    await expect(api.get(id)).rejects.toMatchObject({ kind: "protocol" });
   });
 });

@@ -120,7 +120,6 @@ describe("mobile permanent currency contracts against real API/PostgreSQL", () =
       categoryId: user.categoryId,
       accountId: account.id,
       amountMinor: parseAmount("123.45", "CAD"),
-      currency: "CAD",
       direction: "expense",
       date: "2026-10-30",
       clientRequestId: randomUUID(),

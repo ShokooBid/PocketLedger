@@ -37,9 +37,9 @@ export function TransactionsProvider({ children }: PropsWithChildren) {
       return createDemoFinanceSources(
         categories,
         selectedCurrency,
-        (input, previous) => {
+        (currency, previous) => {
           if (!previous) {
-            current.current.assertNewCurrency(input.currency);
+            current.current.assertNewCurrency(currency);
           }
         }
       );
@@ -52,7 +52,7 @@ export function TransactionsProvider({ children }: PropsWithChildren) {
       transactions: {
         ...source,
         async create(input: Parameters<TransactionSource["create"]>[0]) {
-          current.current.assertNewCurrency(input.currency);
+          current.current.assertNewCurrency(selectedCurrency());
           return source.create(input);
         }
       }

@@ -216,10 +216,10 @@ export function createDemoFinanceSources(
   const transactions = createDemoTransactionSource(
     categories,
     accounts,
-    (input, previous) => {
-      if (!previous && input.currency !== getCurrency())
+    (currency, previous) => {
+      if (!previous && currency !== getCurrency())
         throw new ClientFailure("validation", "CURRENCY_MISMATCH");
-      beforeWrite?.(input, previous);
+      beforeWrite?.(currency, previous);
     }
   );
   return { accounts, transactions };

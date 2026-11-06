@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AccountSource } from "./account-data";
+import type { Account, AccountSource } from "./account-data";
 import type { CategorySource } from "./category-data";
 import { ClientFailure } from "./auth/transport";
 import {
@@ -38,13 +38,13 @@ const text = (max: number) =>
 export const transactionInput = z.strictObject({
   direction: z.enum(["income", "expense"]),
   amountMinor: z.number().int().min(1).max(2147483647),
-  currency: currencySchema,
   date: calendarDate,
   categoryId: z.string().min(1),
   accountId: z.string().min(1),
   note: text(2000).nullable()
 });
 export const transactionSchema = transactionInput.extend({
+  currency: currencySchema,
   id: z.uuid(),
   categoryId: z.uuid(),
   accountId: z.uuid(),
@@ -123,11 +123,16 @@ export type TransactionDraft = {
   accountId: string;
   note: string;
 };
-export function draftInput(draft: TransactionDraft): TransactionInput {
+export function draftInput(
+  draft: TransactionDraft,
+  account: Pick<Account, "id" | "currency">
+): TransactionInput {
+  // The draft currency is a snapshot for recovery, never a write authority.
+  if (draft.accountId !== account.id || draft.currency !== account.currency)
+    throw new ClientFailure("validation", "CURRENCY_MISMATCH");
   return transactionInput.parse({
     direction: draft.direction,
-    amountMinor: parseAmount(draft.amount, draft.currency),
-    currency: draft.currency,
+    amountMinor: parseAmount(draft.amount, account.currency),
     date: draft.date,
     categoryId: draft.categoryId,
     accountId: draft.accountId,
@@ -143,9 +148,7 @@ export function uncertainWrite(error: unknown) {
 export function transactionFailureMessage(error: unknown) {
   if (error instanceof ClientFailure) {
     if (error.code === "CURRENCY_MISMATCH")
-      return "This draft has a different currency from Settings. Keep it unchanged or explicitly start a new draft.";
-    if (error.code === "CURRENCY_IMMUTABLE")
-      return "A saved transaction keeps its recorded currency.";
+      return "Choose an account in the draft's original currency. Amounts cannot be converted.";
     if (error.code === "PREFERENCES_NOT_READY")
       return "Reload currency settings before saving this transaction.";
     if (error.kind === "validation")
@@ -159,21 +162,31 @@ export function transactionFailureMessage(error: unknown) {
 }
 export function createDemoTransactionSource(
   categories: CategorySource,
-  accounts: Pick<AccountSource, "get">,
-  beforeWrite?: (input: TransactionInput, previous?: Transaction) => void
+  accounts: Pick<AccountSource, "list">,
+  beforeWrite?: (currency: Currency, previous?: Transaction) => void
 ): TransactionSource {
-  let rows: Transaction[] = [];
+  type StoredTransaction = Omit<Transaction, "currency">;
+  let rows: StoredTransaction[] = [];
   let sequence = 0;
   const creations = new Map<string, { fingerprint: string; id: string }>();
+  async function serialize(row: StoredTransaction): Promise<Transaction> {
+    const account = (await accounts.list()).find(
+      (item) => item.id === row.accountId
+    );
+    if (!account) throw new ClientFailure("unavailable");
+    return { ...row, currency: account.currency };
+  }
   async function checked(input: TransactionInput, previous?: Transaction) {
     if (!transactionInput.safeParse(input).success)
       throw new ClientFailure("validation");
-    if (previous && input.currency !== previous.currency)
-      throw new ClientFailure("validation", "CURRENCY_IMMUTABLE");
-    const account = await accounts.get(input.accountId, input.date);
+    const account = (await accounts.list()).find(
+      (row) => row.id === input.accountId
+    );
+    if (!account) throw new ClientFailure("unavailable");
+    if (previous && account.currency !== previous.currency)
+      throw new ClientFailure("validation", "CURRENCY_MISMATCH");
     if (
       (account.archivedAt && previous?.accountId !== account.id) ||
-      account.currency !== input.currency ||
       input.date < account.openingDate
     )
       throw new ClientFailure("validation", "INVALID_ACCOUNT");
@@ -187,15 +200,16 @@ export function createDemoTransactionSource(
         previous?.categoryId !== category.id)
     )
       throw new ClientFailure("validation");
+    return account.currency;
   }
   return observeTransactions({
     async get(id) {
       const row = rows.find((row) => row.id === id);
       if (!row) throw new ClientFailure("unavailable");
-      return { ...row };
+      return serialize(row);
     },
     async list(filter, after) {
-      const sorted = rows
+      const sorted = (await Promise.all(rows.map(serialize)))
         .filter(
           (row) =>
             (!filter.accountId || row.accountId === filter.accountId) &&
@@ -222,7 +236,6 @@ export function createDemoTransactionSource(
         input.categoryId,
         input.direction,
         input.amountMinor,
-        input.currency,
         input.date,
         input.note
       ]);
@@ -233,10 +246,10 @@ export function createDemoTransactionSource(
         const saved = rows.find((row) => row.id === prior.id);
         if (!saved)
           throw new ClientFailure("conflict", "OPERATION_ALREADY_APPLIED");
-        return { ...saved };
+        return serialize(saved);
       }
-      await checked(input);
-      beforeWrite?.(input);
+      const currency = await checked(input);
+      beforeWrite?.(currency);
       const row = {
         ...input,
         importId: null,
@@ -246,30 +259,30 @@ export function createDemoTransactionSource(
       };
       rows.push(row);
       creations.set(clientRequestId, { fingerprint, id: row.id });
-      return { ...row };
+      return serialize(row);
     },
     async update(id, input) {
       const previous = rows.find((row) => row.id === id);
       if (!previous) throw new ClientFailure("unavailable");
+      const previousResponse = await serialize(previous);
       const merged = transactionInput.parse({
         direction: previous.direction,
         amountMinor: previous.amountMinor,
-        currency: previous.currency,
         date: previous.date,
         categoryId: previous.categoryId,
         accountId: previous.accountId,
         note: previous.note,
-        ...input
+        ...transactionPatch.parse(input)
       });
-      await checked(merged, previous);
-      beforeWrite?.(merged, previous);
+      const currency = await checked(merged, previousResponse);
+      beforeWrite?.(currency, previousResponse);
       const updated = {
         ...previous,
         ...merged,
         updatedAt: new Date().toISOString()
       };
       rows = rows.map((row) => (row.id === id ? updated : row));
-      return { ...updated };
+      return serialize(updated);
     },
     async remove(id) {
       if (!rows.some((row) => row.id === id))

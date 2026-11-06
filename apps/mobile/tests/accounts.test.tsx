@@ -151,7 +151,6 @@ it("presents immutable opening information and refreshes tracked balances on foc
   view.rerender(<AccountManagement {...props} active={false} />);
   await transactions.create({
     direction: "expense",
-    currency: "CAD",
     amountMinor: 100,
     date: "2024-02-01",
     categoryId: (await categories.list())[0]!.id,

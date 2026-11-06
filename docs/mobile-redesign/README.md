@@ -20,7 +20,7 @@ the implementation history. Settings accounts and account-linked entry are wired
 to the live API; custom presentation, transfers and statement processing remain
 future work.
 
-## Finance foundation revision (2026-11-05)
+## Finance foundation revision (2026-11-06)
 
 Issue [#93](https://github.com/ShokooBid/PocketLedger/issues/93) implements explicit,
 permanent currency selection followed by required active-account setup. CAD is
@@ -29,9 +29,15 @@ for currency, and all transaction routes are blocked when no active account
 remains. Settings/privacy/sign-out and account repair remain accessible.
 
 Delivery order is #93 -> #94 -> #95 -> #96, one PR each, before resuming #72.
-Only #93 is implemented in this increment. Transaction currency, legacy account
-migration machinery, the separate creation table and per-user default copies
-remain until their respective follow-ups; do not present those changes as shipped.
+This increment implements #94 after #93. Immutable `Account.currency` is the
+source of every transaction response, filter and report; transaction write bodies
+contain no currency. `Transaction.currency`, `Account.legacyCurrency` and the
+obsolete finance backfill CLI are removed. An owner-safe account foreign key and
+SQL guards preserve ownership, dates, archival and same-currency reassignment.
+Amounts remain exact integer minor units; no conversion or account currency
+selector is introduced. Each migration still applies from an empty database.
+`TransactionCreation` request storage remains for #95; per-user default category
+copies remain for #96. These follow-ups are not implemented here.
 Earlier #65/#69 handoffs and the verification record preserve historical behavior.
 
 ## Confirmed product decisions
@@ -76,6 +82,9 @@ flow exists. Demo uses the same setup rules in isolated session memory.
 | Responsibility                                                       | Follow-up issue                                                                                                                                                                    |
 | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Permanent currency choice and active-account setup                   | [#93](https://github.com/ShokooBid/PocketLedger/issues/93), superseding the currency behavior in [#65](https://github.com/ShokooBid/PocketLedger/issues/65)                        |
+| Account-derived transaction currency and retired finance backfills   | [#94](https://github.com/ShokooBid/PocketLedger/issues/94)                                                                                                                         |
+| Inline transaction request storage (future)                          | [#95](https://github.com/ShokooBid/PocketLedger/issues/95)                                                                                                                         |
+| Shared default categories (future)                                   | [#96](https://github.com/ShokooBid/PocketLedger/issues/96)                                                                                                                         |
 | Hierarchy, immutable defaults and personal-category operations       | [#66](https://github.com/ShokooBid/PocketLedger/issues/66)                                                                                                                         |
 | Actual default catalog and provisioning                              | [#67](https://github.com/ShokooBid/PocketLedger/issues/67)                                                                                                                         |
 | Accounts and optional opening balance                                | [#68](https://github.com/ShokooBid/PocketLedger/issues/68)                                                                                                                         |
@@ -97,13 +106,13 @@ implemented Zod schemas and generated OpenAPI remain the executable contract.
 
 ## Verification and completion evidence
 
-| #64 acceptance criterion                                                                                 | Specification evidence                                                               |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Screen states cover loading, empty, invalid, saving, uncertain write, success, cancel and session expiry | [UX state matrix](ux.md#states-and-recovery)                                         |
-| Add shows one Settings currency without a selector                                                       | [Entry fields](ux.md#transaction-entry)                                              |
-| Existing amounts, currencies, ownership and historical links survive                                     | [Migration and compatibility](finance-contracts.md#migration-and-compatibility-gate) |
-| Merchant removal and legacy-client gate are explicit                                                     | [Version boundary](finance-contracts.md#version-boundary)                            |
-| CSV/PDF and functional AI are later increments requiring confirmation                                    | [Statement and AI flows](ux.md#statements-and-ai-later-increments)                   |
+| #64 acceptance criterion                                                                                 | Specification evidence                                                    |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Screen states cover loading, empty, invalid, saving, uncertain write, success, cancel and session expiry | [UX state matrix](ux.md#states-and-recovery)                              |
+| Add shows one Settings currency without a selector                                                       | [Entry fields](ux.md#transaction-entry)                                   |
+| Existing amounts, currencies, ownership and historical links survive                                     | [Migration and deployment](finance-contracts.md#migration-and-deployment) |
+| Merchant removal and legacy-client gate are explicit                                                     | [Version boundary](finance-contracts.md#version-boundary)                 |
+| CSV/PDF and functional AI are later increments requiring confirmation                                    | [Statement and AI flows](ux.md#statements-and-ai-later-increments)        |
 
 Review the specification against current Prisma models, transaction/category/
 dashboard Zod contracts, mobile data adapters, session navigation and transport.

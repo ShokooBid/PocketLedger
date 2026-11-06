@@ -203,7 +203,6 @@ describe("permanent currency and derived account readiness", () => {
         categoryId: category.id,
         direction: "expense",
         amountMinor: 1250,
-        currency: "CAD",
         date: new Date("2026-11-05")
       }
     });
@@ -222,7 +221,6 @@ describe("permanent currency and derived account readiness", () => {
       categoryId: category.id,
       direction: "expense",
       amountMinor: 1,
-      currency: "CAD",
       date: "2026-11-05",
       note: null,
       clientRequestId: randomUUID()

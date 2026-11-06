@@ -100,7 +100,6 @@ it("round-trips real merchant-free data, reconciles a lost response with the ori
     categoryId: category.id,
     direction: "expense" as const,
     amountMinor: 1250,
-    currency: "CAD" as const,
     date: "2026-02-01",
     note: null
   });

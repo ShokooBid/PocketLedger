@@ -43,22 +43,24 @@ export function createDashboardService(db: PrismaClient) {
               COALESCE(SUM(t."amountMinor") FILTER (WHERE t.direction = 'income'), 0)::bigint AS "incomeMinor",
               COALESCE(SUM(t."amountMinor") FILTER (WHERE t.direction = 'expense'), 0)::bigint AS "expensesMinor"
             FROM "Transaction" t
+            JOIN "Account" a ON a.id = t."accountId" AND a."userId" = t."userId"
             JOIN "Category" c ON c.id = t."categoryId" AND c."userId" = t."userId"
             LEFT JOIN "Category" p ON p.id = c."parentId" AND p."userId" = c."userId"
             WHERE t."userId" = ${userId}::uuid
               AND t.date >= ${query.from}::date AND t.date <= ${query.to}::date
-              AND t.currency = ${query.currency}
+              AND a.currency = ${query.currency}
             GROUP BY t."categoryId", c.name, p.id, p.name, c.id
             ORDER BY t."categoryId" ASC
           `;
           const recent = await tx.transaction.findMany({
             where: {
               userId,
-              currency: query.currency,
+              account: { currency: query.currency },
               date: { gte: new Date(query.from), lte: new Date(query.to) }
             },
             orderBy: [{ date: "desc" }, { id: "desc" }],
-            take: query.recentLimit
+            take: query.recentLimit,
+            include: { account: { select: { currency: true } } }
           });
           let income = 0n;
           let expenses = 0n;

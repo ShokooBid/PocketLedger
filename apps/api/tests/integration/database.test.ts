@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -8,11 +8,6 @@ import { promisify } from "node:util";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { testAccount } from "../fixtures.js";
-import {
-  prepareFinanceUpgrade,
-  backfillFinanceOwner,
-  verifyFinanceMigration
-} from "../../src/finance/migration.js";
 import { disposableDatabase } from "../support/disposable.js";
 
 const require = createRequire(import.meta.url);
@@ -69,8 +64,8 @@ async function insertTransaction(
 ) {
   return sql.query(
     `INSERT INTO "Transaction"
-      ("userId", "categoryId", "importId", "accountId", direction, "amountMinor", currency, date, merchant)
-     VALUES ($1, $2, $3, $4, 'expense', 1234, 'USD', '2026-01-15', 'Synthetic shop')
+      ("userId", "categoryId", "importId", "accountId", direction, "amountMinor", date, merchant)
+     VALUES ($1, $2, $3, $4, 'expense', 1234, '2026-01-15', 'Synthetic shop')
      RETURNING id`,
     [
       owner,
@@ -144,6 +139,32 @@ describe("initial migration and database ownership", () => {
     expect(await prisma("migrate", "status")).toContain("up to date");
   });
 
+  it("keeps only account currency and an owner-safe posting foreign key", async () => {
+    const retired =
+      await sql.query(`SELECT table_name, column_name FROM information_schema.columns
+      WHERE table_schema = current_schema() AND
+        ((table_name = 'Transaction' AND column_name = 'currency') OR
+         (table_name = 'Account' AND column_name = 'legacyCurrency'))`);
+    expect(retired.rows).toEqual([]);
+    const foreignKey =
+      await sql.query(`SELECT pg_get_constraintdef(oid) AS definition
+      FROM pg_constraint WHERE conrelid = '"Transaction"'::regclass
+        AND conname = 'Transaction_account_owner_fkey'`);
+    expect(foreignKey.rows[0].definition).toContain(
+      'FOREIGN KEY ("accountId", "userId") REFERENCES "Account"(id, "userId")'
+    );
+    const guards =
+      await sql.query(`SELECT p.proname, pg_get_functiondef(p.oid) AS definition FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = current_schema()
+        AND p.proname IN ('enforce_account_rules', 'enforce_account_posting')`);
+    expect(guards.rows).toHaveLength(2);
+    for (const guard of guards.rows) {
+      expect(guard.definition).not.toContain("legacyCurrency");
+      if (guard.proname === "enforce_account_posting")
+        expect(guard.definition).not.toMatch(/(?:NEW|OLD)\.currency/);
+    }
+  });
+
   it("accepts same-owner manual and imported transactions", async () => {
     const manual = await insertTransaction();
     await insertTransaction(userA, categoryA, importA);
@@ -152,7 +173,6 @@ describe("initial migration and database ownership", () => {
     });
     expect(record).toMatchObject({
       amountMinor: 1234,
-      currency: "USD",
       direction: "expense",
       importId: null
     });
@@ -184,7 +204,6 @@ describe("initial migration and database ownership", () => {
           categoryId: categoryB,
           direction: "expense",
           amountMinor: 1,
-          currency: "USD",
           date: new Date("2026-01-15"),
           merchant: "Synthetic"
         }
@@ -271,7 +290,7 @@ describe("initial migration and database ownership", () => {
     expect(record.category.archivedAt).toBeInstanceOf(Date);
   });
 
-  it("enforces positive integer money, currency syntax and required owners", async () => {
+  it("enforces positive integer money and required owners", async () => {
     const result = await insertTransaction();
     for (const amount of [0, -1]) {
       await expect(
@@ -287,14 +306,6 @@ describe("initial migration and database ownership", () => {
         result.rows[0].id
       ])
     ).rejects.toMatchObject({ code: "22P02" });
-    for (const currency of ["usd", "US", "12!"]) {
-      await expect(
-        sql.query('UPDATE "Transaction" SET currency = $1 WHERE id = $2', [
-          currency,
-          result.rows[0].id
-        ])
-      ).rejects.toMatchObject({ code: "23514" });
-    }
     await expect(
       sql.query('UPDATE "Transaction" SET "userId" = NULL WHERE id = $1', [
         result.rows[0].id
@@ -496,155 +507,5 @@ describe("authentication storage (service behavior is implemented in Issue #7)",
     await expect(insert(session.id, "e".repeat(64))).rejects.toMatchObject({
       code: "23505"
     });
-  });
-
-  it("upgrades the original schema without losing an existing user or transaction", async () => {
-    const upgradeDatabase = disposableDatabase({ migrate: false });
-    const upgradeUrl = new URL(upgradeDatabase.url);
-    const upgrade = new pg.Client({
-      connectionString: upgradeUrl.toString(),
-      connectionTimeoutMillis: 5000
-    });
-    let upgradeConnected = false;
-    try {
-      await upgradeDatabase.start();
-      await upgrade.connect();
-      upgradeConnected = true;
-      // Reproduce the historical schema, then rehearse every forward SQL change.
-      await upgrade.query(
-        await readFile(
-          new URL(
-            "../../prisma/migrations/20261017000000_init/migration.sql",
-            import.meta.url
-          ),
-          "utf8"
-        )
-      );
-      await upgrade.query(
-        'INSERT INTO "User" (id, email, "passwordHash") VALUES ($1, $2, $3)',
-        [userA, "upgrade@example.invalid", "!disabled:preserve-me"]
-      );
-      await upgrade.query(
-        'INSERT INTO "Category" (id, "userId", name) VALUES ($1, $2, $3)',
-        [categoryA, userA, "Synthetic preserved category"]
-      );
-      await upgrade.query(
-        "INSERT INTO \"Transaction\" (\"userId\", \"categoryId\", direction, \"amountMinor\", currency, date, merchant) VALUES ($1, $2, 'expense', 1234, 'USD', '2026-01-01', 'Synthetic preserved merchant')",
-        [userA, categoryA]
-      );
-      // An old exact-name schema can contain newly conflicting active names.
-      // The new migration must fail atomically rather than merge historic IDs.
-      const collisionId = randomUUID();
-      await upgrade.query(
-        'INSERT INTO "Category" (id, "userId", name) VALUES ($1, $2, $3)',
-        [collisionId, userA, " synthetic  PRESERVED category "]
-      );
-      await expect(
-        upgrade.query(
-          await readFile(
-            new URL(
-              "../../prisma/migrations/20261022000000_categories/migration.sql",
-              import.meta.url
-            ),
-            "utf8"
-          )
-        )
-      ).rejects.toMatchObject({ code: "23505" });
-      await upgrade.query("ROLLBACK");
-      expect(
-        (
-          await upgrade.query(
-            `SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'Category_userId_name_key'`
-          )
-        ).rows
-      ).toHaveLength(1);
-      expect(
-        (await upgrade.query('SELECT id FROM "Category"')).rows
-      ).toHaveLength(2);
-      // This is a disposable fixture; resolve its synthetic collision explicitly.
-      await upgrade.query('DELETE FROM "Category" WHERE id = $1', [
-        collisionId
-      ]);
-      const migrationRoot = new URL(
-        "../../prisma/migrations/",
-        import.meta.url
-      );
-      for (const name of (await readdir(migrationRoot))
-        .filter((name) => /^\d/.test(name) && name > "20261017000000_init")
-        .sort()) {
-        if (name === "20261104000000_canonical_finance") {
-          await prepareFinanceUpgrade(upgradeDatabase.db);
-          expect(
-            (
-              await backfillFinanceOwner(upgradeDatabase.db, userA, {
-                apply: true
-              })
-            ).conflicts
-          ).toEqual([]);
-          expect(await verifyFinanceMigration(upgradeDatabase.db)).toBe(
-            "verified"
-          );
-        }
-        await upgrade.query(
-          await readFile(
-            new URL(`${name}/migration.sql`, migrationRoot),
-            "utf8"
-          )
-        );
-      }
-      expect(
-        (
-          await upgrade.query(
-            'SELECT "passwordHash" FROM "User" WHERE id = $1',
-            [userA]
-          )
-        ).rows[0]
-      ).toEqual({ passwordHash: "!disabled:preserve-me" });
-      expect(
-        (
-          await upgrade.query(
-            'SELECT "amountMinor", merchant FROM "Transaction"'
-          )
-        ).rows
-      ).toEqual([
-        { amountMinor: 1234, merchant: "Synthetic preserved merchant" }
-      ]);
-      expect(
-        (
-          await upgrade.query(
-            'SELECT id, "parentId", "defaultKey", "iconKey", "colorKey", "sortOrder" FROM "Category" WHERE id = $1',
-            [categoryA]
-          )
-        ).rows
-      ).toEqual([
-        {
-          id: categoryA,
-          parentId: null,
-          defaultKey: null,
-          iconKey: "category",
-          colorKey: "neutral",
-          sortOrder: 0
-        }
-      ]);
-      expect(
-        (await upgrade.query('SELECT "categoryId" FROM "Transaction"')).rows
-      ).toEqual([{ categoryId: categoryA }]);
-      await upgrade.query('INSERT INTO "User" (email) VALUES ($1)', [
-        "new-google@example.invalid"
-      ]);
-      expect(
-        (
-          await upgrade.query(
-            'SELECT count(*)::int AS count FROM "AuthIdentity"'
-          )
-        ).rows[0]
-      ).toEqual({ count: 0 });
-    } finally {
-      try {
-        if (upgradeConnected) await upgrade.end();
-      } finally {
-        await upgradeDatabase.close();
-      }
-    }
   });
 });

@@ -46,7 +46,7 @@ afterAll(async () => {
     await database.close();
   }
 });
-async function owner(): Promise<Owner> {
+async function owner(currency: "CAD" | "JPY" | "KWD" = "CAD"): Promise<Owner> {
   const email = `${randomUUID()}@example.invalid`;
   const response = await app.inject({
     method: "POST",
@@ -58,11 +58,11 @@ async function owner(): Promise<Owner> {
   const category = await db.category.create({
     data: { userId: id, name: "Food" }
   });
-  await preferences.update(id, { entryCurrency: "CAD" });
+  await preferences.update(id, { entryCurrency: currency });
   const account = await accounts.create(id, {
     name: "Cash",
     type: "cash",
-    currency: "CAD",
+    currency,
     openingDate: "2026-01-01",
     openingBalanceMinor: 10000
   });
@@ -79,7 +79,6 @@ const input = (user: Owner, extra: object = {}) => ({
   categoryId: user.categoryId,
   direction: "expense",
   amountMinor: 1250,
-  currency: "CAD",
   date: "2026-02-01",
   ...extra
 });
@@ -102,6 +101,105 @@ async function create(user: Owner, extra: object = {}) {
 }
 
 describe("account-aware transactions", () => {
+  it.each(["CAD", "JPY", "KWD"] as const)(
+    "derives %s on every read and keeps exact minor-unit totals after archival",
+    async (currency) => {
+      const user = await owner(currency);
+      const payload = input(user, { amountMinor: 1001 });
+      const created = await request(user, "POST", base, payload);
+      expect(created.statusCode, created.body).toBe(201);
+      const id = created.json().id;
+      expect(created.json()).toMatchObject({ currency, amountMinor: 1001 });
+      await accounts.archive(user.id, user.accountId);
+      expect((await request(user, "POST", base, payload)).json()).toMatchObject(
+        { id, currency, amountMinor: 1001 }
+      );
+      expect(
+        (
+          await request(user, "PATCH", `${base}/${id}`, { note: "History" })
+        ).json()
+      ).toMatchObject({ id, currency, amountMinor: 1001 });
+      expect(
+        (await request(user, "GET", `${base}/${id}`)).json()
+      ).toMatchObject({ id, currency, amountMinor: 1001 });
+      expect(
+        (await request(user, "GET", `${base}?currency=${currency}`)).json()
+          .items
+      ).toHaveLength(1);
+      expect(
+        (await request(user, "GET", `${base}?currency=USD`)).json().items
+      ).toEqual([]);
+      expect(
+        (await accounts.get(user.id, user.accountId, "2026-02-01")).balanceMinor
+      ).toBe(8999);
+      const dashboard = createDashboardService(db);
+      expect(
+        await dashboard.summary(user.id, {
+          from: "2026-02-01",
+          to: "2026-02-01",
+          currency,
+          recentLimit: 5
+        })
+      ).toMatchObject({
+        expensesMinor: 1001,
+        netMinor: -1001,
+        recentTransactions: [{ id, currency }]
+      });
+      expect(
+        await dashboard.summary(user.id, {
+          from: "2026-02-01",
+          to: "2026-02-01",
+          currency: "USD",
+          recentLimit: 5
+        })
+      ).toMatchObject({ expensesMinor: 0, recentTransactions: [] });
+    }
+  );
+
+  it("rejects cross-currency reassignment in the API and SQL without changing the amount", async () => {
+    const user = await owner();
+    // Synthetic historical state, unreachable through today's account-create API.
+    // Only this suite's disposable schema is touched. Restore the account guard
+    // before testing either write path; the posting guard is always enabled.
+    const otherAccount = await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        'ALTER TABLE "Account" DISABLE TRIGGER "Account_rules"'
+      );
+      const row = await tx.account.create({
+        data: {
+          userId: user.id,
+          name: "Historical JPY",
+          type: "cash",
+          currency: "JPY",
+          openingDate: new Date("2026-01-01"),
+          openingBalanceMinor: 0
+        }
+      });
+      await tx.$executeRawUnsafe(
+        'ALTER TABLE "Account" ENABLE TRIGGER "Account_rules"'
+      );
+      return row;
+    });
+    const row = await create(user, { amountMinor: 1234 });
+    const rejected = await request(user, "PATCH", `${base}/${row.id}`, {
+      accountId: otherAccount.id,
+      amountMinor: 999
+    });
+    expect(rejected.statusCode).toBe(422);
+    expect(rejected.json().error.code).toBe("CURRENCY_MISMATCH");
+    await expect(
+      db.transaction.update({
+        where: { id: row.id },
+        data: { accountId: otherAccount.id, amountMinor: 999 }
+      })
+    ).rejects.toThrow();
+    expect(await service.get(user.id, row.id)).toMatchObject({
+      accountId: user.accountId,
+      currency: "CAD",
+      amountMinor: 1234
+    });
+  });
+
   it("authenticates before validation and exposes one canonical contract", async () => {
     for (const [method, url, payload] of [
       ["GET", base],
@@ -127,6 +225,7 @@ describe("account-aware transactions", () => {
       where: { id: row.id }
     });
     expect(stored.merchant).toBeNull();
+    expect(stored).not.toHaveProperty("currency");
     expect(
       (await request(user, "GET", `${base}/${row.id}`)).json()
     ).toMatchObject({
@@ -208,7 +307,7 @@ describe("account-aware transactions", () => {
       (
         await request(user, "POST", base, input(user, { currency: "USD" }))
       ).json().error.code
-    ).toBe("CURRENCY_MISMATCH");
+    ).toBe("VALIDATION_ERROR");
     await accounts.archive(user.id, user.accountId);
     expect(
       (await request(user, "POST", base, input(user))).json().error.code
@@ -250,7 +349,7 @@ describe("account-aware transactions", () => {
       (
         await request(user, "PATCH", `${base}/${row.id}`, { currency: "USD" })
       ).json().error.code
-    ).toBe("CURRENCY_IMMUTABLE");
+    ).toBe("VALIDATION_ERROR");
     const active = await accounts.create(user.id, {
       name: "Other",
       type: "other",
@@ -315,13 +414,11 @@ describe("account-aware transactions", () => {
       accountId: user.accountId,
       categoryId: user.categoryId,
       amountMinor: 1250,
-      currency: "CAD",
       date: "2026-02-01"
     };
     for (const extra of [
       { accountId: other.accountId },
-      { date: new Date("2025-12-31") },
-      { currency: "USD" }
+      { date: new Date("2025-12-31") }
     ])
       await expect(
         db.transaction.create({
