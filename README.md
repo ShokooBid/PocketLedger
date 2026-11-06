@@ -108,8 +108,10 @@ optional note and no merchant field. Historical stored merchant values remain.
 The old finance implementations, `/v2` paths and rollout flags are removed. This
 is an intentional pre-release contract replacement; API and app must be updated
 together. #94 derives transaction currency from immutable accounts and removes
-the obsolete finance backfill CLI. TransactionCreation remains for #95; shared
-default categories remain #96 work. Future transfers, custom keypad and statement
+the obsolete finance backfill CLI. #95 stores request identity and the original
+creation fingerprint on Transaction, replacing TransactionCreation. Retry
+protection lasts while that row exists; hard deletion releases its request key.
+Shared default categories remain #96 work. Future transfers, custom keypad and statement
 processing remain separate issues.
 
 `npm run typecheck --workspace=@pocketledger/mobile` runs TypeScript directly.
@@ -387,7 +389,13 @@ allowed, while a new/different assignment requires an active owned category.
 Failed submissions retain form values. Pending submissions are locked. An ambiguous
 write requires reloading and reviewing saved rows before explicitly enabling another
 write. Creates retain the original key and payload for an explicit safe retry;
-there are no automatic network write retries. A confirmed
+there are no automatic network write retries. The server keeps immutable
+`clientRequestId` and SHA-256 `creationFingerprint` on each manually created row,
+unique by owner and request UUID. Equivalent retries return the current resource
+without undoing edits; changed intent returns `409 IDEMPOTENCY_KEY_REUSED`.
+Internal/generated postings may omit both fields. Hard deletion removes the
+identity, so a late retry can create a new transaction; no tombstones or soft
+deletes are retained. A confirmed
 save appears immediately, even if the subsequent list reload fails. Logout/account
 changes unmount transaction data alongside category data. Routine API logs contain
 no transaction bodies, IDs, date/category queries or credentials.

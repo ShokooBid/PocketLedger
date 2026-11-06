@@ -192,6 +192,89 @@ describe("initial migration and database ownership", () => {
     );
   });
 
+  it("stores nullable creation pairs, enforces owner-scoped uniqueness and prevents identity mutation", async () => {
+    expect(
+      (
+        await sql.query(
+          `SELECT to_regclass('"TransactionCreation"') AS retired`
+        )
+      ).rows[0].retired
+    ).toBeNull();
+    const columns =
+      await sql.query(`SELECT column_name, is_nullable FROM information_schema.columns
+      WHERE table_schema = current_schema() AND table_name = 'Transaction'
+        AND column_name IN ('clientRequestId', 'creationFingerprint') ORDER BY column_name`);
+    expect(columns.rows).toEqual([
+      { column_name: "clientRequestId", is_nullable: "YES" },
+      { column_name: "creationFingerprint", is_nullable: "YES" }
+    ]);
+    const insert = (
+      key: string | null,
+      fingerprint: string | null,
+      owner = userA
+    ) =>
+      sql.query(
+        `INSERT INTO "Transaction" ("userId", "categoryId", "accountId", direction, "amountMinor", date, "clientRequestId", "creationFingerprint")
+        VALUES ($1, $2, $3, 'expense', 1234, '2026-01-15', $4, $5) RETURNING id`,
+        [
+          owner,
+          owner === userA ? categoryA : categoryB,
+          ownerAccounts.get(owner),
+          key,
+          fingerprint
+        ]
+      );
+    const key = randomUUID(),
+      fingerprint = "a".repeat(64);
+    for (const [requestId, digest] of [
+      [key, null],
+      [null, fingerprint],
+      [key, "a".repeat(63)],
+      [key, "A".repeat(64)],
+      [key, "z".repeat(64)],
+      [key, ""]
+    ] as const)
+      await expect(insert(requestId, digest)).rejects.toMatchObject({
+        code: "23514"
+      });
+    const row = (await insert(key, fingerprint)).rows[0];
+    await expect(insert(key, fingerprint)).rejects.toMatchObject({
+      code: "23505"
+    });
+    await insert(key, fingerprint, userB);
+    const internal = (await insert(null, null)).rows[0];
+    await insert(null, null);
+    await sql.query(
+      'UPDATE "Transaction" SET "clientRequestId" = $1, "creationFingerprint" = $2 WHERE id = $3',
+      [key, fingerprint, row.id]
+    );
+    for (const [requestId, digest] of [
+      [randomUUID(), fingerprint],
+      [key, "b".repeat(64)],
+      [null, null]
+    ] as const)
+      await expect(
+        sql.query(
+          'UPDATE "Transaction" SET "clientRequestId" = $1, "creationFingerprint" = $2 WHERE id = $3',
+          [requestId, digest, row.id]
+        )
+      ).rejects.toMatchObject({
+        code: "23514",
+        constraint: "Transaction_creation_identity_immutable"
+      });
+    await expect(
+      sql.query(
+        'UPDATE "Transaction" SET "clientRequestId" = $1, "creationFingerprint" = $2 WHERE id = $3',
+        [randomUUID(), fingerprint, internal.id]
+      )
+    ).rejects.toMatchObject({
+      code: "23514",
+      constraint: "Transaction_creation_identity_immutable"
+    });
+    await sql.query('DELETE FROM "Transaction" WHERE id = $1', [row.id]);
+    expect((await insert(key, fingerprint)).rows[0].id).not.toBe(row.id);
+  });
+
   it("rejects another user's category through SQL and Prisma", async () => {
     await expect(insertTransaction(userA, categoryB)).rejects.toMatchObject({
       code: "23503"
@@ -329,6 +412,18 @@ describe("initial migration and database ownership", () => {
   it("runs the explicit seed command twice without duplicating or overwriting records", async () => {
     await prisma("db", "seed");
     const seedId = "00000000-0000-4000-8000-000000000005";
+    const seedIdentity = await db.transaction.findUniqueOrThrow({
+      where: { id: seedId }
+    });
+    expect(seedIdentity.clientRequestId).toBe(
+      "00000000-0000-4000-8000-000000000008"
+    );
+    expect(seedIdentity.creationFingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(
+      await db.transaction.findUniqueOrThrow({
+        where: { id: "00000000-0000-4000-8000-000000000006" }
+      })
+    ).toMatchObject({ clientRequestId: null, creationFingerprint: null });
     await db.transaction.update({
       where: { id: seedId },
       data: { note: "Synthetic local edit" }
@@ -358,7 +453,11 @@ describe("initial migration and database ownership", () => {
     });
     expect(
       await db.transaction.findUniqueOrThrow({ where: { id: seedId } })
-    ).toMatchObject({ note: "Synthetic local edit" });
+    ).toMatchObject({
+      note: "Synthetic local edit",
+      clientRequestId: seedIdentity.clientRequestId,
+      creationFingerprint: seedIdentity.creationFingerprint
+    });
   });
 });
 

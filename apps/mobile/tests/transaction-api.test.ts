@@ -51,12 +51,7 @@ describe("canonical bridge transport and adapter", () => {
       );
     expect(fetcher).toHaveBeenCalledTimes(3);
   });
-  it.each([
-    "INVALID_ACCOUNT",
-    "PREFERENCE_CHANGED",
-    "IDEMPOTENCY_KEY_REUSED",
-    "OPERATION_ALREADY_APPLIED"
-  ])(
+  it.each(["INVALID_ACCOUNT", "PREFERENCE_CHANGED", "IDEMPOTENCY_KEY_REUSED"])(
     "preserves safe %s codes without exposing server messages",
     async (code) => {
       const fetcher = jest

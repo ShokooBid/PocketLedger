@@ -313,9 +313,7 @@ describe("account-aware transactions", () => {
       (await request(user, "POST", base, input(user))).json().error.code
     ).toBe("INVALID_ACCOUNT");
     expect((await preferences.get(user.id)).entryCurrency).toBe("CAD");
-    expect(
-      await db.transactionCreation.count({ where: { userId: user.id } })
-    ).toBe(0);
+    expect(await db.transaction.count({ where: { userId: user.id } })).toBe(0);
     for (const id of [other.accountId, randomUUID()])
       expect(
         (await request(user, "GET", `${base}?accountId=${id}`)).statusCode
@@ -376,7 +374,7 @@ describe("account-aware transactions", () => {
     ).toBe(200);
     expect((await preferences.get(user.id)).entryCurrency).toBe("CAD");
   });
-  it("serializes duplicate creates, isolates keys by owner, rejects changed payloads and keeps deletion tombstones", async () => {
+  it("serializes duplicate creates, isolates keys by owner and releases identity after hard deletion", async () => {
     const user = await owner(),
       other = await owner(),
       payload = input(user);
@@ -403,9 +401,96 @@ describe("account-aware transactions", () => {
       ).statusCode
     ).toBe(201);
     await request(user, "DELETE", `${base}/${id}`);
-    expect((await request(user, "POST", base, payload)).json().error.code).toBe(
-      "OPERATION_ALREADY_APPLIED"
-    );
+    const recreated = await request(user, "POST", base, payload);
+    expect(recreated.statusCode, recreated.body).toBe(201);
+    expect(recreated.json().id).not.toBe(id);
+    expect(await db.transaction.count({ where: { userId: user.id } })).toBe(1);
+    const changedAfterDelete = input(user, {
+      clientRequestId: payload.clientRequestId,
+      amountMinor: 1
+    });
+    await request(user, "DELETE", `${base}/${recreated.json().id}`);
+    expect(
+      (await request(user, "POST", base, changedAfterDelete)).statusCode
+    ).toBe(201);
+  });
+
+  it("returns a stable conflict when different creation intents race for the same key", async () => {
+    const user = await owner();
+    const payload = input(user);
+    const responses = await Promise.all([
+      request(user, "POST", base, payload),
+      request(user, "POST", base, { ...payload, amountMinor: 1 })
+    ]);
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([
+      201, 409
+    ]);
+    expect(
+      responses.find((response) => response.statusCode === 409)!.json().error
+        .code
+    ).toBe("IDEMPOTENCY_KEY_REUSED");
+    expect(await db.transaction.count({ where: { userId: user.id } })).toBe(1);
+  });
+
+  it("retains original identity through edits and returns current state on equivalent retries", async () => {
+    const user = await owner();
+    const payload = input(user, { note: "" });
+    const created = await request(user, "POST", base, payload);
+    expect(created.statusCode, created.body).toBe(201);
+    const id = created.json().id;
+    const initial = await db.transaction.findUniqueOrThrow({ where: { id } });
+    expect(initial.clientRequestId).toBe(payload.clientRequestId);
+    expect(initial.creationFingerprint).toMatch(/^[0-9a-f]{64}$/);
+    const moved = await accounts.create(user.id, {
+      name: "Second cash",
+      type: "cash",
+      currency: "CAD",
+      openingDate: "2026-01-01",
+      openingBalanceMinor: 0
+    });
+    const edited = await request(user, "PATCH", `${base}/${id}`, {
+      amountMinor: 999,
+      note: "Edited",
+      accountId: moved.id
+    });
+    expect(edited.statusCode, edited.body).toBe(200);
+    await accounts.archive(user.id, user.accountId);
+    await db.category.update({
+      where: { id: user.categoryId },
+      data: { archivedAt: new Date() }
+    });
+    const retry = await request(user, "POST", base, {
+      ...payload,
+      accountId: payload.accountId.toUpperCase(),
+      categoryId: payload.categoryId.toUpperCase(),
+      clientRequestId: payload.clientRequestId.toUpperCase(),
+      note: null
+    });
+    expect(retry.statusCode, retry.body).toBe(200);
+    expect(retry.json()).toEqual(edited.json());
+    const stored = await db.transaction.findUniqueOrThrow({ where: { id } });
+    expect(stored.clientRequestId).toBe(initial.clientRequestId);
+    expect(stored.creationFingerprint).toBe(initial.creationFingerprint);
+    expect(
+      (
+        await request(user, "POST", base, {
+          ...payload,
+          amountMinor: 999,
+          note: "Edited",
+          accountId: moved.id
+        })
+      ).json().error.code
+    ).toBe("IDEMPOTENCY_KEY_REUSED");
+    for (const field of ["clientRequestId", "creationFingerprint"]) {
+      expect(created.json()).not.toHaveProperty(field);
+      expect(
+        (
+          await request(user, "PATCH", `${base}/${id}`, {
+            [field]: field === "clientRequestId" ? randomUUID() : "a".repeat(64)
+          })
+        ).statusCode
+      ).toBe(422);
+    }
   });
   it("enforces account/date/currency rules in direct writes and serializes archive/create races", async () => {
     const user = await owner(),

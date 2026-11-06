@@ -132,6 +132,8 @@ export function TransactionManagement(
               Your entered values are retained. The write may have succeeded.
               Review the reloaded list before another submission; no write is
               retried automatically.
+              {pendingCreate.current &&
+                " Retry protection lasts while the saved transaction exists. If it was deleted, retrying can create it again."}
             </Body>
             {pendingCreate.current ? (
               <Button

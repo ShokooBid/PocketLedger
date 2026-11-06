@@ -306,7 +306,9 @@ export function useTransactionManagement({
       return;
     }
     let input;
-    if (!remove) {
+    // An explicit retry sends the captured payload, regardless of later choices.
+    // The server revalidates eligibility if the original row no longer exists.
+    if (!remove && !(retry && pendingCreate.current)) {
       try {
         const account = accountChoices.find(
           (row) => row.id === draft!.accountId
@@ -371,18 +373,6 @@ export function useTransactionManagement({
       }
     } catch (failure) {
       if (!mounted.current) return;
-      if (
-        failure instanceof ClientFailure &&
-        failure.code === "OPERATION_ALREADY_APPLIED"
-      ) {
-        pendingCreate.current = null;
-        setDraft(null);
-        setUncertain(false);
-        setNotice(
-          "The original transaction was already saved and later deleted."
-        );
-        return;
-      }
       setError(transactionFailureMessage(failure));
       if (uncertainWrite(failure)) {
         setUncertain(true);

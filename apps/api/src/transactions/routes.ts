@@ -67,7 +67,7 @@ export function registerTransactionRoutes(
         querystring: empty,
         body: transactionCreate,
         description:
-          "Required owned active account/category and UUID clientRequestId. Positive exact integer minor units in the account currency, date on or after account opening. Currency is derived from the account in responses and is rejected in request bodies. No merchant or client provenance. Same owner/key/payload replays with 200; changed payload or replay after deletion returns 409.",
+          "Required owned active account/category and UUID clientRequestId. Positive exact integer minor units in the account currency, date on or after account opening. Currency is derived from the account in responses and is rejected in request bodies. No merchant, client fingerprint or provenance. The row stores immutable request identity and a server-computed creation fingerprint. While that row exists, the same owner/key/normalized payload returns its current resource with 200 without undoing edits; changed payload returns 409 IDEMPOTENCY_KEY_REUSED. Hard deletion releases the identity: a late retry can create a new row with 201.",
         response: {
           ...errors,
           200: transactionSchema,
@@ -93,7 +93,7 @@ export function registerTransactionRoutes(
         querystring: empty,
         body: transactionPatch,
         description:
-          "Nonempty partial update without currency. Account reassignment must retain the original account currency; amounts are never converted. Identity/provenance are immutable. Unchanged archived account/category associations may remain; changed selections must be active. Opening-date guards always apply.",
+          "Nonempty partial update without currency, clientRequestId or creationFingerprint. Account reassignment must retain the original account currency; amounts are never converted. Creation identity/provenance are immutable. Unchanged archived account/category associations may remain; changed selections must be active. Opening-date guards always apply.",
         response: { ...errors, 200: transactionSchema }
       }
     },

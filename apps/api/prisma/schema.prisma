@@ -32,35 +32,21 @@ enum AccountType {
 }
 
 model User {
-  id                   String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email                String                @unique @db.VarChar(254)
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email              String              @unique @db.VarChar(254)
   // Null for Google-only accounts; never invent a password for social login.
-  passwordHash         String?               @db.Text
-  emailVerifiedAt      DateTime?             @db.Timestamptz(3)
-  disabledAt           DateTime?             @db.Timestamptz(3)
-  createdAt            DateTime              @default(now()) @db.Timestamptz(3)
-  updatedAt            DateTime              @default(now()) @updatedAt @db.Timestamptz(3)
-  categories           Category[]
-  transactions         Transaction[]
-  imports              Import[]
-  identities           AuthIdentity[]
-  sessions             Session[]
-  financePreferences   FinancePreferences?
-  accounts             Account[]
-  transactionCreations TransactionCreation[]
-}
-
-// Completion survives transaction deletion: resourceId is deliberately not a FK.
-// A separate table scopes these keys to the normal-transaction create operation.
-model TransactionCreation {
-  userId          String   @db.Uuid
-  clientRequestId String   @db.Uuid
-  fingerprint     String   @db.VarChar(64)
-  resourceId      String   @db.Uuid
-  createdAt       DateTime @default(now()) @db.Timestamptz(3)
-  user            User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-
-  @@id([userId, clientRequestId])
+  passwordHash       String?             @db.Text
+  emailVerifiedAt    DateTime?           @db.Timestamptz(3)
+  disabledAt         DateTime?           @db.Timestamptz(3)
+  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime            @default(now()) @updatedAt @db.Timestamptz(3)
+  categories         Category[]
+  transactions       Transaction[]
+  imports            Import[]
+  identities         AuthIdentity[]
+  sessions           Session[]
+  financePreferences FinancePreferences?
+  accounts           Account[]
 }
 
 model FinancePreferences {
@@ -183,24 +169,29 @@ model Category {
 }
 
 model Transaction {
-  id          String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId      String               @db.Uuid
-  categoryId  String               @db.Uuid
-  importId    String?              @db.Uuid
-  accountId   String               @db.Uuid
-  direction   TransactionDirection
+  id                  String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId              String               @db.Uuid
+  // Manual API creation supplies both. Internal/generated postings may omit both.
+  // SQL enforces pair consistency and immutability; hard deletion releases the key.
+  clientRequestId     String?              @db.Uuid
+  creationFingerprint String?              @db.VarChar(64)
+  categoryId          String               @db.Uuid
+  importId            String?              @db.Uuid
+  accountId           String               @db.Uuid
+  direction           TransactionDirection
   // Positive magnitude; direction carries the sign. SQL adds a CHECK (> 0).
-  amountMinor Int
-  date        DateTime             @db.Date
-  merchant    String?              @db.VarChar(200)
-  note        String?              @db.VarChar(2000)
-  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime             @default(now()) @updatedAt @db.Timestamptz(3)
-  user        User                 @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  category    Category             @relation(fields: [categoryId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict)
-  import      Import?              @relation(fields: [importId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict)
-  account     Account              @relation(fields: [accountId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict, map: "Transaction_account_owner_fkey")
+  amountMinor         Int
+  date                DateTime             @db.Date
+  merchant            String?              @db.VarChar(200)
+  note                String?              @db.VarChar(2000)
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime             @default(now()) @updatedAt @db.Timestamptz(3)
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  category            Category             @relation(fields: [categoryId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict)
+  import              Import?              @relation(fields: [importId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict)
+  account             Account              @relation(fields: [accountId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict, map: "Transaction_account_owner_fkey")
 
+  @@unique([userId, clientRequestId])
   @@index([userId, accountId, date(sort: Desc), id(sort: Desc)])
   @@index([userId, date(sort: Desc), id(sort: Desc)])
   @@index([userId, categoryId, date(sort: Desc), id(sort: Desc)])

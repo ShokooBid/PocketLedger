@@ -158,7 +158,6 @@ export function createTransport(
                 data.error.code === "INVALID_ACCOUNT" ||
                 data.error.code === "PREFERENCE_CHANGED" ||
                 data.error.code === "IDEMPOTENCY_KEY_REUSED" ||
-                data.error.code === "OPERATION_ALREADY_APPLIED" ||
                 data.error.code === "SUMMARY_AMOUNT_OUT_OF_RANGE" ||
                 data.error.code === "PREFERENCES_NOT_READY")
             )

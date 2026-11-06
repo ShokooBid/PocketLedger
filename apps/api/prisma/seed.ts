@@ -1,5 +1,6 @@
 import process from "node:process";
 import { createDatabaseClient } from "../src/database.js";
+import { transactionCreationFingerprint } from "../src/transactions/service.js";
 
 if (
   process.env.NODE_ENV === "production" ||
@@ -70,18 +71,24 @@ try {
         confirmedAt: new Date("2026-01-15T12:00:00Z")
       }
     });
+    const manual = {
+      accountId,
+      categoryId: foodId,
+      direction: "expense" as const,
+      amountMinor: 1234,
+      date: "2026-01-15",
+      note: "Synthetic manual transaction; no real purchase."
+    };
     await tx.transaction.upsert({
       where: { id: "00000000-0000-4000-8000-000000000005" },
       update: {},
       create: {
         id: "00000000-0000-4000-8000-000000000005",
         userId,
-        accountId,
-        categoryId: foodId,
-        direction: "expense",
-        amountMinor: 1234,
-        date: new Date("2026-01-15T00:00:00Z"),
-        note: "Synthetic manual transaction; no real purchase."
+        ...manual,
+        date: new Date(manual.date),
+        clientRequestId: "00000000-0000-4000-8000-000000000008",
+        creationFingerprint: transactionCreationFingerprint(manual)
       }
     });
     await tx.transaction.upsert({

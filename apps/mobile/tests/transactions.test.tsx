@@ -92,6 +92,47 @@ it("rejects demo cross-currency moves without changing amounts and derives archi
     })
   ).rejects.toMatchObject({ code: "INVALID_ACCOUNT" });
 });
+
+it("serializes demo creates, preserves creation intent through edits and releases keys after deletion", async () => {
+  const categories = createDemoCategorySource();
+  await categories.create("Food");
+  const source = createDemoTransactionSource(categories, accounts);
+  const payload = {
+    clientRequestId: "abcdefab-0000-4000-8000-000000000001",
+    accountId: accountId("CAD"),
+    categoryId: (await categories.list())[0]!.id,
+    direction: "expense" as const,
+    amountMinor: 1234,
+    date: "2026-11-06",
+    note: ""
+  };
+  const [first, second] = await Promise.all([
+    source.create(payload),
+    source.create({
+      ...payload,
+      clientRequestId: payload.clientRequestId.toUpperCase(),
+      note: null
+    })
+  ]);
+  expect(first.id).toBe(second.id);
+  expect((await source.list({})).items).toHaveLength(1);
+  expect(first).not.toHaveProperty("clientRequestId");
+  expect(first).not.toHaveProperty("creationFingerprint");
+  const edited = await source.update(first.id, {
+    note: "Edited",
+    amountMinor: 999
+  });
+  expect(await source.create(payload)).toEqual(edited);
+  await expect(
+    source.create({ ...payload, amountMinor: 999 })
+  ).rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED" });
+  // A failed queued write must not prevent later valid writes.
+  expect(await source.create(payload)).toEqual(edited);
+  await source.remove(first.id);
+  const recreated = await source.create(payload);
+  expect(recreated.id).not.toBe(first.id);
+  expect(recreated).toMatchObject({ amountMinor: 1234, note: null });
+});
 async function press(name: string) {
   await act(async () => {
     await fireEvent.press(screen.getByRole("button", { name }));
@@ -617,6 +658,23 @@ describe("transaction management", () => {
       screen.getByRole("button", { name: "Save transaction" })
     ).toBeEnabled();
   });
+  it("assigns a fresh request UUID to each intentional creation", async () => {
+    let create!: ReturnType<typeof jest.fn<TransactionSource["create"]>>;
+    await setup((source) => ({
+      ...source,
+      create: (create = jest.fn(source.create))
+    }));
+    await fill();
+    await press("Save transaction");
+    await screen.findByText(/Transaction saved/);
+    await fill();
+    await press("Save transaction");
+    await screen.findByText(/Transaction saved/);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1]?.[0].clientRequestId).not.toBe(
+      create.mock.calls[0]?.[0].clientRequestId
+    );
+  });
   it("blocks duplicate pending submits and retains uncertain draft until an explicit read and review", async () => {
     let reject!: (error: unknown) => void;
     const create = jest.fn<TransactionSource["create"]>(
@@ -648,6 +706,9 @@ describe("transaction management", () => {
     await press("Retry original save");
     expect(create).toHaveBeenCalledTimes(2);
     expect(create.mock.calls[1]?.[0]).toEqual(create.mock.calls[0]?.[0]);
+    expect(create.mock.calls[0]?.[0].clientRequestId).toMatch(
+      /^[0-9a-f-]{36}$/
+    );
   });
   it("shows read recovery without enabling writes until reload succeeds", async () => {
     await setup((source) => ({
