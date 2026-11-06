@@ -21,7 +21,7 @@ export async function testAccount(
 ) {
   await db.financePreferences.upsert({
     where: { userId },
-    update: {},
+    update: { entryCurrency: currency },
     create: { userId, entryCurrency: currency }
   });
   return db.account.create({

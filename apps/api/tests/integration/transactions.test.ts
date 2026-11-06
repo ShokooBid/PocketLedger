@@ -58,6 +58,7 @@ async function owner(): Promise<Owner> {
   const category = await db.category.create({
     data: { userId: id, name: "Food" }
   });
+  await preferences.update(id, { entryCurrency: "CAD" });
   const account = await accounts.create(id, {
     name: "Cash",
     type: "cash",
@@ -118,9 +119,9 @@ describe("account-aware transactions", () => {
     expect(app.swagger().paths?.[base]?.post?.responses?.["200"]).toBeDefined();
     expect(app.swagger().paths?.[base]?.post?.responses?.["201"]).toBeDefined();
   });
-  it("stores no synthetic merchant, locks on first commit, and computes exact signed as-of balances", async () => {
+  it("stores no synthetic merchant, retains permanent currency, and computes exact signed as-of balances", async () => {
     const user = await owner();
-    expect((await preferences.get(user.id)).currencyLocked).toBe(false);
+    expect((await preferences.get(user.id)).entryCurrency).toBe("CAD");
     const row = await create(user, { note: "Weekly groceries" });
     const stored = await db.transaction.findUniqueOrThrow({
       where: { id: row.id }
@@ -168,7 +169,7 @@ describe("account-aware transactions", () => {
     ).json();
     expect(first.items[0].id).not.toBe(second.items[0].id);
   });
-  it("rejects foreign/missing/archived/wrong-currency/predating associations without leaving locks or identity records", async () => {
+  it("rejects foreign/missing/archived/wrong-currency/predating associations without creating identity records", async () => {
     const user = await owner(),
       other = await owner();
     const foreign = await request(
@@ -200,21 +201,19 @@ describe("account-aware transactions", () => {
         await request(user, "POST", base, input(user, { date: "2025-12-31" }))
       ).json().error.code
     ).toBe("INVALID_ACCOUNT");
-    await preferences.update(user.id, { entryCurrency: "USD" });
-    expect(
-      (await request(user, "POST", base, input(user))).json().error.code
-    ).toBe("CURRENCY_MISMATCH");
+    await expect(
+      preferences.update(user.id, { entryCurrency: "USD" })
+    ).rejects.toMatchObject({ code: "CURRENCY_LOCKED" });
     expect(
       (
         await request(user, "POST", base, input(user, { currency: "USD" }))
       ).json().error.code
     ).toBe("CURRENCY_MISMATCH");
-    await preferences.update(user.id, { entryCurrency: "CAD" });
     await accounts.archive(user.id, user.accountId);
     expect(
       (await request(user, "POST", base, input(user))).json().error.code
     ).toBe("INVALID_ACCOUNT");
-    expect((await preferences.get(user.id)).currencyLocked).toBe(false);
+    expect((await preferences.get(user.id)).entryCurrency).toBe("CAD");
     expect(
       await db.transactionCreation.count({ where: { userId: user.id } })
     ).toBe(0);
@@ -276,7 +275,7 @@ describe("account-aware transactions", () => {
     expect(
       (await request(user, "DELETE", `${base}/${row.id}`)).statusCode
     ).toBe(200);
-    expect((await preferences.get(user.id)).currencyLocked).toBe(true);
+    expect((await preferences.get(user.id)).entryCurrency).toBe("CAD");
   });
   it("serializes duplicate creates, isolates keys by owner, rejects changed payloads and keeps deletion tombstones", async () => {
     const user = await owner(),
@@ -309,7 +308,7 @@ describe("account-aware transactions", () => {
       "OPERATION_ALREADY_APPLIED"
     );
   });
-  it("enforces account/date/currency rules in direct writes and serializes first-posting races", async () => {
+  it("enforces account/date/currency rules in direct writes and serializes archive/create races", async () => {
     const user = await owner(),
       other = await owner();
     const fields = {
@@ -339,10 +338,7 @@ describe("account-aware transactions", () => {
       request(user, "POST", base, input(user)),
       request(user, "PATCH", "/v1/preferences", { entryCurrency: "USD" })
     ]);
-    expect([
-      [201, 409],
-      [422, 200]
-    ]).toContainEqual([post.statusCode, change.statusCode]);
+    expect([post.statusCode, change.statusCode]).toEqual([201, 409]);
     const racing = await owner();
     const [createResult] = await Promise.all([
       request(racing, "POST", base, input(racing)),

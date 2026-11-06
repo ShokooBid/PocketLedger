@@ -205,10 +205,11 @@ it("rehearses expansion, drain, resumable mixed-currency upgrade and final const
     ).toBe("USD");
     expect(
       (
-        await db.financePreferences.findUniqueOrThrow({
-          where: { userId: mixed }
-        })
-      ).currencyLockedAt
+        await sql.query(
+          'SELECT "currencyLockedAt" FROM "FinancePreferences" WHERE "userId" = $1',
+          [mixed]
+        )
+      ).rows[0].currencyLockedAt
     ).not.toBeNull();
     expect(await verifyFinanceMigration(db)).toBe("verified");
     await sql.query(

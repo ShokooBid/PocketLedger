@@ -184,7 +184,8 @@ export function AccountManagement(props: AccountManagementProps) {
           <Body>
             Future entries cannot select this account. Historical transactions
             and balances are preserved. If this is your default account, the
-            default will be cleared.
+            default will be cleared. If no active accounts remain, transaction
+            screens will require account setup before you can continue.
           </Body>
           <Button
             label="Confirm archive account"
@@ -206,7 +207,7 @@ export function AccountManagement(props: AccountManagementProps) {
         <Body>
           {state.editing
             ? "Change the name or descriptive type. The financial baseline stays the same."
-            : "Currency is inherited from Settings. Opening balance is optional and defaults to zero; creating an account does not lock currency."}
+            : "Currency is inherited from your permanent choice. Opening balance is optional and defaults to zero."}
         </Body>
         <Field
           label="Account name"

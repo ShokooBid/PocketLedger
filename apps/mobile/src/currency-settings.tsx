@@ -1,40 +1,27 @@
+import { useState } from "react";
 import { Body, Button, StateNotice } from "./ui";
 import { currencyExponents, type Currency } from "./transaction-data";
 import type { CurrencySettingsState } from "./preference-data";
 
 export function CurrencySettings({
   defaultCurrency,
-  setDefaultCurrency,
-  state,
-  disabled = false
+  state
 }: {
-  defaultCurrency: Currency;
-  setDefaultCurrency: (currency: Currency) => void;
+  defaultCurrency: Currency | null;
   state?: CurrencySettingsState;
-  disabled?: boolean;
 }) {
   return (
     <>
-      <Body>Default currency: {defaultCurrency}</Body>
+      <Body>Default currency: {defaultCurrency ?? "Not chosen"}</Body>
       <Body>
-        Your currency is saved for this account. The first saved transaction
-        locks it. Existing amounts are never converted.
+        Choose your currency once during setup. It cannot be changed afterwards.
+        Existing amounts are never converted.
       </Body>
-      {state?.locked && (
-        <Body>Currency is locked after the first saved transaction.</Body>
-      )}
       {state?.status === "loading" && (
         <StateNotice
           kind="loading"
           title="Loading currency settings"
-          message="Checking the saved currency and lock."
-        />
-      )}
-      {state?.saving && (
-        <StateNotice
-          kind="loading"
-          title="Saving currency"
-          message="Waiting for confirmation."
+          message="Checking your permanent currency choice."
         />
       )}
       {state?.error && (
@@ -45,19 +32,41 @@ export function CurrencySettings({
           onRetry={() => void state.reload()}
         />
       )}
+    </>
+  );
+}
+
+// Selection is local until explicit confirmation. CAD is a suggestion, never an
+// implicit saved preference. Settings deliberately does not render this form.
+export function CurrencySelection({
+  onConfirm,
+  disabled
+}: {
+  onConfirm: (currency: Currency) => Promise<void>;
+  disabled: boolean;
+}) {
+  const [selected, setSelected] = useState<Currency>("CAD");
+  return (
+    <>
+      <Body>
+        Choose the currency you will use for your accounts and transactions.
+      </Body>
+      <Body>This choice is permanent. Review it before confirming.</Body>
       {(Object.keys(currencyExponents) as Currency[]).map((currency) => (
         <Button
           key={currency}
-          label={`Default currency ${currency}`}
-          selected={currency === defaultCurrency}
-          disabled={
-            disabled ||
-            (state !== undefined &&
-              (state.locked || state.saving || state.status !== "ready"))
-          }
-          onPress={() => void setDefaultCurrency(currency)}
+          label={`Choose currency ${currency}`}
+          selected={currency === selected}
+          disabled={disabled}
+          onPress={() => setSelected(currency)}
         />
       ))}
+      <Button
+        label={`Confirm ${selected} permanently`}
+        variant="primary"
+        disabled={disabled}
+        onPress={() => void onConfirm(selected)}
+      />
     </>
   );
 }

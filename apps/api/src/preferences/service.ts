@@ -11,11 +11,17 @@ import {
 import type { PreferencesPatch } from "./contracts.js";
 
 type Tx = Prisma.TransactionClient;
-const serialize = (row: FinancePreferences) => ({
-  entryCurrency: currencySchema.parse(row.entryCurrency),
-  currencyLocked: row.currencyLockedAt !== null,
-  defaultAccountId: row.defaultAccountId
-});
+async function snapshot(tx: Tx, row: FinancePreferences) {
+  const active = await tx.account.findFirst({
+    where: { userId: row.userId, archivedAt: null },
+    select: { id: true }
+  });
+  return {
+    entryCurrency: currencySchema.nullable().parse(row.entryCurrency),
+    hasActiveAccounts: active !== null,
+    defaultAccountId: row.defaultAccountId
+  };
+}
 
 export async function lockFinanceOwner(tx: Tx, userId: string) {
   const rows = await tx.$queryRaw<{ id: string }[]>`
@@ -24,19 +30,15 @@ export async function lockFinanceOwner(tx: Tx, userId: string) {
   if (!rows.length) throw new ApiError(404, "NOT_FOUND", "Resource not found.");
 }
 
-// Caller holds the owner lock. Existing ledgers already have preferences after
-// the explicit migration; only an empty new ledger starts with CAD.
-export async function activateFinancePreferences(tx: Tx, userId: string) {
+// Caller holds the owner lock. Creating the preference row never chooses money's
+// currency: null means the user still needs to confirm their permanent choice.
+export async function ensureFinancePreferences(tx: Tx, userId: string) {
   const existing = await tx.financePreferences.findUnique({
     where: { userId }
   });
   if (existing) return existing;
   return tx.financePreferences.create({
-    data: {
-      userId,
-      entryCurrency: "CAD",
-      currencyLockedAt: null
-    }
+    data: { userId }
   });
 }
 
@@ -45,12 +47,18 @@ export async function assertNewTransactionCurrency(
   userId: string,
   currency: TransactionInput["currency"]
 ) {
-  const row = await activateFinancePreferences(tx, userId);
+  const row = await ensureFinancePreferences(tx, userId);
+  if (row.entryCurrency === null)
+    throw new ApiError(
+      409,
+      "CURRENCY_REQUIRED",
+      "Choose your permanent currency first."
+    );
   if (row.entryCurrency !== currency)
     throw new ApiError(
       422,
       "CURRENCY_MISMATCH",
-      "Choose the configured currency in Settings."
+      "Use your permanent currency."
     );
 }
 
@@ -59,20 +67,19 @@ export function createPreferencesService(db: PrismaClient) {
     async get(userId: string) {
       return db.$transaction(async (tx) => {
         await lockFinanceOwner(tx, userId);
-        return serialize(await activateFinancePreferences(tx, userId));
+        return snapshot(tx, await ensureFinancePreferences(tx, userId));
       });
     },
     async update(userId: string, patch: PreferencesPatch) {
       return db.$transaction(async (tx) => {
         await lockFinanceOwner(tx, userId);
-        const row = await activateFinancePreferences(tx, userId);
-        const entryCurrency =
-          patch.entryCurrency ?? currencySchema.parse(row.entryCurrency);
-        if (row.entryCurrency !== entryCurrency && row.currencyLockedAt)
+        const row = await ensureFinancePreferences(tx, userId);
+        const entryCurrency = patch.entryCurrency ?? row.entryCurrency;
+        if (row.entryCurrency !== null && row.entryCurrency !== entryCurrency)
           throw new ApiError(
             409,
             "CURRENCY_LOCKED",
-            "Currency is locked after the first saved transaction."
+            "Your currency cannot change after it has been chosen."
           );
         let defaultAccountId =
           patch.defaultAccountId === undefined
@@ -98,8 +105,9 @@ export function createPreferencesService(db: PrismaClient) {
           row.entryCurrency === entryCurrency &&
           row.defaultAccountId === defaultAccountId
         )
-          return serialize(row);
-        return serialize(
+          return snapshot(tx, row);
+        return snapshot(
+          tx,
           await tx.financePreferences.update({
             where: { userId },
             data: { entryCurrency, defaultAccountId }

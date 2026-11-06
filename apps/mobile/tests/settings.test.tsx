@@ -18,7 +18,6 @@ function fixture() {
       logout: jest.fn<SessionController["logout"]>().mockResolvedValue()
     },
     defaultCurrency: "USD" as const,
-    setDefaultCurrency: jest.fn(),
     version: "0.1.0",
     onPrivacy: jest.fn(),
     onExitDemo: jest.fn()
@@ -53,8 +52,8 @@ describe("settings account controls", () => {
         name: /unlink|add password|reset password/i
       })
     ).toBeNull();
-    await press("Default currency KWD");
-    expect(props.setDefaultCurrency).toHaveBeenCalledWith("KWD");
+    expect(screen.getByText("Default currency: USD")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /currency/i })).toBeNull();
     await press("Privacy and data retention");
     expect(props.onPrivacy).toHaveBeenCalledTimes(1);
     expect(

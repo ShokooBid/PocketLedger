@@ -47,22 +47,25 @@ export default function SettingsScreen() {
         user={session.status === "authenticated" ? session.user : null}
         controller={controller}
         {...preferences}
+        defaultCurrency={preferences.selectedCurrency}
         version={Constants.expoConfig?.version ?? "Development"}
         onPrivacy={() => router.push("/privacy")}
         onExitDemo={exitDemo}
       />
-      <AccountManagement
-        source={accounts}
-        currency={preferences.defaultCurrency}
-        defaultAccountId={preferences.defaultAccountId}
-        onDefault={preferences.setDefaultAccount}
-        onReloadPreferences={reload}
-        active={active}
-        preferencesReady={
-          preferences.currencyState.status === "ready" &&
-          !preferences.currencyState.saving
-        }
-      />
+      {preferences.selectedCurrency !== null && (
+        <AccountManagement
+          source={accounts}
+          currency={preferences.defaultCurrency}
+          defaultAccountId={preferences.defaultAccountId}
+          onDefault={preferences.setDefaultAccount}
+          onReloadPreferences={reload}
+          active={active}
+          preferencesReady={
+            preferences.currencyState.status === "ready" &&
+            !preferences.currencyState.saving
+          }
+        />
+      )}
       {session.status === "demo" && (
         <Button
           label="Preview rendering error recovery"

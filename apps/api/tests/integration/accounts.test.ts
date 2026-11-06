@@ -42,7 +42,7 @@ afterAll(async () => {
     await database.close();
   }
 });
-async function owner(): Promise<Owner> {
+async function owner(currency: "CAD" | "USD" = "CAD"): Promise<Owner> {
   const email = `${randomUUID()}@example.invalid`;
   const response = await app.inject({
     method: "POST",
@@ -50,8 +50,10 @@ async function owner(): Promise<Owner> {
     payload: { email, password: "synthetic account passphrase" }
   });
   expect(response.statusCode, response.body).toBe(201);
+  const id = (await db.user.findUniqueOrThrow({ where: { email } })).id;
+  await preferences.update(id, { entryCurrency: currency });
   return {
-    id: (await db.user.findUniqueOrThrow({ where: { email } })).id,
+    id,
     token: response.json().accessToken
   };
 }
@@ -97,7 +99,7 @@ describe("owned named accounts and defaults", () => {
     expect(await db.account.count({ where: { userId: user.id } })).toBe(0);
   });
 
-  it("creates user-defined accounts with Settings currency, exact signed baselines and no income or lock", async () => {
+  it("creates user-defined accounts with permanent currency, exact signed baselines and no income", async () => {
     const user = await owner();
     const first = await create(user, {
       name: "  BMO\t Chequing  ",
@@ -120,7 +122,7 @@ describe("owned named accounts and defaults", () => {
       (await request(user, "GET", `${base}/${first.id}?asOf=2025-12-31`)).json()
         .error.code
     ).toBe("INVALID_ACCOUNT");
-    expect((await preferences.get(user.id)).currencyLocked).toBe(false);
+    expect((await preferences.get(user.id)).entryCurrency).toBe("CAD");
     expect(await db.transaction.count({ where: { userId: user.id } })).toBe(0);
     expect(
       await createDashboardService(db).summary(user.id, {
@@ -140,9 +142,12 @@ describe("owned named accounts and defaults", () => {
         )
       ).json().error.code
     ).toBe("PREFERENCE_CHANGED");
-    await preferences.update(user.id, { entryCurrency: "USD" });
+    await expect(
+      preferences.update(user.id, { entryCurrency: "USD" })
+    ).rejects.toMatchObject({ code: "CURRENCY_LOCKED" });
+    const usdOwner = await owner("USD");
     expect(
-      (await create(user, { name: "New USD", currency: "USD" })).currency
+      (await create(usdOwner, { name: "New USD", currency: "USD" })).currency
     ).toBe("USD");
     expect((await accounts.get(user.id, first.id)).currency).toBe("CAD");
   });
@@ -282,7 +287,7 @@ describe("owned named accounts and defaults", () => {
     }
   });
 
-  it("persists explicit defaults, clears incompatible/archived defaults and preserves historical account information", async () => {
+  it("persists explicit defaults, clears archived defaults and preserves historical account information", async () => {
     const user = await owner();
     const account = await create(user, { openingBalanceMinor: 1000 });
     expect(
@@ -303,28 +308,10 @@ describe("owned named accounts and defaults", () => {
       ).json().defaultAccountId
     ).toBeNull();
     await preferences.update(user.id, { defaultAccountId: account.id });
-    expect(
-      await preferences.update(user.id, { entryCurrency: "USD" })
-    ).toMatchObject({
-      entryCurrency: "USD",
-      defaultAccountId: null,
-      currencyLocked: false
-    });
-    expect(
-      (
-        await request(user, "PATCH", "/v1/preferences", {
-          defaultAccountId: account.id
-        })
-      ).json().error.code
-    ).toBe("INVALID_ACCOUNT");
-    expect(
-      (
-        await request(user, "PATCH", "/v1/preferences", {
-          entryCurrency: "CAD",
-          defaultAccountId: account.id
-        })
-      ).json().defaultAccountId
-    ).toBe(account.id);
+    await expect(
+      preferences.update(user.id, { entryCurrency: "USD" })
+    ).rejects.toMatchObject({ code: "CURRENCY_LOCKED" });
+    expect((await preferences.get(user.id)).defaultAccountId).toBe(account.id);
     const archived = await request(
       user,
       "POST",
@@ -367,7 +354,7 @@ describe("owned named accounts and defaults", () => {
     expect((await create(user)).id).not.toBe(account.id);
   });
 
-  it("serializes archive/default, currency/default and currency/create races", async () => {
+  it("serializes archive/default races and keeps currency permanent during concurrent defaults/creates", async () => {
     const user = await owner();
     const account = await create(user);
     const [selection, archive] = await Promise.all([
@@ -386,9 +373,9 @@ describe("owned named accounts and defaults", () => {
       }),
       request(user, "PATCH", "/v1/preferences", { entryCurrency: "USD" })
     ]);
-    expect([200, 422]).toContain(select.statusCode);
-    expect(currency.statusCode).toBe(200);
-    expect((await preferences.get(user.id)).defaultAccountId).toBeNull();
+    expect(select.statusCode).toBe(200);
+    expect(currency.statusCode).toBe(409);
+    expect((await preferences.get(user.id)).defaultAccountId).toBe(active.id);
     const [createResult, change] = await Promise.all([
       request(
         user,
@@ -398,15 +385,13 @@ describe("owned named accounts and defaults", () => {
       ),
       request(user, "PATCH", "/v1/preferences", { entryCurrency: "EUR" })
     ]);
-    expect(change.statusCode).toBe(200);
-    expect([201, 409]).toContain(createResult.statusCode);
-    if (createResult.statusCode === 201)
-      expect(createResult.json().currency).toBe("USD");
-    else expect(createResult.json().error.code).toBe("PREFERENCE_CHANGED");
+    expect(change.statusCode).toBe(409);
+    expect(createResult.statusCode).toBe(409);
+    expect(createResult.json().error.code).toBe("PREFERENCE_CHANGED");
     expect(await preferences.get(user.id)).toMatchObject({
-      entryCurrency: "EUR",
-      currencyLocked: false,
-      defaultAccountId: null
+      entryCurrency: "CAD",
+      hasActiveAccounts: true,
+      defaultAccountId: active.id
     });
   });
 
@@ -445,11 +430,13 @@ describe("owned named accounts and defaults", () => {
       where: { userId: user.id },
       data: { defaultAccountId: account.id }
     });
-    await db.financePreferences.update({
-      where: { userId: user.id },
-      data: { entryCurrency: "USD" }
-    });
-    expect((await preferences.get(user.id)).defaultAccountId).toBeNull();
+    await expect(
+      db.financePreferences.update({
+        where: { userId: user.id },
+        data: { entryCurrency: "USD" }
+      })
+    ).rejects.toThrow();
+    expect((await preferences.get(user.id)).defaultAccountId).toBe(account.id);
     await db.financePreferences.update({
       where: { userId: user.id },
       data: { entryCurrency: "CAD", defaultAccountId: account.id }

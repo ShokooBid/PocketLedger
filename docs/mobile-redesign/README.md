@@ -20,6 +20,20 @@ the implementation history. Settings accounts and account-linked entry are wired
 to the live API; custom presentation, transfers and statement processing remain
 future work.
 
+## Finance foundation revision (2026-11-05)
+
+Issue [#93](https://github.com/ShokooBid/PocketLedger/issues/93) implements explicit,
+permanent currency selection followed by required active-account setup. CAD is
+preselected in the form but is not saved until confirmed. Settings is read-only
+for currency, and all transaction routes are blocked when no active account
+remains. Settings/privacy/sign-out and account repair remain accessible.
+
+Delivery order is #93 -> #94 -> #95 -> #96, one PR each, before resuming #72.
+Only #93 is implemented in this increment. Transaction currency, legacy account
+migration machinery, the separate creation table and per-user default copies
+remain until their respective follow-ups; do not present those changes as shipped.
+Earlier #65/#69 handoffs and the verification record preserve historical behavior.
+
 ## Confirmed product decisions
 
 These decisions come from the user's explicit instructions and answers, rather
@@ -29,7 +43,7 @@ than assumptions taken from the supplied design images.
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Home                 | Add transaction is the main page after login.                                                                                                                       |
 | Accounts             | Users define named accounts such as BMO, CIBC and Cash; add/manage them in Settings. Bank names do not imply bank connections.                                      |
-| Currency             | CAD by default, editable only in Settings, with one currency shown on Add. Saving the first transaction locks currency. Account creation alone does not lock it.    |
+| Currency             | Explicitly choose once after sign-in; CAD is a local suggestion. The saved choice is permanent immediately and read-only in Settings.                               |
 | Foreign exchange     | Excluded. No conversion, exchange rates or cross-currency transfers.                                                                                                |
 | Default categories   | Fixed: users cannot rename or archive them. Actual catalog values will be supplied later.                                                                           |
 | Personal categories  | Users can create root categories and subcategories under either a default root or a personal root.                                                                  |
@@ -43,26 +57,25 @@ than assumptions taken from the supplied design images.
 
 ## Final answers and their consequences
 
-1. **Saving the first transaction locks currency.** Account creation, optional
-   opening balance, categories, drafts and extraction without confirmation do not
-   lock it. The first committed normal transaction, transfer posting or confirmed
-   statement transaction locks the user's current currency atomically. Failed
-   validation/rolled-back writes do not lock it.
+1. **Choose currency before accounts or finance screens.** Null means not
+   chosen. Confirm once; repeated identical confirmation succeeds, while changing
+   or clearing the choice is rejected by the API and database. There is no
+   first-posting lock timestamp. Losing the final active account requires account
+   repair without deleting history or discarding a draft.
 2. **Keypad confirm saves after validating all fields.** It is the entry page's
    primary Save transaction action, not a separate amount-only confirmation step.
    Any other presentation of Save invokes the same guarded operation.
 
-Before the first transaction, changing Settings currency leaves existing accounts
-and their opening balances in their original currency. Select/create a compatible
-account for the next entry. Do not silently relabel money to make an old account
-fit the new preference. After the first committed posting there is no currency
-unlock/reset flow in this redesign.
+The first account and later accounts inherit the permanent currency. Currency
+selection does not depend on saving or deleting transactions. A default account
+is optional; at least one active account is required. No conversion or unlock
+flow exists. Demo uses the same setup rules in isolated session memory.
 
 ## Implementation boundaries
 
 | Responsibility                                                       | Follow-up issue                                                                                                                                                                    |
 | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Persisted CAD preference, Settings and currency lock                 | [#65](https://github.com/ShokooBid/PocketLedger/issues/65)                                                                                                                         |
+| Permanent currency choice and active-account setup                   | [#93](https://github.com/ShokooBid/PocketLedger/issues/93), superseding the currency behavior in [#65](https://github.com/ShokooBid/PocketLedger/issues/65)                        |
 | Hierarchy, immutable defaults and personal-category operations       | [#66](https://github.com/ShokooBid/PocketLedger/issues/66)                                                                                                                         |
 | Actual default catalog and provisioning                              | [#67](https://github.com/ShokooBid/PocketLedger/issues/67)                                                                                                                         |
 | Accounts and optional opening balance                                | [#68](https://github.com/ShokooBid/PocketLedger/issues/68)                                                                                                                         |

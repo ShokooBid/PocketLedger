@@ -12,7 +12,6 @@ export function Settings({
   user,
   controller,
   defaultCurrency,
-  setDefaultCurrency,
   currencyState,
   version,
   onPrivacy,
@@ -23,8 +22,7 @@ export function Settings({
     SessionController,
     "linkGoogle" | "refreshAccount" | "logout"
   >;
-  defaultCurrency: Currency;
-  setDefaultCurrency: (currency: Currency) => void;
+  defaultCurrency: Currency | null;
   currencyState?: CurrencySettingsState;
   version: string;
   onPrivacy: () => void;
@@ -192,9 +190,7 @@ export function Settings({
       {message && <Body>{message}</Body>}
       <CurrencySettings
         defaultCurrency={defaultCurrency}
-        setDefaultCurrency={setDefaultCurrency}
         {...(currencyState ? { state: currencyState } : {})}
-        disabled={busy}
       />
       <Body>Calendar timezone: {timezone}</Body>
       <Body>

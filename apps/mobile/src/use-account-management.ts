@@ -23,7 +23,7 @@ function actionMessage(failure: unknown) {
     if (failure.code === "ACCOUNT_NAME_CONFLICT")
       return "An active account already uses that name. Choose a distinct name, such as BMO Chequing or BMO Savings.";
     if (failure.code === "PREFERENCE_CHANGED")
-      return "Currency settings changed. Reload accounts and review the inherited currency before creating the account.";
+      return "This account must use your permanent currency. Reload accounts and review the inherited currency before creating it.";
     if (failure.code === "ACCOUNT_ARCHIVED")
       return "This account was archived. Reload accounts to review its history.";
     if (failure.kind === "unavailable")

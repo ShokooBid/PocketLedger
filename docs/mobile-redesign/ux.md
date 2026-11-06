@@ -7,8 +7,11 @@ names shown in examples do not define the final default catalog.
 ## Navigation and layout
 
 Four persistent destinations: **Add**, **History**, **Overview**, **Settings**.
-After ordinary login/demo entry, open Add. A valid authenticated deep link may
-open its requested detail instead; signing in must not execute a linked write.
+After login/demo entry, require permanent currency selection and at least one
+active account before opening finance screens. CAD is preselected locally; only
+explicit confirmation saves it. A ready authenticated deep link may open its
+requested detail, but signing in never executes a linked write. Add becomes the
+home in #72; until then, the current dashboard sits behind the same setup gate.
 
 | Destination             | Responsibility                                                                        |
 | ----------------------- | ------------------------------------------------------------------------------------- |
@@ -58,8 +61,11 @@ not merely dismiss amount entry or require a second Save button. If another Save
 affordance is needed for accessibility/layout, route it to the same submit lock
 and request identity. Invalid fields retain the draft and receive focus/feedback.
 
-If no account exists, keep the draft usable and show Add an account in Settings.
-The return path restores amount, date, direction, selected category and note.
+If no active account exists, hide finance/transaction screens behind account
+setup. Keep Settings, privacy and sign-out available. Reuse the Settings account
+form and restore the existing draft unchanged after repair. Hidden drafts remain
+mounted but inaccessible; loading/read failures are retry states, not evidence
+that the user has no accounts.
 Changing income/expense retains entered values; validate the resulting payload
 again. Keep entry coordination and validation separate from visual controls.
 
@@ -84,23 +90,25 @@ example labels in the reference image.
 
 ## Settings and named accounts
 
-Currency defaults to CAD, is persisted per user and is editable only here until
-the first transaction is saved. Show the locked state with an explanation after
-that first committed posting. Account creation and opening balance alone do not
-lock it. Before the first posting, a currency change keeps existing accounts and
-opening balances in their original currency, clears an incompatible default and
-requires a compatible account for entry. Explain that no conversion took place.
-Do not automatically unlock after deletion/archival or a stale preference read.
-If a draft was created before an allowed preference change, preserve its original
-amount/currency but block submission against incompatible Settings. Let the user
-restore compatible Settings or explicitly discard/start a new draft. Do not
-silently carry CAD digits into a newly labelled currency.
+Currency is chosen once immediately after sign-in, before account setup or
+finance access. The selection form suggests CAD without saving it, explains
+permanence and requires explicit confirmation. Once confirmed, Settings displays
+the value without editing controls, even before the first account or posting.
+Same-value retries succeed; uncertain responses disable further changes until a
+reload confirms the saved value. No first-posting lock, conversion or unlock flow.
+
+An active account is required for entry/history/details and direct links. Users
+may archive their final active account, but then must create another to resume
+finance screens. Preserve historical postings and draft fields. Refresh setup on
+route entry, app foreground and account mutations; hide unverified finance UI
+without tearing down an existing draft. Demo uses the same rules in memory and
+resets on exit. No default-account selection is required to complete setup.
 
 Settings -> Accounts provides list, add, details, rename, archive confirmation
 and explicit default selection. Names such as BMO Chequing, BMO Savings, CIBC and
 Cash are user-defined. No bank connection is implied and no credentials are needed.
 
-Account creation displays Settings currency; it has no independent currency
+Account creation displays the permanent currency; it has no independent currency
 selector. Opening balance is optional and defaults to zero. Show the associated
 opening date so the balance's accounting boundary is clear. Account details show
 currency, tracked balance, opening information and archival state. A default

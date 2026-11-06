@@ -215,11 +215,17 @@ export function useTransactionManagement({
     }
   }, [accounts]);
   useEffect(() => {
-    if (active) void refreshAccounts();
+    if (active && preferencesReady) void refreshAccounts();
     return () => {
       accountRevision.current++;
     };
-  }, [active, refreshAccounts, defaultCurrency, defaultAccountId]);
+  }, [
+    active,
+    preferencesReady,
+    refreshAccounts,
+    defaultCurrency,
+    defaultAccountId
+  ]);
   useEffect(() => {
     if (!accountsReady || editing || pendingCreate.current || !defaultAccountId)
       return;

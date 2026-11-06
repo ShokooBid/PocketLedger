@@ -1,4 +1,4 @@
-import { accounts, accountId } from "./auth-fixtures";
+import { accounts, accountId, deferred } from "./auth-fixtures";
 import { describe, expect, it, jest } from "@jest/globals";
 import {
   act,
@@ -412,6 +412,10 @@ describe("transaction management", () => {
     const categories = createDemoCategorySource();
     await categories.create("Food");
     const source = createDemoTransactionSource(categories, accounts);
+    const list = jest
+      .fn<AccountSource["list"]>()
+      .mockImplementation(accounts.list);
+    const accountSource: AccountSource = { ...accounts, list };
     const props = {
       source,
       categories,
@@ -420,7 +424,7 @@ describe("transaction management", () => {
       initialCreate: { date: "2026-10-30", currency: "CAD" as const }
     };
     const view = render(
-      <TransactionManagement accounts={accounts} {...props} />
+      <TransactionManagement accounts={accountSource} {...props} />
     );
     await waitFor(() =>
       expect(
@@ -430,7 +434,7 @@ describe("transaction management", () => {
     await field("Amount", "7.25");
     view.rerender(
       <TransactionManagement
-        accounts={accounts}
+        accounts={accountSource}
         {...props}
         preferencesReady={false}
       />
@@ -439,12 +443,33 @@ describe("transaction management", () => {
       screen.getByRole("button", { name: "Save transaction" })
     ).toBeDisabled();
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "7.25");
-    view.rerender(
-      <TransactionManagement accounts={accounts} {...props} preferencesReady />
-    );
+    // Preference recovery starts a new account read. Control that boundary so
+    // this test verifies Save cannot use account choices from before recovery.
+    const pendingAccounts =
+      deferred<Awaited<ReturnType<AccountSource["list"]>>>();
+    list.mockReturnValueOnce(pendingAccounts.promise);
+    await act(async () => {
+      view.rerender(
+        <TransactionManagement
+          accounts={accountSource}
+          {...props}
+          preferencesReady
+        />
+      );
+    });
     expect(
       screen.getByRole("button", { name: "Save transaction" })
-    ).toBeEnabled();
+    ).toBeDisabled();
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "7.25");
+    await act(async () => {
+      pendingAccounts.resolve(await accounts.list());
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Save transaction" })
+      ).toBeEnabled()
+    );
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "7.25");
   });
 

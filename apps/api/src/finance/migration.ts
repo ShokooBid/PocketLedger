@@ -153,15 +153,16 @@ export async function backfillFinanceOwner(
         await tx.financePreferences.create({
           data: {
             userId,
-            entryCurrency: selected,
-            currencyLockedAt: groups.length ? new Date() : null
+            entryCurrency: selected
           }
         });
-      else if (groups.length && !preference.currencyLockedAt)
-        await tx.financePreferences.update({
-          where: { userId },
-          data: { currencyLockedAt: new Date() }
-        });
+      // This offline tool targets the old expansion schema only. Use SQL for
+      // its retired column; the generated current Prisma model no longer has it.
+      // Issue #94 removes this legacy tool altogether.
+      if (groups.length)
+        await tx.$executeRaw`UPDATE "FinancePreferences"
+          SET "currencyLockedAt" = COALESCE("currencyLockedAt", CURRENT_TIMESTAMP)
+          WHERE "userId" = ${userId}::uuid`;
 
       for (const assignment of assignments) {
         const accountId =

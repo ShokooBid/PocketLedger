@@ -256,8 +256,9 @@ export function TransactionManagement(
             {draftCurrencyMismatch && (
               <>
                 <Body>
-                  Settings now uses {defaultCurrency}. This draft remains in{" "}
-                  {draft.currency}; its amount has not been converted.
+                  Your permanent currency is {defaultCurrency}. This draft
+                  remains in {draft.currency}; its amount has not been
+                  converted.
                 </Body>
                 {onCurrencySettings && (
                   <Button

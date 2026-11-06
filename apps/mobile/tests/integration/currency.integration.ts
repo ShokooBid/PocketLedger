@@ -49,7 +49,7 @@ const fetcher: FetchRequest = async (input, options) => {
   });
   return new Response(result.body, { status: result.statusCode });
 };
-async function owner() {
+async function owner(withAccount = true) {
   const email = `${randomUUID()}@example.invalid`;
   const registered = await app.inject({
     method: "POST",
@@ -70,12 +70,12 @@ async function owner() {
     client,
     categoryId: category.id,
     id: user.id,
-    accountId: (await testAccount(db, user.id)).id
+    accountId: withAccount ? (await testAccount(db, user.id)).id : null
   };
 }
 
-describe("mobile currency contracts against real API/PostgreSQL", () => {
-  it("reads a selected account without breaking existing currency Settings", async () => {
+describe("mobile permanent currency contracts against real API/PostgreSQL", () => {
+  it("keeps an explicit default while rejecting currency changes before any transaction", async () => {
     const user = await owner();
     const account = await createAccountService(db).create(user.id, {
       name: "User cash",
@@ -84,60 +84,64 @@ describe("mobile currency contracts against real API/PostgreSQL", () => {
       openingDate: "2026-01-01",
       openingBalanceMinor: -100
     });
-    await createPreferencesService(db).update(user.id, {
-      defaultAccountId: account.id
-    });
     const source = createApiPreferencesSource(user.client);
-    expect(await source.get()).toMatchObject({
+    expect(await source.selectAccount(account.id)).toMatchObject({
       entryCurrency: "CAD",
+      hasActiveAccounts: true,
       defaultAccountId: account.id
     });
-    expect(await source.update("USD")).toMatchObject({
-      entryCurrency: "USD",
+    await expect(source.update("USD")).rejects.toMatchObject({
+      code: "CURRENCY_LOCKED"
+    });
+    expect((await source.get()).defaultAccountId).toBe(account.id);
+  });
+
+  it("returns an unset choice, confirms once, and round-trips exact amounts through real adapters", async () => {
+    const user = await owner(false);
+    const preferences = createApiPreferencesSource(user.client);
+    expect(await preferences.get()).toEqual({
+      entryCurrency: null,
+      hasActiveAccounts: false,
       defaultAccountId: null
     });
-  });
-  it("round-trips CAD exactly and enforces the first-save lock through real adapters", async () => {
-    const user = await owner();
-    const preferences = createApiPreferencesSource(user.client);
-    expect(await preferences.get()).toMatchObject({
+    expect(await preferences.update("CAD")).toMatchObject({
       entryCurrency: "CAD",
-      currencyLocked: false
+      hasActiveAccounts: false
     });
-    expect(await preferences.update("KWD")).toMatchObject({
-      entryCurrency: "KWD",
-      currencyLocked: false
+    expect(await preferences.update("CAD")).toMatchObject({
+      entryCurrency: "CAD"
     });
-    expect(await createApiPreferencesSource(user.client).get()).toMatchObject({
-      entryCurrency: "KWD"
+    await expect(preferences.update("KWD")).rejects.toMatchObject({
+      code: "CURRENCY_LOCKED"
     });
-    await preferences.update("CAD");
+    const account = await testAccount(db, user.id);
     const transactions = createApiTransactionSource(user.client);
     const created = await transactions.create({
       categoryId: user.categoryId,
+      accountId: account.id,
       amountMinor: parseAmount("123.45", "CAD"),
       currency: "CAD",
       direction: "expense",
       date: "2026-10-30",
-      accountId: user.accountId,
       clientRequestId: randomUUID(),
       note: null
     });
     expect(amountText(created.amountMinor, created.currency)).toBe("123.45");
     expect(await preferences.get()).toMatchObject({
       entryCurrency: "CAD",
-      currencyLocked: true
+      hasActiveAccounts: true
+    });
+    await transactions.remove(created.id);
+    await createAccountService(db).archive(user.id, account.id);
+    expect(await preferences.get()).toMatchObject({
+      entryCurrency: "CAD",
+      hasActiveAccounts: false
     });
     await expect(preferences.update("USD")).rejects.toMatchObject({
       code: "CURRENCY_LOCKED"
     });
-    await transactions.remove(created.id);
-    expect(await preferences.get()).toMatchObject({
-      entryCurrency: "CAD",
-      currencyLocked: true
-    });
     expect(
-      await createApiPreferencesSource((await owner()).client).get()
-    ).toMatchObject({ entryCurrency: "CAD", currencyLocked: false });
+      await createApiPreferencesSource((await owner(false)).client).get()
+    ).toMatchObject({ entryCurrency: null, hasActiveAccounts: false });
   });
 });

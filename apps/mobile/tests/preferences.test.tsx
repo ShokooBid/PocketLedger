@@ -6,23 +6,19 @@ import {
   screen,
   waitFor
 } from "@testing-library/react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useState } from "react";
 import * as session from "../src/session";
 import {
   PreferencesProvider,
   PreferencesReady,
   usePreferences
 } from "../src/preferences";
-import { CurrencySettings } from "../src/currency-settings";
-import { Button, Body } from "../src/ui";
-import { CategoriesProvider, useCategories } from "../src/category-context";
-import {
-  TransactionsProvider,
-  useTransactions,
-  useAccounts
-} from "../src/transaction-context";
-import { SafeAreaProvider } from "react-native-safe-area-context";
-import { useState } from "react";
-import { transactionFailureMessage } from "../src/transaction-data";
+import { CurrencySettings, CurrencySelection } from "../src/currency-settings";
+import { CategoriesProvider } from "../src/category-context";
+import { TransactionsProvider, useAccounts } from "../src/transaction-context";
+import { Body, Button } from "../src/ui";
+import type { CurrencyPreferences } from "../src/preference-data";
 import {
   alice,
   bob,
@@ -32,6 +28,7 @@ import {
   accountId
 } from "./auth-fixtures";
 
+let preferences!: ReturnType<typeof usePreferences>;
 afterEach(() => {
   jest.restoreAllMocks();
 });
@@ -52,56 +49,63 @@ async function login(user = alice) {
   });
   return h;
 }
-
-it("rejects a failed default selection so account management cannot announce success", async () => {
-  const h = await login();
-  h.fetcher.mockResolvedValueOnce(
-    response({
-      entryCurrency: "CAD",
-      currencyLocked: false,
-      defaultAccountId: null
-    })
-  );
-  let preferences!: ReturnType<typeof usePreferences>;
-  function DefaultProbe() {
-    preferences = usePreferences();
-    return null;
-  }
-  render(
-    <PreferencesProvider>
-      <DefaultProbe />
-    </PreferencesProvider>
-  );
-  await waitFor(() => expect(preferences.currencyState.status).toBe("ready"));
-  h.fetcher.mockResolvedValueOnce(
-    response(
-      { error: { code: "INVALID_ACCOUNT", message: "Unavailable" } },
-      422
-    )
-  );
-  await act(async () => {
-    await expect(
-      preferences.setDefaultAccount(accountId("CAD"))
-    ).rejects.toBeDefined();
-  });
-  expect(preferences.defaultAccountId).toBeNull();
-  expect(preferences.currencyState.status).toBe("error");
-});
+function Draft() {
+  const [value, setValue] = useState("draft retained");
+  return <Button label={value} onPress={() => setValue("draft edited")} />;
+}
 function Probe() {
   const p = usePreferences();
+  preferences = p;
   return (
     <>
       <CurrencySettings
-        defaultCurrency={p.defaultCurrency}
-        setDefaultCurrency={p.setDefaultCurrency}
+        defaultCurrency={p.selectedCurrency}
         state={p.currencyState}
       />
+      <Body>Active accounts: {String(p.hasActiveAccounts)}</Body>
+      {p.currencyState.initialized && p.selectedCurrency === null && (
+        <CurrencySelection
+          onConfirm={p.setDefaultCurrency}
+          disabled={
+            p.currencyState.status !== "ready" || p.currencyState.saving
+          }
+        />
+      )}
       <PreferencesReady>
-        <Body>Entry ready in {p.defaultCurrency}</Body>
+        <Draft />
       </PreferencesReady>
       <Button
         label="Reload saved currency"
         onPress={() => void p.currencyState.reload()}
+      />
+    </>
+  );
+}
+function DemoAccounts() {
+  const accounts = useAccounts();
+  const p = usePreferences();
+  return (
+    <>
+      <Button
+        label="Create demo account"
+        onPress={() =>
+          void accounts.create({
+            name: "Demo cash",
+            type: "cash",
+            currency: p.defaultCurrency,
+            openingDate: "2026-01-01",
+            openingBalanceMinor: 0
+          })
+        }
+      />
+      <Button
+        label="Archive demo accounts"
+        onPress={() =>
+          void (async () => {
+            for (const row of await accounts.list())
+              await accounts.archive(row.id);
+          })()
+        }
       />
     </>
   );
@@ -119,7 +123,7 @@ function Fixture({ demo = false }: { demo?: boolean }) {
           <Probe />
           {demo && (
             <TransactionsProvider>
-              <DemoSave />
+              <DemoAccounts />
             </TransactionsProvider>
           )}
         </PreferencesProvider>
@@ -127,151 +131,111 @@ function Fixture({ demo = false }: { demo?: boolean }) {
     </SafeAreaProvider>
   );
 }
-function DemoSave() {
-  const p = usePreferences(),
-    categories = useCategories(),
-    transactions = useTransactions(),
-    accounts = useAccounts();
-  const [message, setMessage] = useState("");
-  const [recordedCurrency, setRecordedCurrency] = useState("");
-  async function save(amountMinor: number) {
-    try {
-      if (!(await categories.list()).length)
-        await categories.create("Demo food");
-      const category = (await categories.list())[0]!;
-      await transactions.create({
-        categoryId: category.id,
-        direction: "expense",
-        currency: p.defaultCurrency,
-        amountMinor,
-        date: "2026-10-30",
-        accountId:
-          (await accounts.list()).find(
-            (row) => row.currency === p.defaultCurrency
-          )?.id ??
-          (
-            await accounts.create({
-              name: "Test cash " + p.defaultCurrency,
-              type: "cash",
-              currency: p.defaultCurrency,
-              openingDate: "2026-01-01",
-              openingBalanceMinor: 0
-            })
-          ).id,
-        clientRequestId: "90000000-0000-4000-8000-000000000001",
-        note: null
-      });
-      setMessage("Demo saved");
-    } catch (error) {
-      setMessage(transactionFailureMessage(error));
-    }
-  }
-  async function changeRecordedCurrency() {
-    const row = (await transactions.list({})).items[0]!;
-    try {
-      await transactions.update(row.id, {
-        direction: row.direction,
-        amountMinor: row.amountMinor,
-        currency: "USD",
-        date: row.date,
-        categoryId: row.categoryId,
-        accountId: row.accountId,
-        note: row.note
-      });
-    } catch (error) {
-      setMessage(transactionFailureMessage(error));
-    }
-    setRecordedCurrency((await transactions.get(row.id)).currency);
-  }
-  return (
-    <>
-      <Body>{message}</Body>
-      <Body>Recorded demo currency: {recordedCurrency}</Body>
-      <Button label="Save a demo transaction" onPress={() => void save(101)} />
-      <Button label="Attempt invalid demo save" onPress={() => void save(0)} />
-      <Button
-        label="Attempt demo currency edit"
-        onPress={() => void changeRecordedCurrency()}
-      />
-    </>
-  );
-}
+const empty: CurrencyPreferences = {
+  entryCurrency: null,
+  hasActiveAccounts: false,
+  defaultAccountId: null
+};
 
-describe("persisted currency UI", () => {
-  it("waits for saved preferences before exposing entry and confirms persistence after remount", async () => {
+describe("permanent currency UI and provider", () => {
+  it("offers CAD locally, writes once only on confirmation and persists after remount", async () => {
     const h = await login();
+    let saved = empty;
     const pending = deferred<Response>();
-    let saved = "CAD";
     h.fetcher.mockImplementation(async (_url, options) => {
       if (options?.method === "PATCH")
-        saved = JSON.parse(String(options.body)).entryCurrency;
-      return response({
-        entryCurrency: saved,
-        currencyLocked: false,
-        defaultAccountId: null
-      });
+        saved = {
+          ...saved,
+          entryCurrency: JSON.parse(String(options.body)).entryCurrency
+        };
+      return response(saved);
     });
     h.fetcher.mockReturnValueOnce(pending.promise);
     const view = render(<Fixture />);
-    expect(screen.queryByText(/Entry ready in/)).toBeNull();
-    await act(async () => {
-      pending.resolve(
-        response({
-          entryCurrency: "CAD",
-          currencyLocked: false,
-          defaultAccountId: null
-        })
-      );
-    });
-    expect(await screen.findByText("Entry ready in CAD")).toBeVisible();
-    await press("Default currency KWD");
-    expect(await screen.findByText("Entry ready in KWD")).toBeVisible();
     expect(
-      h.fetcher.mock.calls.filter((call) => call[1]?.method === "PATCH")
+      screen.queryByRole("button", { name: "Confirm CAD permanently" })
+    ).toBeNull();
+    await act(async () => pending.resolve(response(empty)));
+    await screen.findByRole("button", { name: "Confirm CAD permanently" });
+    expect(
+      screen.getByRole("button", {
+        name: "Choose currency CAD",
+        selected: true
+      })
+    ).toBeVisible();
+    await press("Choose currency KWD");
+    expect(
+      h.fetcher.mock.calls.filter((c) => c[1]?.method === "PATCH")
+    ).toHaveLength(0);
+    await press("Confirm KWD permanently");
+    expect(await screen.findByText("Default currency: KWD")).toBeVisible();
+    expect(
+      h.fetcher.mock.calls.filter((c) => c[1]?.method === "PATCH")
     ).toHaveLength(1);
+    expect(
+      screen.queryByRole("button", { name: /Choose currency/ })
+    ).toBeNull();
     view.unmount();
     render(<Fixture />);
-    expect(await screen.findByText("Entry ready in KWD")).toBeVisible();
-    expect(h.fetcher.mock.calls.at(-1)?.[0]).toContain("/v1/preferences");
+    expect(await screen.findByText("Default currency: KWD")).toBeVisible();
   });
 
-  it("retains the confirmed currency and requires reload after an uncertain update", async () => {
+  it("guards double confirmation and freezes controls until the response", async () => {
+    const h = await login();
+    h.fetcher.mockResolvedValue(response(empty));
+    render(<Fixture />);
+    await screen.findByRole("button", { name: "Confirm CAD permanently" });
+    const pending = deferred<Response>();
+    h.fetcher.mockReturnValueOnce(pending.promise);
+    await press("Confirm CAD permanently");
+    await press("Confirm CAD permanently");
+    expect(
+      screen.getByRole("button", { name: "Choose currency USD" })
+    ).toBeDisabled();
+    expect(
+      h.fetcher.mock.calls.filter((c) => c[1]?.method === "PATCH")
+    ).toHaveLength(1);
+    await act(async () =>
+      pending.resolve(response({ ...empty, entryCurrency: "CAD" }))
+    );
+    expect(await screen.findByText("Default currency: CAD")).toBeVisible();
+  });
+
+  it("requires a reload after an uncertain selection and recovers the server's saved choice", async () => {
+    const h = await login();
+    h.fetcher.mockResolvedValue(response(empty));
+    render(<Fixture />);
+    await screen.findByRole("button", { name: "Confirm CAD permanently" });
+    await press("Choose currency USD");
+    h.fetcher.mockRejectedValueOnce(new Error("private response data"));
+    await press("Confirm USD permanently");
+    expect(
+      screen.getByRole("button", { name: "Confirm USD permanently" })
+    ).toBeDisabled();
+    expect(screen.queryByText(/private response data/)).toBeNull();
+    h.fetcher.mockResolvedValue(response({ ...empty, entryCurrency: "USD" }));
+    await press("Reload saved currency");
+    expect(await screen.findByText("Default currency: USD")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /Choose currency/ })
+    ).toBeNull();
+  });
+
+  it("keeps initialized draft components mounted on a failed refresh", async () => {
     const h = await login();
     h.fetcher.mockResolvedValue(
-      response({
-        entryCurrency: "CAD",
-        currencyLocked: false,
-        defaultAccountId: null
-      })
+      response({ ...empty, entryCurrency: "CAD", hasActiveAccounts: true })
     );
     render(<Fixture />);
-    await screen.findByText("Entry ready in CAD");
-    h.fetcher.mockRejectedValueOnce(new Error("private-response-data"));
-    await press("Default currency USD");
-    expect(screen.getByText("Default currency: CAD")).toBeVisible();
-    expect(
-      screen.getByRole("button", { name: "Default currency USD" })
-    ).toBeDisabled();
-    expect(screen.queryByText(/private-response-data/)).toBeNull();
-    const writes = h.fetcher.mock.calls.filter(
-      (call) => call[1]?.method === "PATCH"
-    ).length;
-    await press("Default currency USD");
-    expect(
-      h.fetcher.mock.calls.filter((call) => call[1]?.method === "PATCH")
-    ).toHaveLength(writes);
-    h.fetcher.mockResolvedValue(
-      response({
-        entryCurrency: "USD",
-        currencyLocked: false,
-        defaultAccountId: null
-      })
-    );
+    await screen.findByRole("button", { name: "draft retained" });
+    await press("draft retained");
+    h.fetcher.mockRejectedValueOnce(new Error("offline"));
     await press("Reload saved currency");
-    expect(await screen.findByText("Entry ready in USD")).toBeVisible();
+    expect(screen.getByRole("button", { name: "draft edited" })).toBeVisible();
+    expect(preferences.currencyState.status).toBe("error");
   });
 
-  it("does not apply a late response from a previous account", async () => {
+  it("ignores a late response after switching users", async () => {
     const first = await login();
     const pending = deferred<Response>();
     first.fetcher.mockReturnValue(pending.promise);
@@ -279,30 +243,61 @@ describe("persisted currency UI", () => {
     view.unmount();
     const second = await login(bob);
     second.fetcher.mockResolvedValue(
-      response({
-        entryCurrency: "CAD",
-        currencyLocked: false,
-        defaultAccountId: null
-      })
+      response({ ...empty, entryCurrency: "CAD" })
     );
     render(<Fixture />);
-    await screen.findByText("Entry ready in CAD");
-    await act(async () => {
-      pending.resolve(
-        response({
-          entryCurrency: "KWD",
-          currencyLocked: true,
-          defaultAccountId: null
-        })
-      );
-    });
-    expect(screen.queryByText("Entry ready in KWD")).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Default currency USD" })
-    ).toBeEnabled();
+    await screen.findByText("Default currency: CAD");
+    await act(async () =>
+      pending.resolve(response({ ...empty, entryCurrency: "KWD" }))
+    );
+    expect(screen.queryByText("Default currency: KWD")).toBeNull();
   });
 
-  it("locks the temporary demo on first save and retains the lock after reload", async () => {
+  it("rejects failed default selection so account management cannot claim success", async () => {
+    const h = await login();
+    h.fetcher.mockResolvedValue(
+      response({ ...empty, entryCurrency: "CAD", hasActiveAccounts: true })
+    );
+    render(<Fixture />);
+    await waitFor(() => expect(preferences.currencyState.status).toBe("ready"));
+    h.fetcher.mockResolvedValueOnce(
+      response(
+        { error: { code: "INVALID_ACCOUNT", message: "Unavailable" } },
+        422
+      )
+    );
+    await act(async () => {
+      await expect(
+        preferences.setDefaultAccount(accountId("CAD"))
+      ).rejects.toBeDefined();
+    });
+    expect(preferences.defaultAccountId).toBeNull();
+    expect(preferences.currencyState.status).toBe("error");
+  });
+
+  it("refreshes readiness again after an account mutation overtakes an older read", async () => {
+    const h = await login();
+    h.fetcher.mockResolvedValue(response({ ...empty, entryCurrency: "CAD" }));
+    render(<Fixture />);
+    await waitFor(() => expect(preferences.currencyState.status).toBe("ready"));
+    const pending = deferred<Response>();
+    h.fetcher.mockReturnValueOnce(pending.promise);
+    let refresh!: Promise<void>;
+    await act(async () => {
+      void preferences.currencyState.reload();
+      refresh = preferences.accountsChanged(false);
+    });
+    h.fetcher.mockResolvedValue(
+      response({ ...empty, entryCurrency: "CAD", hasActiveAccounts: true })
+    );
+    await act(async () => {
+      pending.resolve(response({ ...empty, entryCurrency: "CAD" }));
+      await refresh;
+    });
+    expect(preferences.hasActiveAccounts).toBe(true);
+  });
+
+  it("uses the same permanent-choice/account rules in demo memory and resets on exit", async () => {
     const h = harness(null);
     await h.controller.restore();
     h.controller.enterDemo();
@@ -313,34 +308,22 @@ describe("persisted currency UI", () => {
       exitDemo: h.controller.exitDemo
     });
     const view = render(<Fixture demo />);
-    await screen.findByText("Entry ready in CAD");
-    await press("Attempt invalid demo save");
-    expect(
-      screen.getByRole("button", { name: "Default currency EUR" })
-    ).toBeEnabled();
-    await press("Default currency EUR");
-    await screen.findByText("Entry ready in EUR");
-    await press("Save a demo transaction");
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Default currency CAD" })
-      ).toBeDisabled()
-    );
-    await press("Attempt demo currency edit");
-    expect(
-      screen.getByText("A saved transaction keeps its recorded currency.")
-    ).toBeVisible();
-    expect(screen.getByText("Recorded demo currency: EUR")).toBeVisible();
+    await screen.findByRole("button", { name: "Confirm CAD permanently" });
+    await press("Choose currency EUR");
+    await press("Confirm EUR permanently");
+    await press("Create demo account");
+    await waitFor(() => expect(preferences.hasActiveAccounts).toBe(true));
+    await act(async () => preferences.setDefaultCurrency("USD"));
+    expect(preferences.selectedCurrency).toBe("EUR");
     await press("Reload saved currency");
-    expect(
-      screen.getByText("Currency is locked after the first saved transaction.")
-    ).toBeVisible();
+    await press("Archive demo accounts");
+    await waitFor(() => expect(preferences.hasActiveAccounts).toBe(false));
+    expect(preferences.selectedCurrency).toBe("EUR");
     expect(h.fetcher).not.toHaveBeenCalled();
     view.unmount();
     render(<Fixture demo />);
-    expect(await screen.findByText("Entry ready in CAD")).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Default currency EUR" })
-    ).toBeEnabled();
+      await screen.findByRole("button", { name: "Confirm CAD permanently" })
+    ).toBeVisible();
   });
 });

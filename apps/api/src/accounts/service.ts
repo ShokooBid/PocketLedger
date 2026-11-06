@@ -6,7 +6,7 @@ import type {
 import { ApiError } from "../errors.js";
 import { currencySchema } from "../transactions/contracts.js";
 import {
-  activateFinancePreferences,
+  ensureFinancePreferences,
   lockFinanceOwner
 } from "../preferences/service.js";
 import type { AccountInput, AccountPatch, AccountQuery } from "./contracts.js";
@@ -111,12 +111,18 @@ export function createAccountService(db: PrismaClient) {
     },
     create(userId: string, input: AccountInput) {
       return write(userId, async (tx) => {
-        const preference = await activateFinancePreferences(tx, userId);
+        const preference = await ensureFinancePreferences(tx, userId);
+        if (preference.entryCurrency === null)
+          throw new ApiError(
+            409,
+            "CURRENCY_REQUIRED",
+            "Choose your permanent currency before creating an account."
+          );
         if (preference.entryCurrency !== input.currency)
           throw new ApiError(
             409,
             "PREFERENCE_CHANGED",
-            "Currency settings changed. Reload Settings before creating the account."
+            "The account must use your permanent currency."
           );
         return serialize(
           await tx.account.create({
