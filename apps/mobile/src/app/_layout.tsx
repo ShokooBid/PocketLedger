@@ -5,6 +5,7 @@ import { SessionProvider, useSession } from "../session";
 import { theme } from "../theme";
 import { Button, Screen, StateNotice } from "../ui";
 import { ClientFailure, failureMessage } from "../auth/transport";
+import { UserMenuProvider } from "../user-menu";
 
 export { ErrorBoundary } from "../error-boundary";
 
@@ -71,7 +72,9 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <SessionProvider>
         <StatusBar style="dark" />
-        <SessionNavigation />
+        <UserMenuProvider>
+          <SessionNavigation />
+        </UserMenuProvider>
       </SessionProvider>
     </SafeAreaProvider>
   );

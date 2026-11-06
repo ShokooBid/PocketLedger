@@ -11,7 +11,7 @@ import { Settings } from "../../settings";
 export { ErrorBoundary } from "../../error-boundary";
 
 export default function SettingsScreen() {
-  const { session, controller, exitDemo } = useSession();
+  const { session, controller } = useSession();
   const [shouldFail, setShouldFail] = useState(false);
   const preferences = usePreferences();
   const accounts = useAccounts();
@@ -50,7 +50,6 @@ export default function SettingsScreen() {
         defaultCurrency={preferences.selectedCurrency}
         version={Constants.expoConfig?.version ?? "Development"}
         onPrivacy={() => router.push("/privacy")}
-        onExitDemo={exitDemo}
       />
       {preferences.selectedCurrency !== null && (
         <AccountManagement

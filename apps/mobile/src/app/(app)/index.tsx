@@ -62,7 +62,6 @@ function DashboardScreen() {
       <NavigationLink href="/transactions" label="View transactions" />
       <NavigationLink href="/categories" label="Manage categories" />
       <NavigationLink href="/import" label="Preview CSV import" />
-      <NavigationLink href="/settings" label="Open settings" />
     </Screen>
   );
 }

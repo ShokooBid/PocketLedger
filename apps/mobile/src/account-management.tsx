@@ -2,6 +2,9 @@ import { StyleSheet, Text, View } from "react-native";
 import { Body, Button, Field, StateNotice } from "./ui";
 import { amountText } from "./transaction-data";
 import { theme } from "./theme";
+import { HelpTooltip } from "./help-tooltip";
+import { AccountTypeSelect } from "./account-type-select";
+import { AccountCard } from "./account-card";
 import {
   useAccountManagement,
   type AccountManagementProps
@@ -13,13 +16,6 @@ export function AccountManagement(props: AccountManagementProps) {
   const { busy, disabled } = state;
   return (
     <View style={styles.section}>
-      <Text accessibilityRole="header" style={styles.heading}>
-        Financial accounts
-      </Text>
-      <Body>
-        Names describe your own tracking accounts, such as BMO Chequing, BMO
-        Savings, CIBC or Cash. No bank connection is created.
-      </Body>
       {busy && (
         <StateNotice
           kind="loading"
@@ -39,6 +35,9 @@ export function AccountManagement(props: AccountManagementProps) {
           kind="error"
           title="Accounts need attention"
           message={state.error}
+          {...(!busy && (!state.ready || (state.uncertain && !state.reviewed))
+            ? { onRetry: () => void state.reload() }
+            : {})}
         />
       )}
       {state.notice && (
@@ -50,16 +49,11 @@ export function AccountManagement(props: AccountManagementProps) {
           <Body>{state.notice}</Body>
         </View>
       )}
-      <Button
-        label="Reload accounts"
-        disabled={busy}
-        onPress={() => void state.reload()}
-      />
       {state.uncertain && (
         <>
           <Body>
-            The change may have succeeded. Reload and review your accounts
-            before another change. No write is retried automatically.
+            The change may have succeeded. Review the refreshed accounts before
+            another change.
           </Body>
           <Button
             label="I reviewed accounts; enable changes"
@@ -68,43 +62,33 @@ export function AccountManagement(props: AccountManagementProps) {
           />
         </>
       )}
-      {!state.rows.length && state.ready && !busy && (
-        <StateNotice
-          kind="empty"
-          title="No financial accounts yet"
-          message="Create an account before recording transactions. Your transaction draft stays available while you do this."
-        />
-      )}
       {state.rows.map((row) => (
-        <View key={row.id} style={styles.card}>
-          <Text accessibilityRole="header" style={styles.heading}>
-            {row.name} · {row.currency}
-            {row.archivedAt ? " (archived)" : ""}
-            {defaultAccountId === row.id ? " (default)" : ""}
-          </Text>
-          <Body>
-            Type: {row.type} · Status: {row.archivedAt ? "Archived" : "Active"}
-          </Body>
-          {row.currency !== currency && (
-            <Body>
-              Settings uses {currency}. This account retains {row.currency}; no
-              money was converted. It cannot be the default for new entries in{" "}
-              {currency}.
-            </Body>
-          )}
-          <Button
-            label={`View balance for ${row.name}`}
-            hint="Shows account details, opening information and tracked balance."
-            disabled={busy || !state.ready}
-            selected={state.selectedId === row.id}
-            onPress={() => void state.viewDetails(row)}
-          />
+        <AccountCard
+          key={row.id}
+          account={row}
+          isDefault={defaultAccountId === row.id}
+          expanded={state.selectedId === row.id}
+          disabled={disabled}
+          viewDisabled={state.selectedId !== row.id && (busy || !state.ready)}
+          defaultEligible={row.currency === currency}
+          onToggleDetails={() => state.toggleDetails(row)}
+          onRename={() => state.edit(row)}
+          onDefault={() => void state.action("default", row)}
+          onArchive={() => state.setArchiving(row)}
+        >
           {state.selectedId === row.id && (
             <View style={styles.section}>
               <Text accessibilityRole="header" style={styles.heading}>
                 Account details: {row.name}
               </Text>
               <Body>Currency: {row.currency}</Body>
+              {row.currency !== currency && (
+                <Body>
+                  Settings uses {currency}. This account retains {row.currency};
+                  no money was converted. It cannot be the default for new
+                  entries in {currency}.
+                </Body>
+              )}
               <Body>Opening date: {row.openingDate}</Body>
               <Body>
                 Opening balance: {row.openingBalanceMinor < 0 ? "-" : ""}
@@ -130,6 +114,7 @@ export function AccountManagement(props: AccountManagementProps) {
                   kind="error"
                   title="Tracked balance unavailable"
                   message={state.detailError}
+                  onRetry={() => void state.viewDetails(row)}
                 />
               )}
               {state.detail?.id === row.id && (
@@ -145,29 +130,7 @@ export function AccountManagement(props: AccountManagementProps) {
               )}
             </View>
           )}
-          {!row.archivedAt && (
-            <>
-              <Button
-                label={`Rename ${row.name}`}
-                disabled={disabled}
-                onPress={() => state.edit(row)}
-              />
-              {row.currency === currency && (
-                <Button
-                  label={`Use ${row.name} as default`}
-                  selected={defaultAccountId === row.id}
-                  disabled={disabled}
-                  onPress={() => void state.action("default", row)}
-                />
-              )}
-              <Button
-                label={`Archive ${row.name}`}
-                disabled={disabled}
-                onPress={() => state.setArchiving(row)}
-              />
-            </>
-          )}
-        </View>
+        </AccountCard>
       ))}
       {defaultAccountId && (
         <Button
@@ -200,15 +163,19 @@ export function AccountManagement(props: AccountManagementProps) {
         </View>
       )}
       <View style={styles.card}>
-        <Text accessibilityRole="header" style={styles.heading}>
-          {state.editing ? "Rename account" : "Add account"} · Currency:{" "}
-          {state.editing?.currency ?? currency}
-        </Text>
-        <Body>
-          {state.editing
-            ? "Change the name or descriptive type. The financial baseline stays the same."
-            : "Currency is inherited from your permanent choice. Opening balance is optional and defaults to zero."}
-        </Body>
+        <View style={styles.formHeading}>
+          <Text accessibilityRole="header" style={styles.heading}>
+            {state.editing ? "Rename account" : "Add account"}
+          </Text>
+          <HelpTooltip
+            label={state.editing ? "Rename account help" : "Add account help"}
+            description={
+              state.editing
+                ? "Change the name or account type. Currency, opening date and opening balance stay the same."
+                : `Track your money in a named account, such as Chequing, Savings or Cash. No bank connection is created. Currency is ${currency}, inherited from your permanent choice.`
+            }
+          />
+        </View>
         <Field
           label="Account name"
           value={state.name}
@@ -216,30 +183,22 @@ export function AccountManagement(props: AccountManagementProps) {
           autoCapitalize="words"
           onChangeText={state.setName}
         />
-        {(["cash", "bank", "credit", "other"] as const).map((value) => (
-          <Button
-            key={value}
-            label={`Account type ${value}`}
-            selected={state.type === value}
-            disabled={disabled}
-            onPress={() => state.setType(value)}
-          />
-        ))}
+        <AccountTypeSelect
+          value={state.type}
+          onChange={state.setType}
+          disabled={disabled}
+        />
         {!state.editing && (
           <>
             <Field
               label="Opening balance (optional)"
+              help="Your starting balance, not income. Leave blank for zero. Use a period for decimals and a minus sign for a negative balance, such as -12.34. Only your currency's supported decimal places are allowed. This balance cannot be edited after creation."
               value={state.opening}
               editable={!disabled}
               autoCapitalize="none"
               autoCorrect={false}
               onChangeText={state.setOpening}
             />
-            <Body>
-              Use a period for decimals and a minus sign for a negative balance,
-              such as -12.34. Only the currency's supported decimal places are
-              allowed.
-            </Body>
             <Field
               label="Account opening date (YYYY-MM-DD)"
               value={state.date}
@@ -269,6 +228,12 @@ export function AccountManagement(props: AccountManagementProps) {
 
 const styles = StyleSheet.create({
   section: { gap: theme.space.md },
+  formHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    zIndex: 3
+  },
   card: {
     gap: theme.space.md,
     padding: theme.space.md,

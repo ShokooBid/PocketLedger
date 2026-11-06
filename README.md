@@ -111,7 +111,9 @@ together. #94 derives transaction currency from immutable accounts and removes
 the obsolete finance backfill CLI. #95 stores request identity and the original
 creation fingerprint on Transaction, replacing TransactionCreation. Retry
 protection lasts while that row exists; hard deletion releases its request key.
-Shared default categories remain #96 work. Future transfers, custom keypad and statement
+#96 shares one immutable 80-row catalog across users; personal categories remain
+private. Signup no longer creates category copies. Initialize the approved catalog
+once per database with `npm run categories:init` after migrations and before serving traffic. Future transfers, custom keypad and statement
 processing remain separate issues.
 
 `npm run typecheck --workspace=@pocketledger/mobile` runs TypeScript directly.
@@ -170,6 +172,7 @@ reviewed migrations to an empty development database when ready:
 npm run db:validate --workspace=@pocketledger/api
 npm run db:generate --workspace=@pocketledger/api
 npm run db:deploy --workspace=@pocketledger/api
+npm run categories:init
 npm run db:status --workspace=@pocketledger/api
 ```
 
@@ -275,16 +278,18 @@ proof/linking requests, lifetimes, maintenance, limitations and command explanat
 All category routes require a real PocketLedger bearer token. The server derives
 the owner from that session; request bodies never accept `userId`.
 
-| Method and path                   | Behavior                                                                                                                                             |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /v1/categories`              | Active owned categories. `status=archived` or `all` includes history; `limit` is 1–100 (default 50); pass `nextCursor` as `after` for the next page. |
-| `GET /v1/categories/:id`          | Owned category, including archived; foreign and missing IDs both return 404.                                                                         |
-| `POST /v1/categories`             | Create with `name` and optional `parentId`; returns 201.                                                                                             |
-| `PATCH /v1/categories/:id`        | Rename an active category with `{ "name": "Food" }`.                                                                                                 |
-| `POST /v1/categories/:id/archive` | Send `{}` after confirmation; repeated archive preserves its timestamp.                                                                              |
+| Method and path                   | Behavior                                                                                                                                                                     |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/categories`              | Shared defaults plus active personal categories. `status=archived` or `all` includes history; `limit` is 1–100 (default 50); pass `nextCursor` as `after` for the next page. |
+| `GET /v1/categories/:id`          | Visible shared or personal category, including archived personal history; foreign and missing IDs both return 404.                                                           |
+| `POST /v1/categories`             | Create with `name` and optional `parentId`; returns 201.                                                                                                                     |
+| `PATCH /v1/categories/:id`        | Rename an active category with `{ "name": "Food" }`.                                                                                                                         |
+| `POST /v1/categories/:id/archive` | Send `{}` after confirmation; repeated archive preserves its timestamp.                                                                                                      |
 
 Names collapse ASCII whitespace and trim it, preserving display case. Active
-duplicates compare ASCII letters without case, within one owner and sibling group. Non-ASCII
+duplicates compare ASCII letters without case within one visible sibling group.
+A personal name conflicts with shared defaults and that user's personal siblings;
+different users may reuse personal names, including under the same shared root. Non-ASCII
 letters, accents and Unicode normalization forms remain distinct. Names must
 contain visible text, have 1–100 UTF-16 units after normalization, and contain no
 control/format/surrogate characters; raw input is bounded at 1000 units.
@@ -297,11 +302,27 @@ ID. A database trigger rejects new transaction assignments to archived categorie
 History reads must include archived associations; historical renames are not
 snapshotted (renaming an active category changes its displayed name on history).
 
+Categories use one table: null owner means a shared default with a globally unique
+permanent key; a non-null owner means a private personal row with no catalog key.
+`isDefault` is consistent with that identity; owner IDs are not exposed in DTOs.
+References use category IDs plus service/SQL access guards, allowing only shared
+or same-owner rows. Transactions remain scoped to the authenticated user.
+
 Categories form two levels: select a root or child. Fixed catalog records cannot
 be renamed or archived; personal children may be added under fixed or personal
 roots. Root archival also archives its personal children. New assignments require
 an active ancestor. See the [current contract](docs/mobile-redesign/finance-contracts.md)
-and [walkthrough](docs/mobile-redesign/issue-69.md).
+and the [foundation decision record](docs/mobile-redesign/README.md).
+
+`npm run categories:init` is repeatable and separate from synthetic `db:seed`. It
+uses the approved manifest's permanent IDs/keys, inserts missing rows atomically
+and rejects drift or visible-name collisions without adopting private data. Run
+it before app traffic. Catalog changes require a deliberate reviewed deployment;
+ordinary reruns never rewrite labels, parents, metadata or timestamps. Signup,
+login and linking do not initialize or copy categories. The obsolete
+`categories:backfill` command and reconciliation implementation are removed.
+Demo loads the same catalog IDs into isolated memory; its personal rows and
+transaction recents remain session-local.
 
 ## Native sign-in and live categories
 

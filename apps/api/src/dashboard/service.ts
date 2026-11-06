@@ -44,8 +44,8 @@ export function createDashboardService(db: PrismaClient) {
               COALESCE(SUM(t."amountMinor") FILTER (WHERE t.direction = 'expense'), 0)::bigint AS "expensesMinor"
             FROM "Transaction" t
             JOIN "Account" a ON a.id = t."accountId" AND a."userId" = t."userId"
-            JOIN "Category" c ON c.id = t."categoryId" AND c."userId" = t."userId"
-            LEFT JOIN "Category" p ON p.id = c."parentId" AND p."userId" = c."userId"
+            JOIN "Category" c ON c.id = t."categoryId" AND (c."userId" IS NULL OR c."userId" = t."userId")
+            LEFT JOIN "Category" p ON p.id = c."parentId" AND (p."userId" IS NULL OR p."userId" = t."userId")
             WHERE t."userId" = ${userId}::uuid
               AND t.date >= ${query.from}::date AND t.date <= ${query.to}::date
               AND a.currency = ${query.currency}

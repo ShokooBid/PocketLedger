@@ -1,3 +1,4 @@
+import { visibleCategory } from "../categories/service.js";
 import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "../generated/prisma/client.js";
 import { ApiError } from "../errors.js";
@@ -56,7 +57,7 @@ async function checkCategory(
   id: string
 ) {
   const category = await tx.category.findFirst({
-    where: { id, userId },
+    where: { id, AND: [visibleCategory(userId)] },
     include: { parent: true }
   });
   if (!category) throw missing();
@@ -110,7 +111,7 @@ export function createTransactionService(db: PrismaClient) {
         if (
           query.categoryId &&
           !(await tx.category.findFirst({
-            where: { id: query.categoryId, userId },
+            where: { id: query.categoryId, AND: [visibleCategory(userId)] },
             select: { id: true }
           }))
         )
@@ -132,7 +133,7 @@ export function createTransactionService(db: PrismaClient) {
               ? query.includeSubcategories
                 ? {
                     category: {
-                      userId,
+                      AND: [visibleCategory(userId)],
                       OR: [
                         { id: query.categoryId },
                         { parentId: query.categoryId }

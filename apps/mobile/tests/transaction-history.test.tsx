@@ -46,7 +46,7 @@ async function field(label: string, value: string) {
   });
 }
 async function fixture(count = 3) {
-  const categories = createDemoCategorySource();
+  const categories = createDemoCategorySource({ catalog: false });
   await categories.create("Food");
   await categories.create("Work");
   const source = createDemoTransactionSource(categories, accounts);

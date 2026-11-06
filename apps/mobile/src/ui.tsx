@@ -13,6 +13,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { theme } from "./theme";
 import { ScreenDecoration } from "./screen-decoration";
+import { UserMenu } from "./user-menu";
+import { HelpTooltip } from "./help-tooltip";
 
 export function Body({
   children,
@@ -104,16 +106,19 @@ export function Screen({
         {appearance === "welcome" && (
           <Text style={styles.brand}>POCKETLEDGER</Text>
         )}
-        <Text
-          accessibilityRole="header"
-          accessibilityLabel={`${title} screen`}
-          style={[
-            styles.heading,
-            appearance === "welcome" && styles.welcomeHeading
-          ]}
-        >
-          {title}
-        </Text>
+        <View style={styles.toolbar}>
+          <Text
+            accessibilityRole="header"
+            accessibilityLabel={`${title} screen`}
+            style={[
+              styles.heading,
+              appearance === "welcome" && styles.welcomeHeading
+            ]}
+          >
+            {title}
+          </Text>
+          <UserMenu />
+        </View>
         {children}
       </ScrollView>
     </SafeAreaView>
@@ -140,10 +145,17 @@ export function NavigationLink({
   );
 }
 
-export function Field({ label, ...props }: TextInputProps & { label: string }) {
+export function Field({
+  label,
+  help,
+  ...props
+}: TextInputProps & { label: string; help?: string }) {
   return (
-    <View style={styles.field}>
-      <Text style={styles.body}>{label}</Text>
+    <View style={[styles.field, help && styles.helpField]}>
+      <View style={styles.fieldLabel}>
+        <Text style={styles.body}>{label}</Text>
+        {help && <HelpTooltip label={`${label} help`} description={help} />}
+      </View>
       <TextInput
         {...props}
         accessibilityLabel={label}
@@ -209,7 +221,15 @@ const styles = StyleSheet.create({
     fontWeight: "700"
   },
   centered: { textAlign: "center" },
+  toolbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.space.md,
+    zIndex: 10
+  },
   heading: {
+    flex: 1,
     color: theme.color.primary,
     fontSize: theme.font.heading,
     fontWeight: "700"
@@ -252,6 +272,13 @@ const styles = StyleSheet.create({
     borderRadius: theme.pillRadius
   },
   field: { gap: theme.space.sm },
+  helpField: { zIndex: 2 },
+  fieldLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    zIndex: 2
+  },
   input: {
     color: theme.color.text,
     backgroundColor: theme.color.surface,

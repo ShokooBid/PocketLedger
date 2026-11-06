@@ -70,6 +70,11 @@ async function field(label: string, value: string) {
   });
 }
 
+async function openSettings() {
+  await press("User menu");
+  await tap(screen.getByRole("link", { name: "Open settings" }));
+}
+
 async function chooseCategory(label: string) {
   await press("Choose category");
   await field("Search categories", label);
@@ -165,7 +170,7 @@ describe("session navigation", () => {
     await press("Save transaction");
     await screen.findByText(/Transaction saved/);
     await navigate(() => router.push("/settings"));
-    await screen.findByText(/BMO Chequing · CAD/);
+    await screen.findByRole("header", { name: "BMO Chequing" });
     await press("View balance for BMO Chequing");
     expect(
       screen.getByText(/Tracked balance as of .*: -12.34 CAD/)
@@ -269,7 +274,7 @@ describe("session navigation", () => {
     expect(
       h.fetcher.mock.calls.filter((call) => call[1]?.method === "PATCH")
     ).toHaveLength(0);
-    await tap(screen.getByRole("link", { name: "Open settings" }));
+    await openSettings();
     expect(await screen.findByText("Google: not linked")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Create account" })).toBeNull();
     await press("Back to dashboard");
@@ -433,7 +438,8 @@ describe("session navigation", () => {
       expect(await screen.findByText(category.name)).toBeVisible();
       expect(screen.queryByText(/Demo only/)).toBeNull();
       await press("Back to dashboard");
-      await tap(screen.getByRole("link", { name: "Open settings" }));
+      await openSettings();
+      await press("User menu");
       await press("Sign out");
       await screen.findByRole("header", { name: "Sign in screen" });
       await field("Email address", bob.email);
@@ -511,11 +517,59 @@ describe("session navigation", () => {
     await tap(screen.getByRole("link", { name: "View transactions" }));
     await navigate(() => router.back());
     expect(shell.getPathname()).toBe("/");
-    await tap(screen.getByRole("link", { name: "Open settings" }));
+    await openSettings();
+    await press("User menu");
     await press("Exit demo and return to sign in");
     expect(shell.getPathname()).toBe("/sign-in");
     expect(router.canGoBack()).toBe(false);
     await navigate(() => router.push("/transactions"));
+    expect(shell.getPathname()).toBe("/sign-in");
+  });
+
+  it("offers the avatar menu during account setup and on every app page", async () => {
+    await openShell();
+    expect(screen.queryByRole("button", { name: "User menu" })).toBeNull();
+    await press("Explore demo screens without signing in");
+    await press("Choose currency CAD");
+    await press("Confirm CAD permanently");
+    expect(
+      await screen.findByRole("header", { name: "Set up an account screen" })
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "User menu" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Open settings" })).toBeNull();
+    await field("Account name", "Menu test account");
+    await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
+    await press("Create account");
+    await screen.findByRole("header", { name: "Dashboard screen" });
+    for (const path of [
+      "/transactions",
+      "/categories",
+      "/import",
+      "/settings",
+      "/privacy",
+      "/"
+    ] as const) {
+      await navigate(() => router.replace(path));
+      const avatar = await screen.findByRole("button", { name: "User menu" });
+      expect(screen.getAllByRole("button", { name: "User menu" })).toHaveLength(
+        1
+      );
+      expect(screen.queryByRole("link", { name: "Open settings" })).toBeNull();
+      expect(
+        screen.queryByRole("button", {
+          name: "Exit demo and return to sign in"
+        })
+      ).toBeNull();
+      fireEvent(avatar, "hoverIn");
+      expect(screen.getByRole("link", { name: "Open settings" })).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: "Exit demo and return to sign in" })
+      ).toBeVisible();
+      fireEvent(avatar, "hoverOut");
+      expect(screen.queryByRole("link", { name: "Open settings" })).toBeNull();
+    }
+    await press("User menu");
+    await press("Exit demo and return to sign in");
     expect(shell.getPathname()).toBe("/sign-in");
   });
 
@@ -531,7 +585,8 @@ describe("session navigation", () => {
     await tap(screen.getByRole("link", { name: "Manage categories" }));
     expect(await screen.findByText("Synthetic demo category")).toBeVisible();
     await press("Back to dashboard");
-    await tap(screen.getByRole("link", { name: "Open settings" }));
+    await openSettings();
+    await press("User menu");
     await press("Exit demo and return to sign in");
     await enterDemo();
     await tap(screen.getByRole("link", { name: "Manage categories" }));
@@ -626,7 +681,8 @@ describe("session navigation", () => {
     expect(await screen.findByLabelText("Income. USD 123.45")).toBeVisible();
     delayed = true;
     await press("Refresh summary");
-    await tap(screen.getByRole("link", { name: "Open settings" }));
+    await openSettings();
+    await press("User menu");
     await press("Sign out");
     await screen.findByRole("header", { name: "Sign in screen" });
     await enterDemo();
@@ -659,7 +715,7 @@ describe("session navigation", () => {
   it("applies the session currency to dashboard/new forms and resets it when leaving demo", async () => {
     await openShell();
     await enterDemo("KWD");
-    await tap(screen.getByRole("link", { name: "Open settings" }));
+    await openSettings();
     await press("Privacy and data retention");
     expect(
       await screen.findByRole("header", {
@@ -677,7 +733,8 @@ describe("session navigation", () => {
     await press("Add transaction");
     expect(screen.getByText("Currency: KWD")).toBeVisible();
     await press("Back to dashboard");
-    await tap(screen.getByRole("link", { name: "Open settings" }));
+    await openSettings();
+    await press("User menu");
     await press("Exit demo and return to sign in");
     await enterDemo();
     expect(
@@ -709,13 +766,13 @@ describe("session navigation", () => {
   });
 });
 
-describe("placeholder screens", () => {
+describe("screen state previews", () => {
   it.each([
-    ["Categories", "Manage categories"],
-    ["CSV import", "Preview CSV import"]
+    ["Categories", "Manage categories", "Food & Drinks (default)"],
+    ["CSV import", "Preview CSV import", "Nothing here yet"]
   ])(
     "provides a labeled %s screen and recoverable state previews",
-    async (title, link) => {
+    async (title, link, readyText) => {
       await openShell();
       await enterDemo();
       if (link) await tap(screen.getByRole("link", { name: link }));
@@ -723,7 +780,7 @@ describe("placeholder screens", () => {
         screen.getByRole("header", { name: `${title} screen` })
       ).toBeVisible();
       expect(screen.getByText(/Demo only/)).toBeVisible();
-      expect(await screen.findByText("Nothing here yet")).toBeVisible();
+      expect(await screen.findByText(readyText)).toBeVisible();
       await press("Preview loading state");
       expect(screen.getByLabelText(/Loading preview\./)).toHaveProp(
         "accessibilityState",
@@ -732,7 +789,7 @@ describe("placeholder screens", () => {
       await press("Preview error state");
       expect(screen.getByRole("alert")).toBeVisible();
       await press("Try again");
-      expect(await screen.findByText("Nothing here yet")).toBeVisible();
+      expect(await screen.findByText(readyText)).toBeVisible();
       if (link) {
         await press("Back to dashboard");
         expect(
@@ -755,7 +812,7 @@ describe("placeholder screens", () => {
   it("catches a real render failure and remounts a usable Settings screen", async () => {
     await openShell();
     await enterDemo();
-    await tap(screen.getByRole("link", { name: "Open settings" }));
+    await openSettings();
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "Create account" })
@@ -780,6 +837,7 @@ describe("placeholder screens", () => {
       ).toBeEnabled()
     );
     diagnostic.mockRestore();
+    await press("User menu");
     await press("Exit demo and return to sign in");
     expect(shell.getPathname()).toBe("/sign-in");
   });

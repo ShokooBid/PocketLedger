@@ -218,7 +218,7 @@ describe("two-level owned category hierarchy", () => {
     // Synthetic fixtures only: this is not the #67 catalog or a seed.
     const root = await db.category.create({
       data: {
-        userId: alice.id,
+        userId: null,
         name: "Synthetic fixed root",
         isDefault: true,
         defaultKey: "test.root"
@@ -226,7 +226,7 @@ describe("two-level owned category hierarchy", () => {
     });
     const child = await db.category.create({
       data: {
-        userId: alice.id,
+        userId: null,
         name: "Synthetic fixed child",
         isDefault: true,
         defaultKey: "test.child",
@@ -310,7 +310,7 @@ describe("two-level owned category hierarchy", () => {
         )
       ).rejects.toMatchObject({ code: "23503" });
       const fixed = await db.category.findFirstOrThrow({
-        where: { userId: alice.id, isDefault: true }
+        where: { userId: null, isDefault: true }
       });
       await expect(
         sql.query('UPDATE "Category" SET name = $1 WHERE id = $2', [

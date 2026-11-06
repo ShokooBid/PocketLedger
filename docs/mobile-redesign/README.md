@@ -43,7 +43,19 @@ postings may omit both fields together. Equivalent retries return the current
 resource without undoing edits. A conflicting payload returns 409
 `IDEMPOTENCY_KEY_REUSED`. Protection lasts only while the row exists: hard deletion
 releases the key and a late retry can create a new row. No tombstone or soft
-deletion is introduced. Per-user default category copies remain until #96.
+deletion is introduced.
+
+#96 shares the approved 80-row catalog in one Category table. Null ownership plus
+stable IDs/keys identifies immutable defaults; non-null ownership identifies
+private personal rows. API and SQL guards permit shared or same-owner category
+references and two-level parents, while every transaction query stays user-scoped.
+Shared roots may have personal children. Active visible sibling names conflict
+with shared defaults or the current user's personal rows; different users can
+reuse personal names. `categories:init` initializes once per database, separately
+from synthetic seeds and signup, and rejects drift rather than rewriting it.
+Per-user provisioning/backfill commands are removed. Demo uses the same default
+IDs with isolated personal data. All four foundation increments are implemented;
+#72 navigation/keypad and later reporting/transfers remain separate work.
 Earlier #65/#69 handoffs and the verification record preserve historical behavior.
 
 ## Confirmed product decisions
@@ -57,7 +69,7 @@ than assumptions taken from the supplied design images.
 | Accounts             | Users define named accounts such as BMO, CIBC and Cash; add/manage them in Settings. Bank names do not imply bank connections.                                      |
 | Currency             | Explicitly choose once after sign-in; CAD is a local suggestion. The saved choice is permanent immediately and read-only in Settings.                               |
 | Foreign exchange     | Excluded. No conversion, exchange rates or cross-currency transfers.                                                                                                |
-| Default categories   | Fixed: users cannot rename or archive them. Actual catalog values will be supplied later.                                                                           |
+| Default categories   | One approved shared 80-row catalog; users cannot rename, archive or reparent defaults. Personal rows remain private.                                                |
 | Personal categories  | Users can create root categories and subcategories under either a default root or a personal root.                                                                  |
 | Category selection   | Select either a parent category or a subcategory.                                                                                                                   |
 | Merchant/payee/payer | Leave these fields out of the redesigned transaction form. Preserve existing stored merchant values during migration.                                               |
@@ -90,9 +102,9 @@ flow exists. Demo uses the same setup rules in isolated session memory.
 | Permanent currency choice and active-account setup                   | [#93](https://github.com/ShokooBid/PocketLedger/issues/93), superseding the currency behavior in [#65](https://github.com/ShokooBid/PocketLedger/issues/65)                        |
 | Account-derived transaction currency and retired finance backfills   | [#94](https://github.com/ShokooBid/PocketLedger/issues/94)                                                                                                                         |
 | Inline transaction request storage and lifetime-only retries         | [#95](https://github.com/ShokooBid/PocketLedger/issues/95)                                                                                                                         |
-| Shared default categories (future)                                   | [#96](https://github.com/ShokooBid/PocketLedger/issues/96)                                                                                                                         |
+| Shared immutable default catalog                                     | [#96](https://github.com/ShokooBid/PocketLedger/issues/96)                                                                                                                         |
 | Hierarchy, immutable defaults and personal-category operations       | [#66](https://github.com/ShokooBid/PocketLedger/issues/66)                                                                                                                         |
-| Actual default catalog and provisioning                              | [#67](https://github.com/ShokooBid/PocketLedger/issues/67)                                                                                                                         |
+| Approved catalog (per-user provisioning superseded by #96)           | [#67](https://github.com/ShokooBid/PocketLedger/issues/67)                                                                                                                         |
 | Accounts and optional opening balance                                | [#68](https://github.com/ShokooBid/PocketLedger/issues/68)                                                                                                                         |
 | Transaction account links, merchant-free contract and migration gate | [#69](https://github.com/ShokooBid/PocketLedger/issues/69)                                                                                                                         |
 | Account management in Settings                                       | [#70](https://github.com/ShokooBid/PocketLedger/issues/70)                                                                                                                         |

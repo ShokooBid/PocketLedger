@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { testAccount } from "../fixtures.js";
+import { initializeCategoryCatalog } from "../../src/categories/catalog-service.js";
 import { disposableDatabase } from "../support/disposable.js";
 
 const require = createRequire(import.meta.url);
@@ -85,6 +86,7 @@ beforeAll(async () => {
   );
   expect(tables.rows).toHaveLength(0);
   await prisma("migrate", "deploy");
+  await initializeCategoryCatalog(db);
   for (const id of [userA, userB]) {
     await db.user.create({
       data: {
@@ -347,7 +349,7 @@ describe("initial migration and database ownership", () => {
           userB,
           id
         ])
-      ).rejects.toMatchObject({ code: "23503" });
+      ).rejects.toThrow();
       await expect(
         sql.query(`DELETE FROM "${table}" WHERE id = $1`, [id])
       ).rejects.toMatchObject({ code: "23503" });

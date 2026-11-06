@@ -138,7 +138,7 @@ describe("authenticated mobile category flow", () => {
     ).rejects.toMatchObject({ code: "invalid-parent" });
     const fixed = await db.category.create({
       data: {
-        userId: state.user.id,
+        userId: null,
         name: "Synthetic mobile default",
         isDefault: true,
         defaultKey: "test.mobile"
@@ -580,7 +580,7 @@ describe("authenticated mobile category flow", () => {
       "synthetic mobile passphrase"
     );
     await d.source().create("Alice private category");
-    const aliceId = (await d.source().list())[0]!.id;
+    const aliceId = (await d.source().list()).find((row) => !row.isDefault)!.id;
     const restored = d.restart();
     await restored.restore();
     expect(restored.getSnapshot().status).toBe("authenticated");

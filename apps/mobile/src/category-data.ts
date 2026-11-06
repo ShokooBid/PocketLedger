@@ -1,3 +1,4 @@
+import { defaultCategoryCatalog } from "../../api/src/categories/catalog.v1";
 // A UI-facing port. Issue #11 supplies an adapter backed by verified sessions.
 // This module never accepts credentials or performs network/storage operations.
 export type Category = {
@@ -8,9 +9,13 @@ export type Category = {
   parentId?: string | null;
   sortOrder?: number;
   iconKey?: string;
+  defaultKey?: string | null;
+  colorKey?: string;
 };
 export interface CategorySource {
   hierarchy?: boolean;
+  // Optional in-memory ledger hook; HTTP recents remain a server-owned query.
+  recordPosting?(transactionId: string, categoryId: string | null): void;
   list(): Promise<Category[]>;
   recent(): Promise<Category[]>;
   create(name: string): Promise<string>;
@@ -50,12 +55,34 @@ export function categoryFailureMessage(error: unknown) {
 
 // Deliberately a simulation, not an API client or an authentication mechanism.
 // Mirrors the API name rule so the demo can exercise validation and conflicts.
-export function createDemoCategorySource(): CategorySource {
-  let rows: Category[] = [];
-  let sequence = 0;
+export function createDemoCategorySource({
+  catalog = true
+}: { catalog?: boolean } = {}): CategorySource {
+  const defaults: Category[] = catalog
+    ? defaultCategoryCatalog.items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        isDefault: true,
+        defaultKey: item.key,
+        parentId: item.parentKey
+          ? defaultCategoryCatalog.items.find(
+              (root) => root.key === item.parentKey
+            )!.id
+          : null,
+        archivedAt: null,
+        iconKey: item.iconKey,
+        colorKey: item.colorKey,
+        sortOrder: item.sortOrder
+      }))
+    : [];
+  let personal: Category[] = [],
+    sequence = 0,
+    revision = 0;
+  const postings = new Map<string, { categoryId: string; revision: number }>();
+  const rows = () => [...defaults, ...personal];
   const key = (name: string) =>
     name.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
-  function checkedName(raw: string, except?: string) {
+  function checkedName(raw: string, parentId: string | null, except?: string) {
     const name = raw.replace(/[ \t\n\r\f\v]+/g, " ").replace(/^ | $/g, "");
     if (
       raw.length > 1000 ||
@@ -66,43 +93,93 @@ export function createDemoCategorySource(): CategorySource {
     )
       throw new CategoryFailure("validation");
     if (
-      rows.some(
+      rows().some(
         (row) =>
-          row.id !== except && !row.archivedAt && key(row.name) === key(name)
+          row.id !== except &&
+          !row.archivedAt &&
+          (row.parentId ?? null) === parentId &&
+          key(row.name) === key(name)
       )
     )
       throw new CategoryFailure("duplicate");
     return name;
   }
+  function owned(id: string) {
+    const row = rows().find((row) => row.id === id);
+    if (!row) throw new CategoryFailure("unavailable");
+    if (row.isDefault) throw new CategoryFailure("read-only");
+    return row;
+  }
+  async function create(raw: string, parentId: string | null = null) {
+    if (parentId) {
+      const parent = rows().find((row) => row.id === parentId);
+      if (!parent) throw new CategoryFailure("unavailable");
+      if (parent.parentId || parent.archivedAt)
+        throw new CategoryFailure("invalid-parent");
+    }
+    const name = checkedName(raw, parentId);
+    const row: Category = {
+      id: `demo-${++sequence}`,
+      name,
+      parentId,
+      isDefault: false,
+      defaultKey: null,
+      archivedAt: null,
+      iconKey: "category",
+      colorKey: "neutral",
+      sortOrder: 0
+    };
+    personal.push(row);
+    return row.id;
+  }
   return {
-    async list() {
-      return rows.map((row) => ({ ...row }));
+    hierarchy: true,
+    list: async () => rows().map((row) => ({ ...row })),
+    recordPosting(id, categoryId) {
+      if (categoryId === null) postings.delete(id);
+      else postings.set(id, { categoryId, revision: ++revision });
     },
     async recent() {
-      // Demo has no server-owned transaction recency query.
-      return [];
-    },
-    async create(raw) {
-      const name = checkedName(raw);
-      rows = [
-        ...rows,
-        { id: `demo-${++sequence}`, name, isDefault: false, archivedAt: null }
+      const visible = rows();
+      const ids = [
+        ...new Set(
+          [...postings.values()]
+            .sort((a, b) => b.revision - a.revision)
+            .map((row) => row.categoryId)
+        )
       ];
-      return rows[rows.length - 1]!.id;
+      return ids
+        .flatMap((id) => {
+          const row = visible.find((item) => item.id === id);
+          const parent = row?.parentId
+            ? visible.find((item) => item.id === row.parentId)
+            : null;
+          return row &&
+            !row.archivedAt &&
+            (!row.parentId || (parent && !parent.archivedAt))
+            ? [{ ...row }]
+            : [];
+        })
+        .slice(0, 8);
     },
+    create,
+    createChild: (raw, parentId) => create(raw, parentId),
     async rename(id, raw) {
-      const row = rows.find((row) => row.id === id && !row.archivedAt);
-      if (!row) throw new CategoryFailure("unavailable");
-      const name = checkedName(raw, id);
-      rows = rows.map((row) => (row.id === id ? { ...row, name } : row));
+      const row = owned(id);
+      if (row.archivedAt) throw new CategoryFailure("unavailable");
+      const name = checkedName(raw, row.parentId ?? null, id);
+      personal = personal.map((item) =>
+        item.id === id ? { ...item, name } : item
+      );
     },
     async archive(id) {
-      if (!rows.some((row) => row.id === id))
-        throw new CategoryFailure("unavailable");
-      rows = rows.map((row) =>
-        row.id === id && !row.archivedAt
-          ? { ...row, archivedAt: new Date().toISOString() }
-          : row
+      const row = owned(id);
+      if (row.archivedAt) return;
+      const archivedAt = new Date().toISOString();
+      personal = personal.map((item) =>
+        (item.id === id || item.parentId === id) && !item.archivedAt
+          ? { ...item, archivedAt }
+          : item
       );
     }
   };
