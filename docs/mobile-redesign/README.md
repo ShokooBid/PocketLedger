@@ -29,15 +29,21 @@ for currency, and all transaction routes are blocked when no active account
 remains. Settings/privacy/sign-out and account repair remain accessible.
 
 Delivery order is #93 -> #94 -> #95 -> #96, one PR each, before resuming #72.
-This increment implements #94 after #93. Immutable `Account.currency` is the
+#94 implements account-derived currency after #93. Immutable `Account.currency` is the
 source of every transaction response, filter and report; transaction write bodies
 contain no currency. `Transaction.currency`, `Account.legacyCurrency` and the
 obsolete finance backfill CLI are removed. An owner-safe account foreign key and
 SQL guards preserve ownership, dates, archival and same-currency reassignment.
 Amounts remain exact integer minor units; no conversion or account currency
 selector is introduced. Each migration still applies from an empty database.
-`TransactionCreation` request storage remains for #95; per-user default category
-copies remain for #96. These follow-ups are not implemented here.
+#95 now stores immutable `clientRequestId` and server-computed SHA-256
+`creationFingerprint` on Transaction with owner-scoped uniqueness, replacing
+TransactionCreation. Manual creates require an identity; internal/generated
+postings may omit both fields together. Equivalent retries return the current
+resource without undoing edits. A conflicting payload returns 409
+`IDEMPOTENCY_KEY_REUSED`. Protection lasts only while the row exists: hard deletion
+releases the key and a late retry can create a new row. No tombstone or soft
+deletion is introduced. Per-user default category copies remain until #96.
 Earlier #65/#69 handoffs and the verification record preserve historical behavior.
 
 ## Confirmed product decisions
@@ -83,7 +89,7 @@ flow exists. Demo uses the same setup rules in isolated session memory.
 | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Permanent currency choice and active-account setup                   | [#93](https://github.com/ShokooBid/PocketLedger/issues/93), superseding the currency behavior in [#65](https://github.com/ShokooBid/PocketLedger/issues/65)                        |
 | Account-derived transaction currency and retired finance backfills   | [#94](https://github.com/ShokooBid/PocketLedger/issues/94)                                                                                                                         |
-| Inline transaction request storage (future)                          | [#95](https://github.com/ShokooBid/PocketLedger/issues/95)                                                                                                                         |
+| Inline transaction request storage and lifetime-only retries         | [#95](https://github.com/ShokooBid/PocketLedger/issues/95)                                                                                                                         |
 | Shared default categories (future)                                   | [#96](https://github.com/ShokooBid/PocketLedger/issues/96)                                                                                                                         |
 | Hierarchy, immutable defaults and personal-category operations       | [#66](https://github.com/ShokooBid/PocketLedger/issues/66)                                                                                                                         |
 | Actual default catalog and provisioning                              | [#67](https://github.com/ShokooBid/PocketLedger/issues/67)                                                                                                                         |

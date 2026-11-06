@@ -5,14 +5,30 @@ import {
   assertNewTransactionCurrency,
   lockFinanceOwner
 } from "../preferences/service.js";
-import { currencySchema } from "./contracts.js";
+import { currencySchema, transactionCreate } from "./contracts.js";
 import type {
   TransactionCreate,
+  TransactionInput,
   TransactionPatch,
   TransactionQuery
 } from "./contracts.js";
 
 const missing = () => new ApiError(404, "NOT_FOUND", "Resource not found.");
+// Hash creation intent, never the mutable current resource or JSON key order.
+export function transactionCreationFingerprint(input: TransactionInput) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        input.accountId.toLowerCase(),
+        input.categoryId.toLowerCase(),
+        input.direction,
+        input.amountMinor,
+        input.date,
+        input.note || null
+      ])
+    )
+    .digest("hex");
+}
 const withAccountCurrency = {
   account: { select: { currency: true } }
 } as const;
@@ -162,44 +178,23 @@ export function createTransactionService(db: PrismaClient) {
       });
     },
     create(userId: string, input: TransactionCreate) {
+      const { clientRequestId, ...fields } = transactionCreate.parse(input);
+      const payload = { ...fields, note: fields.note || null };
+      const creationFingerprint = transactionCreationFingerprint(payload);
       return run(async (tx) => {
         await lockFinanceOwner(tx, userId);
-        const { clientRequestId, ...fields } = input;
-        const payload = { ...fields, note: fields.note || null };
-        // Fixed field order and canonical UUID case; never hash JSON property order.
-        const fingerprint = createHash("sha256")
-          .update(
-            JSON.stringify([
-              payload.accountId.toLowerCase(),
-              payload.categoryId.toLowerCase(),
-              payload.direction,
-              payload.amountMinor,
-              payload.date,
-              payload.note
-            ])
-          )
-          .digest("hex");
-        const prior = await tx.transactionCreation.findUnique({
-          where: { userId_clientRequestId: { userId, clientRequestId } }
+        const prior = await tx.transaction.findUnique({
+          where: { userId_clientRequestId: { userId, clientRequestId } },
+          include: withAccountCurrency
         });
         if (prior) {
-          if (prior.fingerprint !== fingerprint)
+          if (prior.creationFingerprint !== creationFingerprint)
             throw new ApiError(
               409,
               "IDEMPOTENCY_KEY_REUSED",
               "This creation key already belongs to a different payload."
             );
-          const row = await tx.transaction.findFirst({
-            where: { id: prior.resourceId, userId },
-            include: withAccountCurrency
-          });
-          if (!row)
-            throw new ApiError(
-              409,
-              "OPERATION_ALREADY_APPLIED",
-              "The original transaction was already applied and later deleted."
-            );
-          return { resource: serializeTransaction(row), replayed: true };
+          return { resource: serializeTransaction(prior), replayed: true };
         }
         await checkCategory(tx, userId, payload.categoryId);
         const account = await checkAccount(
@@ -213,13 +208,12 @@ export function createTransactionService(db: PrismaClient) {
           data: {
             ...payload,
             userId,
+            clientRequestId,
+            creationFingerprint,
             date: new Date(payload.date),
             merchant: null
           },
           include: withAccountCurrency
-        });
-        await tx.transactionCreation.create({
-          data: { userId, clientRequestId, fingerprint, resourceId: row.id }
         });
         return { resource: serializeTransaction(row), replayed: false };
       });

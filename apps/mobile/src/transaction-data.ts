@@ -165,16 +165,41 @@ export function createDemoTransactionSource(
   accounts: Pick<AccountSource, "list">,
   beforeWrite?: (currency: Currency, previous?: Transaction) => void
 ): TransactionSource {
-  type StoredTransaction = Omit<Transaction, "currency">;
+  type StoredTransaction = Omit<Transaction, "currency"> & {
+    clientRequestId: string;
+    creationFingerprint: string;
+  };
   let rows: StoredTransaction[] = [];
   let sequence = 0;
-  const creations = new Map<string, { fingerprint: string; id: string }>();
+  // Serialize demo writes too: validation awaits must not let equal creates race.
+  let writes = Promise.resolve();
+  function write<T>(action: () => Promise<T>) {
+    const result = writes.then(action);
+    writes = result.then(
+      () => {},
+      () => {}
+    );
+    return result;
+  }
   async function serialize(row: StoredTransaction): Promise<Transaction> {
     const account = (await accounts.list()).find(
       (item) => item.id === row.accountId
     );
     if (!account) throw new ClientFailure("unavailable");
-    return { ...row, currency: account.currency };
+    // Keep internal creation identity out of the same public DTO as the API.
+    return {
+      id: row.id,
+      accountId: row.accountId,
+      categoryId: row.categoryId,
+      direction: row.direction,
+      amountMinor: row.amountMinor,
+      date: row.date,
+      note: row.note,
+      importId: row.importId,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      currency: account.currency
+    };
   }
   async function checked(input: TransactionInput, previous?: Transaction) {
     if (!transactionInput.safeParse(input).success)
@@ -229,65 +254,82 @@ export function createDemoTransactionSource(
           sorted.length > 50 && last ? `${last.date}_${last.id}` : null
       };
     },
-    async create(request) {
-      const { clientRequestId, ...input } = transactionCreate.parse(request);
-      const fingerprint = JSON.stringify([
-        input.accountId,
-        input.categoryId,
-        input.direction,
-        input.amountMinor,
-        input.date,
-        input.note
-      ]);
-      const prior = creations.get(clientRequestId);
-      if (prior) {
-        if (prior.fingerprint !== fingerprint)
-          throw new ClientFailure("conflict", "IDEMPOTENCY_KEY_REUSED");
-        const saved = rows.find((row) => row.id === prior.id);
-        if (!saved)
-          throw new ClientFailure("conflict", "OPERATION_ALREADY_APPLIED");
-        return serialize(saved);
-      }
-      const currency = await checked(input);
-      beforeWrite?.(currency);
-      const row = {
-        ...input,
-        importId: null,
-        id: `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      rows.push(row);
-      creations.set(clientRequestId, { fingerprint, id: row.id });
-      return serialize(row);
-    },
-    async update(id, input) {
-      const previous = rows.find((row) => row.id === id);
-      if (!previous) throw new ClientFailure("unavailable");
-      const previousResponse = await serialize(previous);
-      const merged = transactionInput.parse({
-        direction: previous.direction,
-        amountMinor: previous.amountMinor,
-        date: previous.date,
-        categoryId: previous.categoryId,
-        accountId: previous.accountId,
-        note: previous.note,
-        ...transactionPatch.parse(input)
+    create(request) {
+      return write(async () => {
+        const { clientRequestId: key, ...fields } =
+          transactionCreate.parse(request);
+        const canonicalId = (id: string) =>
+          z.uuid().safeParse(id).success ? id.toLowerCase() : id;
+        const clientRequestId = key.toLowerCase();
+        const input = {
+          ...fields,
+          accountId: canonicalId(fields.accountId),
+          categoryId: canonicalId(fields.categoryId),
+          note: fields.note || null
+        };
+        // Memory compares the canonical creation text; only the server persists SHA-256.
+        const creationFingerprint = JSON.stringify([
+          input.accountId,
+          input.categoryId,
+          input.direction,
+          input.amountMinor,
+          input.date,
+          input.note
+        ]);
+        const prior = rows.find(
+          (row) => row.clientRequestId === clientRequestId
+        );
+        if (prior) {
+          if (prior.creationFingerprint !== creationFingerprint)
+            throw new ClientFailure("conflict", "IDEMPOTENCY_KEY_REUSED");
+          return serialize(prior);
+        }
+        const currency = await checked(input);
+        beforeWrite?.(currency);
+        const row = {
+          ...input,
+          clientRequestId,
+          creationFingerprint,
+          importId: null,
+          id: `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        rows.push(row);
+        return serialize(row);
       });
-      const currency = await checked(merged, previousResponse);
-      beforeWrite?.(currency, previousResponse);
-      const updated = {
-        ...previous,
-        ...merged,
-        updatedAt: new Date().toISOString()
-      };
-      rows = rows.map((row) => (row.id === id ? updated : row));
-      return serialize(updated);
     },
-    async remove(id) {
-      if (!rows.some((row) => row.id === id))
-        throw new ClientFailure("unavailable");
-      rows = rows.filter((row) => row.id !== id);
+    update(id, input) {
+      return write(async () => {
+        const previous = rows.find((row) => row.id === id);
+        if (!previous) throw new ClientFailure("unavailable");
+        const previousResponse = await serialize(previous);
+        const merged = transactionInput.parse({
+          direction: previous.direction,
+          amountMinor: previous.amountMinor,
+          date: previous.date,
+          categoryId: previous.categoryId,
+          accountId: previous.accountId,
+          note: previous.note,
+          ...transactionPatch.parse(input)
+        });
+        const currency = await checked(merged, previousResponse);
+        beforeWrite?.(currency, previousResponse);
+        const updated = {
+          ...previous,
+          ...merged,
+          updatedAt: new Date().toISOString()
+        };
+        rows = rows.map((row) => (row.id === id ? updated : row));
+        return serialize(updated);
+      });
+    },
+    remove(id) {
+      return write(async () => {
+        if (!rows.some((row) => row.id === id))
+          throw new ClientFailure("unavailable");
+        rows = rows.filter((row) => row.id !== id);
+      });
     }
   });
 }

@@ -5,6 +5,7 @@ import {
   transactionQuery
 } from "../src/transactions/contracts.js";
 import { createAccountService } from "../src/accounts/service.js";
+import { transactionCreationFingerprint } from "../src/transactions/service.js";
 import type { PrismaClient } from "../src/generated/prisma/client.js";
 
 const input = {
@@ -21,6 +22,7 @@ describe("versioned normal-transaction contracts", () => {
     for (const extra of [
       { merchant: "Shop" },
       { currency: "CAD" },
+      { creationFingerprint: "a".repeat(64) },
       { payee: "Shop" },
       { userId: input.accountId },
       { importId: input.accountId },
@@ -45,6 +47,7 @@ describe("versioned normal-transaction contracts", () => {
     for (const patch of [
       {},
       { clientRequestId: input.clientRequestId },
+      { creationFingerprint: "a".repeat(64) },
       { importId: null },
       { merchant: "Shop" },
       { currency: "CAD" }
@@ -66,6 +69,43 @@ describe("versioned normal-transaction contracts", () => {
       { accountId: "bad" }
     ])
       expect(transactionQuery.safeParse(query).success).toBe(false);
+  });
+});
+
+describe("canonical transaction creation fingerprint", () => {
+  const original = transactionCreate.parse({
+    ...input,
+    accountId: "abcdefab-0000-4000-8000-000000000001",
+    categoryId: "fedcbafe-0000-4000-8000-000000000001"
+  });
+  const fingerprint = transactionCreationFingerprint(original);
+  it("normalizes UUID case and absent/null/empty notes independently of property order", () => {
+    expect(fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    for (const note of [undefined, null, ""]) {
+      const equivalent = transactionCreate.parse({
+        note,
+        date: original.date,
+        amountMinor: original.amountMinor,
+        direction: original.direction,
+        categoryId: original.categoryId.toUpperCase(),
+        accountId: original.accountId.toUpperCase(),
+        clientRequestId: original.clientRequestId
+      });
+      expect(transactionCreationFingerprint(equivalent)).toBe(fingerprint);
+    }
+  });
+  it("includes each creation field and preserves meaningful note whitespace", () => {
+    for (const change of [
+      { accountId: "20000000-0000-4000-8000-000000000002" },
+      { categoryId: "30000000-0000-4000-8000-000000000002" },
+      { direction: "income" as const },
+      { amountMinor: 1 },
+      { date: "2026-11-04" },
+      { note: " " }
+    ])
+      expect(
+        transactionCreationFingerprint({ ...original, ...change })
+      ).not.toBe(fingerprint);
   });
 });
 

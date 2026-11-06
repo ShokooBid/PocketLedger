@@ -121,8 +121,13 @@ it("round-trips real merchant-free data, reconciles a lost response with the ori
   expect((await api.update(saved.id, { note: "Updated" })).note).toBe(
     "Updated"
   );
-  await api.remove(saved.id);
-  await expect(api.create(original)).rejects.toMatchObject({
-    code: "OPERATION_ALREADY_APPLIED"
+  expect(await api.create(original)).toMatchObject({
+    id: saved.id,
+    note: "Updated"
   });
+  await api.remove(saved.id);
+  const recreated = await api.create(original);
+  expect(recreated.id).not.toBe(saved.id);
+  expect(recreated.note).toBeNull();
+  expect(await db.transaction.count({ where: { userId: user.id } })).toBe(1);
 });
