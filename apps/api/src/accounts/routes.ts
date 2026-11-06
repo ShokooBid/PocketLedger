@@ -76,7 +76,7 @@ export function registerAccountRoutes(
         querystring: empty,
         body: accountInput,
         description:
-          "Create a user-named account. Currency asserts the current Settings currency; stale assertions return PREFERENCE_CHANGED. Signed opening balance defaults to zero, is not income and does not lock currency. No bank credentials or connection.",
+          "Create a user-named account inheriting the permanent currency choice. Currency asserts that choice; stale assertions return PREFERENCE_CHANGED. Signed opening balance defaults to zero and is not income. No bank credentials or connection.",
         response: { ...errors, 201: accountSchema }
       }
     },

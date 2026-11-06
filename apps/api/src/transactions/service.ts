@@ -1,9 +1,5 @@
 import { createHash } from "node:crypto";
-import type {
-  Prisma,
-  PrismaClient,
-  Transaction as StoredTransaction
-} from "../generated/prisma/client.js";
+import type { Prisma, PrismaClient } from "../generated/prisma/client.js";
 import { ApiError } from "../errors.js";
 import {
   assertNewTransactionCurrency,
@@ -17,14 +13,20 @@ import type {
 } from "./contracts.js";
 
 const missing = () => new ApiError(404, "NOT_FOUND", "Resource not found.");
-export function serializeTransaction(row: StoredTransaction) {
+const withAccountCurrency = {
+  account: { select: { currency: true } }
+} as const;
+type TransactionWithAccount = Prisma.TransactionGetPayload<{
+  include: typeof withAccountCurrency;
+}>;
+export function serializeTransaction(row: TransactionWithAccount) {
   return {
     id: row.id,
     accountId: row.accountId,
     categoryId: row.categoryId,
     direction: row.direction,
     amountMinor: row.amountMinor,
-    currency: currencySchema.parse(row.currency),
+    currency: currencySchema.parse(row.account.currency),
     date: row.date.toISOString().slice(0, 10),
     note: row.note,
     importId: row.importId,
@@ -53,14 +55,13 @@ async function checkAccount(
   tx: Prisma.TransactionClient,
   userId: string,
   id: string,
-  currency: string,
   date: string,
-  previousId?: string | null
+  previous?: TransactionWithAccount
 ) {
   const account = await tx.account.findFirst({ where: { id, userId } });
   if (!account) throw missing();
   if (
-    (account.archivedAt && account.id !== previousId) ||
+    (account.archivedAt && account.id !== previous?.accountId) ||
     date < account.openingDate.toISOString().slice(0, 10)
   )
     throw new ApiError(
@@ -68,12 +69,13 @@ async function checkAccount(
       "INVALID_ACCOUNT",
       "Choose an active account and a date on or after its opening date."
     );
-  if (account.currency !== currency)
+  if (previous && account.currency !== previous.account.currency)
     throw new ApiError(
       422,
       "CURRENCY_MISMATCH",
-      "The account and transaction currencies must match."
+      "Choose an account in the original account currency; amounts cannot be converted."
     );
+  return account;
 }
 export function createTransactionService(db: PrismaClient) {
   const run = <T>(action: (tx: Prisma.TransactionClient) => Promise<T>) =>
@@ -107,7 +109,9 @@ export function createTransactionService(db: PrismaClient) {
           where: {
             userId,
             ...(query.accountId ? { accountId: query.accountId } : {}),
-            ...(query.currency ? { currency: query.currency } : {}),
+            ...(query.currency
+              ? { account: { currency: query.currency } }
+              : {}),
             ...(query.categoryId
               ? query.includeSubcategories
                 ? {
@@ -135,7 +139,8 @@ export function createTransactionService(db: PrismaClient) {
               : {})
           },
           orderBy: [{ date: "desc" }, { id: "desc" }],
-          take: query.limit + 1
+          take: query.limit + 1,
+          include: withAccountCurrency
         });
         const items = rows.slice(0, query.limit).map(serializeTransaction),
           last = items.at(-1);
@@ -148,7 +153,10 @@ export function createTransactionService(db: PrismaClient) {
     },
     get(userId: string, id: string) {
       return run(async (tx) => {
-        const row = await tx.transaction.findFirst({ where: { id, userId } });
+        const row = await tx.transaction.findFirst({
+          where: { id, userId },
+          include: withAccountCurrency
+        });
         if (!row) throw missing();
         return serializeTransaction(row);
       });
@@ -166,7 +174,6 @@ export function createTransactionService(db: PrismaClient) {
               payload.categoryId.toLowerCase(),
               payload.direction,
               payload.amountMinor,
-              payload.currency,
               payload.date,
               payload.note
             ])
@@ -183,7 +190,8 @@ export function createTransactionService(db: PrismaClient) {
               "This creation key already belongs to a different payload."
             );
           const row = await tx.transaction.findFirst({
-            where: { id: prior.resourceId, userId }
+            where: { id: prior.resourceId, userId },
+            include: withAccountCurrency
           });
           if (!row)
             throw new ApiError(
@@ -193,22 +201,22 @@ export function createTransactionService(db: PrismaClient) {
             );
           return { resource: serializeTransaction(row), replayed: true };
         }
-        await assertNewTransactionCurrency(tx, userId, payload.currency);
         await checkCategory(tx, userId, payload.categoryId);
-        await checkAccount(
+        const account = await checkAccount(
           tx,
           userId,
           payload.accountId,
-          payload.currency,
           payload.date
         );
+        await assertNewTransactionCurrency(tx, userId, account.currency);
         const row = await tx.transaction.create({
           data: {
             ...payload,
             userId,
             date: new Date(payload.date),
             merchant: null
-          }
+          },
+          include: withAccountCurrency
         });
         await tx.transactionCreation.create({
           data: { userId, clientRequestId, fingerprint, resourceId: row.id }
@@ -219,24 +227,14 @@ export function createTransactionService(db: PrismaClient) {
     update(userId: string, id: string, patch: TransactionPatch) {
       return run(async (tx) => {
         await lockFinanceOwner(tx, userId);
-        const row = await tx.transaction.findFirst({ where: { id, userId } });
+        const row = await tx.transaction.findFirst({
+          where: { id, userId },
+          include: withAccountCurrency
+        });
         if (!row) throw missing();
-        if (patch.currency && patch.currency !== row.currency)
-          throw new ApiError(
-            422,
-            "CURRENCY_IMMUTABLE",
-            "A saved transaction keeps its recorded currency."
-          );
         const accountId = patch.accountId ?? row.accountId;
         const date = patch.date ?? row.date.toISOString().slice(0, 10);
-        await checkAccount(
-          tx,
-          userId,
-          accountId,
-          row.currency,
-          date,
-          row.accountId
-        );
+        await checkAccount(tx, userId, accountId, date, row);
         if (
           patch.categoryId &&
           patch.categoryId.toLowerCase() !== row.categoryId
@@ -258,14 +256,12 @@ export function createTransactionService(db: PrismaClient) {
               ...(patch.amountMinor !== undefined
                 ? { amountMinor: patch.amountMinor }
                 : {}),
-              ...(patch.currency !== undefined
-                ? { currency: patch.currency }
-                : {}),
               ...(patch.note !== undefined ? { note: patch.note || null } : {}),
               ...(patch.date !== undefined
                 ? { date: new Date(patch.date) }
                 : {})
-            }
+            },
+            include: withAccountCurrency
           })
         );
       });

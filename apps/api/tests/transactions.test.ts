@@ -13,7 +13,6 @@ const input = {
   categoryId: "30000000-0000-4000-8000-000000000001",
   direction: "expense",
   amountMinor: 1250,
-  currency: "CAD",
   date: "2026-11-03"
 };
 describe("versioned normal-transaction contracts", () => {
@@ -21,6 +20,7 @@ describe("versioned normal-transaction contracts", () => {
     expect(transactionCreate.parse(input).note).toBeNull();
     for (const extra of [
       { merchant: "Shop" },
+      { currency: "CAD" },
       { payee: "Shop" },
       { userId: input.accountId },
       { importId: input.accountId },
@@ -46,7 +46,8 @@ describe("versioned normal-transaction contracts", () => {
       {},
       { clientRequestId: input.clientRequestId },
       { importId: null },
-      { merchant: "Shop" }
+      { merchant: "Shop" },
+      { currency: "CAD" }
     ])
       expect(transactionPatch.safeParse(patch).success).toBe(false);
     expect(transactionPatch.parse({ note: null })).toEqual({

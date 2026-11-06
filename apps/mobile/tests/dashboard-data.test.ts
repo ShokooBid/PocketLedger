@@ -102,7 +102,6 @@ describe("dashboard data boundaries", () => {
     const input = {
       direction: "expense" as const,
       amountMinor: 101,
-      currency: "USD" as const,
       date: "2026-10-01",
       categoryId: "demo-1",
       accountId: accountId(),
@@ -113,7 +112,6 @@ describe("dashboard data boundaries", () => {
     await transactions.create({
       ...{
         ...input,
-        currency: "JPY",
         accountId: accountId("JPY"),
         amountMinor: 999
       },

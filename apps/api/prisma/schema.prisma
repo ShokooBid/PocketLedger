@@ -88,12 +88,8 @@ model Account {
   user                User                 @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   defaultFor          FinancePreferences[]
   transactions        Transaction[]
-  // Server-owned migration identity; names can change without duplicating backfills.
-  legacyCurrency      String?              @db.VarChar(3)
 
   @@unique([id, userId])
-  @@unique([id, userId, currency])
-  @@unique([userId, legacyCurrency])
   // Active normalized-name uniqueness lives in the hand-written partial index.
   @@index([userId, archivedAt, id])
 }
@@ -195,8 +191,6 @@ model Transaction {
   direction   TransactionDirection
   // Positive magnitude; direction carries the sign. SQL adds a CHECK (> 0).
   amountMinor Int
-  // SQL checks uppercase three-letter syntax; API validates ISO membership.
-  currency    String               @db.VarChar(3)
   date        DateTime             @db.Date
   merchant    String?              @db.VarChar(200)
   note        String?              @db.VarChar(2000)
@@ -205,7 +199,7 @@ model Transaction {
   user        User                 @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   category    Category             @relation(fields: [categoryId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict)
   import      Import?              @relation(fields: [importId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict)
-  account     Account              @relation(fields: [accountId, userId, currency], references: [id, userId, currency], onDelete: Restrict, onUpdate: Restrict, map: "Transaction_account_owner_currency_fkey")
+  account     Account              @relation(fields: [accountId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict, map: "Transaction_account_owner_fkey")
 
   @@index([userId, accountId, date(sort: Desc), id(sort: Desc)])
   @@index([userId, date(sort: Desc), id(sort: Desc)])

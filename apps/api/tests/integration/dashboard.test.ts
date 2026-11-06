@@ -87,7 +87,6 @@ async function create(owner: Owner, extra: object = {}) {
     payload: {
       direction: "expense",
       amountMinor: 100,
-      currency: "USD",
       date: "2026-10-01",
       categoryId: owner.categoryId,
       accountId: owner.accountId,
@@ -278,7 +277,6 @@ describe("protected dashboard summary", () => {
     ]) {
       const row = await create(calendarOwner, {
         date,
-        currency: "USD",
         amountMinor: 1234
       });
       const response = await request(

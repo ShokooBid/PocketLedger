@@ -193,7 +193,6 @@ describe("authenticated mobile category flow", () => {
         userId: before.user.id,
         categoryId: category.id,
         amountMinor: 100,
-        currency: "USD",
         direction: "expense",
         date: new Date("2026-10-01"),
         accountId: (await testAccount(db, before.user.id, "USD")).id
@@ -340,7 +339,6 @@ describe("authenticated mobile category flow", () => {
     const input = {
       direction: "expense" as const,
       amountMinor: 250,
-      currency: "USD" as const,
       date: "2026-10-01",
       categoryId: category.id,
       accountId: (await testAccount(db, state.user.id, "USD")).id,
@@ -469,15 +467,18 @@ describe("authenticated mobile category flow", () => {
       );
       const selectedAccount = await testAccount(db, state.user.id, currency);
       const exponent = currencyExponents[currency];
-      const input = draftInput({
-        direction: "expense",
-        amount: exponent ? `1.${"0".repeat(exponent - 1)}1` : "1",
-        currency,
-        date: "2024-02-29",
-        categoryId: category.id,
-        accountId: selectedAccount.id,
-        note: ""
-      });
+      const input = draftInput(
+        {
+          direction: "expense",
+          amount: exponent ? `1.${"0".repeat(exponent - 1)}1` : "1",
+          currency,
+          date: "2024-02-29",
+          categoryId: category.id,
+          accountId: selectedAccount.id,
+          note: ""
+        },
+        { id: selectedAccount.id, currency }
+      );
       const row = await source.create({
         ...input,
         clientRequestId: randomUUID()
@@ -539,7 +540,6 @@ describe("authenticated mobile category flow", () => {
         categoryId: original.id,
         direction: "expense",
         amountMinor: 100,
-        currency: "USD",
         date: new Date("2026-01-01"),
         accountId: (await testAccount(db, user.user.id, "USD")).id
       }

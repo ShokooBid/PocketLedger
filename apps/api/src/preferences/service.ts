@@ -4,10 +4,7 @@ import type {
   FinancePreferences
 } from "../generated/prisma/client.js";
 import { ApiError } from "../errors.js";
-import {
-  currencySchema,
-  type TransactionInput
-} from "../transactions/contracts.js";
+import { currencySchema } from "../transactions/contracts.js";
 import type { PreferencesPatch } from "./contracts.js";
 
 type Tx = Prisma.TransactionClient;
@@ -45,7 +42,7 @@ export async function ensureFinancePreferences(tx: Tx, userId: string) {
 export async function assertNewTransactionCurrency(
   tx: Tx,
   userId: string,
-  currency: TransactionInput["currency"]
+  currency: string
 ) {
   const row = await ensureFinancePreferences(tx, userId);
   if (row.entryCurrency === null)

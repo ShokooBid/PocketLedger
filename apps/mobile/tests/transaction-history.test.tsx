@@ -54,7 +54,6 @@ async function fixture(count = 3) {
     const {
       categoryId,
       amountMinor,
-      currency,
       accountId: selectedAccountId,
       note
     } = row(n);
@@ -62,7 +61,6 @@ async function fixture(count = 3) {
       ...{
         categoryId,
         amountMinor,
-        currency,
         accountId: selectedAccountId,
         note,
         direction: n === 2 ? "income" : "expense",

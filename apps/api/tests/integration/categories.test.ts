@@ -33,7 +33,6 @@ function posting(categoryId: string, amountMinor = 100) {
     .create(alice.id, {
       categoryId,
       amountMinor,
-      currency: "CAD",
       direction: "expense",
       date: "2026-10-30",
       accountId,
@@ -516,7 +515,7 @@ describe("two-level owned category hierarchy", () => {
       ).not.toBeNull();
       await expect(
         sql.query(
-          'INSERT INTO "Transaction" ("userId", "categoryId", "accountId", direction, "amountMinor", currency, date, merchant) VALUES ($1, $2, $3, \'expense\', 1, \'CAD\', \'2026-10-30\', \'Synthetic\')',
+          'INSERT INTO "Transaction" ("userId", "categoryId", "accountId", direction, "amountMinor", date, merchant) VALUES ($1, $2, $3, \'expense\', 1, \'2026-10-30\', \'Synthetic\')',
           [alice.id, childId, accountId]
         )
       ).rejects.toMatchObject({ code: "23514" });
@@ -547,7 +546,7 @@ describe("two-level owned category hierarchy", () => {
       await categories.archive(alice.id, parent.id);
       await expect(
         sql.query(
-          'INSERT INTO "Transaction" ("userId", "categoryId", "accountId", direction, "amountMinor", currency, date, merchant) VALUES ($1, $2, $3, \'expense\', 1, \'CAD\', \'2026-10-30\', \'Synthetic\')',
+          'INSERT INTO "Transaction" ("userId", "categoryId", "accountId", direction, "amountMinor", date, merchant) VALUES ($1, $2, $3, \'expense\', 1, \'2026-10-30\', \'Synthetic\')',
           [alice.id, child.id, accountId]
         )
       ).rejects.toMatchObject({ code: "40001" });

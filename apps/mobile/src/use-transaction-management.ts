@@ -308,7 +308,15 @@ export function useTransactionManagement({
     let input;
     if (!remove) {
       try {
-        input = draftInput(draft!);
+        const account = accountChoices.find(
+          (row) => row.id === draft!.accountId
+        );
+        if (
+          !account ||
+          (account.archivedAt && account.id !== editing?.accountId)
+        )
+          throw new ClientFailure("validation", "INVALID_ACCOUNT");
+        input = draftInput(draft!, account);
       } catch {
         setError(
           "Check amount (positive, within 2147483647 minor units), currency decimals, real date, account, category and note (up to 2000). Text cannot contain control characters."

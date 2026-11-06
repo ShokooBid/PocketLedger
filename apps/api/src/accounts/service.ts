@@ -93,7 +93,7 @@ export function createAccountService(db: PrismaClient) {
         SELECT COALESCE(SUM(CASE WHEN direction = 'income' THEN "amountMinor"::numeric
           ELSE -"amountMinor"::numeric END), 0)::text AS postings
         FROM "Transaction" WHERE "userId" = ${userId}::uuid AND "accountId" = ${id}::uuid
-          AND currency = ${row.currency} AND date <= ${asOf}::date
+          AND date <= ${asOf}::date
       `;
           const balance =
             BigInt(row.openingBalanceMinor) + BigInt(total!.postings);

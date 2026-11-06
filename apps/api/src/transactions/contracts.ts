@@ -21,7 +21,6 @@ export const transactionInput = z.strictObject({
   categoryId: z.uuid(),
   direction: z.enum(["income", "expense"]),
   amountMinor: z.number().int().min(1).max(2147483647),
-  currency: currencySchema,
   date: calendarDate,
   note: text(2000).nullable().default(null)
 });
@@ -33,6 +32,9 @@ export const transactionPatch = transactionInput
   .partial()
   .refine((input) => Object.keys(input).length > 0);
 export const transactionSchema = transactionInput.extend({
+  currency: currencySchema.describe(
+    "Derived from the immutable account currency."
+  ),
   id: z.uuid(),
   importId: z.uuid().nullable(),
   createdAt: z.iso.datetime(),

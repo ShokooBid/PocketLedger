@@ -10,6 +10,7 @@ import {
 import { TransactionManagement } from "../src/transaction-management";
 import {
   amountText,
+  draftInput,
   createDemoTransactionSource,
   parseAmount,
   validDateFilter,
@@ -22,6 +23,75 @@ import {
 } from "../src/category-data";
 import { ClientFailure } from "../src/auth/transport";
 import type { AccountSource } from "../src/account-data";
+
+it.each([
+  ["CAD", "12.34", 1234],
+  ["JPY", "1234", 1234],
+  ["KWD", "1.234", 1234]
+] as const)(
+  "uses the %s account exponent and omits request currency",
+  (currency, amount, expected) => {
+    const account = { id: accountId(currency), currency };
+    const draft = {
+      direction: "expense" as const,
+      amount,
+      currency,
+      date: "2026-11-06",
+      accountId: account.id,
+      categoryId: "food",
+      note: ""
+    };
+    const input = draftInput(draft, account);
+    expect(input.amountMinor).toBe(expected);
+    expect(input).not.toHaveProperty("currency");
+    expect(amountText(expected, currency)).toBe(amount);
+    const excessivePrecision =
+      currency === "JPY" ? amount + ".1" : amount + "1";
+    expect(() =>
+      draftInput({ ...draft, amount: excessivePrecision }, account)
+    ).toThrow();
+    expect(() => draftInput(draft, { ...account, currency: "USD" })).toThrow();
+  }
+);
+
+it("rejects demo cross-currency moves without changing amounts and derives archived history currency", async () => {
+  const categories = createDemoCategorySource();
+  await categories.create("Food");
+  const rows = await accounts.list();
+  const accountSource = { list: async () => rows };
+  const source = createDemoTransactionSource(categories, accountSource);
+  const payload = {
+    clientRequestId: "90000000-0000-4000-8000-000000000001",
+    accountId: accountId("CAD"),
+    categoryId: (await categories.list())[0]!.id,
+    direction: "expense" as const,
+    amountMinor: 1234,
+    date: "2026-11-06",
+    note: null
+  };
+  const saved = await source.create(payload);
+  await expect(
+    source.update(saved.id, { accountId: accountId("JPY"), amountMinor: 999 })
+  ).rejects.toMatchObject({ code: "CURRENCY_MISMATCH" });
+  rows.find((row) => row.id === saved.accountId)!.archivedAt =
+    "2026-11-06T00:00:00Z";
+  expect(await source.get(saved.id)).toMatchObject({
+    currency: "CAD",
+    amountMinor: 1234
+  });
+  expect(await source.create(payload)).toEqual(await source.get(saved.id));
+  expect(
+    await source.update(saved.id, { note: "Historical edit" })
+  ).toMatchObject({ currency: "CAD", amountMinor: 1234 });
+  expect((await source.list({ currency: "CAD" })).items).toHaveLength(1);
+  expect((await source.list({ currency: "JPY" })).items).toEqual([]);
+  await expect(
+    source.create({
+      ...payload,
+      clientRequestId: "90000000-0000-4000-8000-000000000002"
+    })
+  ).rejects.toMatchObject({ code: "INVALID_ACCOUNT" });
+});
 async function press(name: string) {
   await act(async () => {
     await fireEvent.press(screen.getByRole("button", { name }));
@@ -243,6 +313,7 @@ it("saves parent or child selections with unambiguous hierarchy paths in authent
     .fn<TransactionSource["create"]>()
     .mockImplementation(async (input) => ({
       ...input,
+      currency: "USD",
       id: `saved-${input.categoryId}`,
       importId: null,
       createdAt: "2026-10-30T00:00:00Z",

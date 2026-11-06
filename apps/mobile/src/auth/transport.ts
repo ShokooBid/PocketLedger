@@ -153,7 +153,6 @@ export function createTransport(
                 data.error.code === "CURRENCY_LOCKED" ||
                 data.error.code === "CURRENCY_REQUIRED" ||
                 data.error.code === "CURRENCY_MISMATCH" ||
-                data.error.code === "CURRENCY_IMMUTABLE" ||
                 data.error.code === "ACCOUNT_NAME_CONFLICT" ||
                 data.error.code === "ACCOUNT_ARCHIVED" ||
                 data.error.code === "INVALID_ACCOUNT" ||

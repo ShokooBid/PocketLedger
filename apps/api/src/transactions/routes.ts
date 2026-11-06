@@ -67,7 +67,7 @@ export function registerTransactionRoutes(
         querystring: empty,
         body: transactionCreate,
         description:
-          "Required owned active account/category and UUID clientRequestId. Positive exact integer minor units, matching account/Settings currency, date on or after account opening. No merchant or client provenance. Same owner/key/payload replays with 200; changed payload or replay after deletion returns 409. First posting and currency lock commit atomically.",
+          "Required owned active account/category and UUID clientRequestId. Positive exact integer minor units in the account currency, date on or after account opening. Currency is derived from the account in responses and is rejected in request bodies. No merchant or client provenance. Same owner/key/payload replays with 200; changed payload or replay after deletion returns 409.",
         response: {
           ...errors,
           200: transactionSchema,
@@ -93,7 +93,7 @@ export function registerTransactionRoutes(
         querystring: empty,
         body: transactionPatch,
         description:
-          "Nonempty partial update. Recorded currency/identity/provenance are immutable. Unchanged archived account/category associations may remain; changed selections must be active. Opening-date/currency guards always apply.",
+          "Nonempty partial update without currency. Account reassignment must retain the original account currency; amounts are never converted. Identity/provenance are immutable. Unchanged archived account/category associations may remain; changed selections must be active. Opening-date guards always apply.",
         response: { ...errors, 200: transactionSchema }
       }
     },

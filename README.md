@@ -97,17 +97,19 @@ for design tokens, component responsibilities and verification details.
 ### Canonical finance API
 
 The authenticated application uses one `/v1` API for preferences, accounts,
-categories, transactions and dashboard summaries. CAD is the initial Settings
-currency. Create a named financial account in Settings, optionally select it as
-default, and record transactions with that account and an active category.
-The first committed transaction permanently locks entry currency. Opening
+categories, transactions and dashboard summaries. Choose currency explicitly
+after sign-in; CAD is only suggested locally. The choice is permanent immediately.
+Create a named financial account inheriting it, optionally select it as default,
+and record transactions with that account and an active category. Main finance
+routes require the choice and an active account; Settings and repair stay accessible. Opening
 balances affect tracked balances without becoming income. The form uses one
 optional note and no merchant field. Historical stored merchant values remain.
 
 The old finance implementations, `/v2` paths and rollout flags are removed. This
 is an intentional pre-release contract replacement; API and app must be updated
-together. Existing ledgers need the [one-time account backfill](docs/mobile-redesign/issue-69.md)
-before the final migration. Future transfers, custom keypad and statement
+together. #94 derives transaction currency from immutable accounts and removes
+the obsolete finance backfill CLI. TransactionCreation remains for #95; shared
+default categories remain #96 work. Future transfers, custom keypad and statement
 processing remain separate issues.
 
 `npm run typecheck --workspace=@pocketledger/mobile` runs TypeScript directly.
@@ -160,8 +162,7 @@ after installing dependencies or changing the schema. Migration SQL is tracked.
 Add `DATABASE_URL` to your existing ignored `.env` using `.env.example` as a
 reference; do not overwrite an existing `.env`. Match your local PostgreSQL
 credentials and URL-encode reserved characters in the password. To apply the
-reviewed migrations to an empty development database when ready (existing ledgers
-must first follow the [#69 backfill sequence](docs/mobile-redesign/issue-69.md)):
+reviewed migrations to an empty development database when ready:
 
 ```powershell
 npm run db:validate --workspace=@pocketledger/api
@@ -179,10 +180,11 @@ disabled account, not a working login.
 
 Migration history includes authentication, finance preferences, category catalog/
 hierarchy, accounts and account-linked transactions. Applied SQL files are never
-rewritten. The latest migration enforces required account links and removes the
-temporary rollout table after an explicit backfill. Read the [migration sequence](docs/mobile-redesign/issue-69.md)
-before deploying to a database containing old transactions. Fresh empty databases
-can deploy the complete history directly.
+rewritten. The #94 migration removes Transaction.currency and Account.legacyCurrency,
+replaces the posting account foreign key with an owner-safe reference, and updates
+live guards. The obsolete finance backfill CLI is removed. Fresh empty databases
+can deploy the complete history directly; old development data preservation is
+outside this issue. Any development data reset remains an explicit owner action.
 
 To run both API and mobile integration suites using your existing local
 PostgreSQL database and the root `.env`, use:
@@ -352,8 +354,8 @@ contracts; OS storage and provider/device behavior still need native verificatio
 Verified sessions can list, add, edit and delete income/expenses. Demo transactions
 stay in memory for the current demo session. The dashboard summarizes those records;
 CSV import remains a preview.
-Existing ledgers need the explicit account backfill before final deployment;
-see the [migration runbook](docs/mobile-redesign/issue-69.md).
+Transaction currency comes from the immutable related account, including archived
+history. Requests omit currency and responses expose it for formatting.
 
 | Method and path               | Contract                                                                                                               |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -364,13 +366,15 @@ see the [migration runbook](docs/mobile-redesign/issue-69.md).
 | `DELETE /v1/transactions/:id` | Delete owned row; returns `{ "ok": true }`. Mobile asks for confirmation.                                              |
 
 Create fields: `direction` (`income`/`expense`), positive `amountMinor` integer
-(1-2147483647), `currency`, `date` (`YYYY-MM-DD`, real calendar day, years 0001-9999),
+(1-2147483647), `date` (`YYYY-MM-DD`, real calendar day, years 0001-9999),
 `categoryId`, required `accountId`, UUID `clientRequestId`, and optional nullable
 `note` (up to 2000 UTF-16 units). No merchant, owner or client import fields are
 accepted. Supported currencies are CAD/USD/EUR/GBP/INR (two decimal places), JPY
 (zero), and KWD (three). Money conversion uses digits and integer bounds rather
-than floating-point arithmetic. New postings match both the selected account and
-Settings currency; historical edits preserve recorded currency.
+than floating-point arithmetic. Parse decimal input using the selected account
+exponent. New accounts inherit the permanent choice. Transaction create/patch
+bodies reject currency; cross-currency account reassignment fails without
+converting or changing the amount. Reports filter through account currency.
 
 List filters combine with AND: `accountId`, `currency`, `direction`, `categoryId`, and inclusive `from`/`to`.
 `includeSubcategories=true` explicitly includes children of a selected category.
@@ -430,7 +434,7 @@ for the workflow, file responsibilities, SQL, interview concepts and checks.
 After signing in on the mobile app, Dashboard shows income, expenses, net,
 category spending and up to five recent transactions for the selected month and
 currency. It starts with the device's current calendar month and session default
-currency (CAD for a fresh ledger). Use Previous
+currency (explicitly chosen during setup). Use Previous
 month/Next month or Choose month (`YYYY-MM`), and Change currency to select another
 supported currency. Each summary covers the first through last accounting date of
 that month; there is no currency conversion.
@@ -458,10 +462,10 @@ for file responsibilities, concurrency examples, verification and the phone chec
 
 Open Settings from the dashboard after native sign-in. It shows the account's
 email/password and Google-method state, app version, the device-calendar timezone
-policy, and a default currency. That currency applies to new transaction drafts
-and the dashboard during the current app session, resets to USD on logout/restart,
-and never changes existing records. There is no server-saved currency preference
-or separate account timezone setting; saved accounting dates never shift.
+policy, and the permanent currency choice, displayed read-only. New accounts
+inherit that choice; transaction display and parsing use the related account
+currency. Authenticated preferences persist across sessions; demo preferences
+remain isolated in memory. Saved accounting dates never shift.
 
 Password accounts without Google can choose Link Google. Re-enter the current
 PocketLedger password, then explicitly select the Google identity in a configured
