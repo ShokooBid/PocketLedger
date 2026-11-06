@@ -14,6 +14,7 @@ import {
   waitFor
 } from "expo-router/testing-library";
 import { router } from "expo-router";
+import { AppState } from "react-native";
 import { parsePreviewState } from "../src/navigation";
 import * as sessionModule from "../src/session";
 import * as runtime from "../src/auth/runtime";
@@ -81,10 +82,15 @@ async function chooseAccount(label: string) {
   await press(`Account: ${label}`);
 }
 
-async function enterDemo() {
+async function enterDemo(currency: "CAD" | "JPY" | "KWD" = "CAD") {
   await press("Explore demo screens without signing in");
+  await press(`Choose currency ${currency}`);
+  await press(`Confirm ${currency} permanently`);
+  await field("Account name", "Demo setup cash");
+  await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
+  await press("Create account");
   expect(
-    screen.getByRole("header", { name: "Dashboard screen" })
+    await screen.findByRole("header", { name: "Dashboard screen" })
   ).toBeVisible();
 }
 
@@ -173,6 +179,7 @@ describe("session navigation", () => {
     await screen.findByText("New transaction");
     await field("Amount", "8.50");
     await field("Note (optional)", "System Back draft");
+    await press("Choose account");
     await press("Add an account in Settings");
     await waitFor(() =>
       expect(
@@ -211,7 +218,7 @@ describe("session navigation", () => {
 
   // This full navigation flow also pays for the first cold router render.
   // Allow slower Windows/CI runs without relaxing individual lookup timeouts.
-  it("keeps a demo draft unchanged across Settings and locks currency after saving", async () => {
+  it("keeps a demo draft through Settings with currency already read-only before saving", async () => {
     await openShell();
     await enterDemo();
     await tap(screen.getByRole("link", { name: "Manage categories" }));
@@ -222,46 +229,140 @@ describe("session navigation", () => {
     await press("Back to dashboard");
     await press("Add transaction");
     await screen.findByText("New transaction");
-    expect(screen.getByText("Currency: CAD")).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Currency USD" })).toBeNull();
     await field("Amount", "12.34");
     await navigate(() => router.push("/settings"));
-    await press("Default currency EUR");
-    await field("Account name", "Demo cash");
-    await press("Create account");
-    await navigate(() => router.back());
-    expect(screen.getByText("Currency: CAD")).toBeVisible();
-    expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
+    expect(await screen.findByText("Default currency: CAD")).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Save transaction" })
-    ).toBeDisabled();
-    await press("Reload transactions and categories");
-    await press("Discard draft and start in EUR");
-    await chooseAccount("Demo cash");
-    expect(screen.getByLabelText("Amount")).toHaveProp("value", "");
-    expect(screen.getByText("Currency: EUR")).toBeVisible();
-    await field("Amount", "5.67");
-    await field("Note (optional)", "Currency demo");
+      screen.queryByRole("button", { name: /Choose currency|Default currency/ })
+    ).toBeNull();
+    await navigate(() => router.back());
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
+    await chooseAccount("Demo setup cash");
     await chooseCategory("Currency food");
     await press("Save transaction");
     await screen.findByText(/Transaction saved/);
     await navigate(() => router.push("/settings"));
+    expect(await screen.findByText("Default currency: CAD")).toBeVisible();
+  }, 15000);
+
+  it("hides transaction deep links until currency and an active account are confirmed", async () => {
+    const h = harness();
+    jest.mocked(runtime.createRuntimeSession).mockReturnValue(h.controller);
+    h.fetcher.mockImplementation(async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/v1/me") return response(alice);
+      if (path === "/v1/preferences")
+        return response({
+          entryCurrency: null,
+          hasActiveAccounts: false,
+          defaultAccountId: null
+        });
+      return response({ items: [], nextCursor: null });
+    });
+    await openShell("/transactions/20000000-0000-4000-8000-000000000001");
     expect(
-      await screen.findByText(
-        "Currency is locked after the first saved transaction."
-      )
+      await screen.findByRole("header", { name: "Choose your currency screen" })
     ).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Default currency CAD" })
-    ).toBeDisabled();
-  }, 15000);
+      screen.queryByRole("header", { name: "Transaction details screen" })
+    ).toBeNull();
+    expect(
+      h.fetcher.mock.calls.filter((call) => call[1]?.method === "PATCH")
+    ).toHaveLength(0);
+    await tap(screen.getByRole("link", { name: "Open settings" }));
+    expect(await screen.findByText("Google: not linked")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Create account" })).toBeNull();
+    await press("Back to dashboard");
+    expect(
+      await screen.findByRole("header", { name: "Choose your currency screen" })
+    ).toBeVisible();
+  });
+
+  it("repairs archive-all-accounts without losing the transaction draft", async () => {
+    await openShell();
+    await enterDemo();
+    await press("Add transaction");
+    await screen.findByText("New transaction");
+    await field("Amount", "8.50");
+    await field("Note (optional)", "Retained through account repair");
+    await navigate(() => router.push("/settings"));
+    await press("Archive Demo setup cash");
+    await press("Confirm archive account");
+    await navigate(() => router.back());
+    expect(
+      await screen.findByRole("header", { name: "Set up an account screen" })
+    ).toBeVisible();
+    expect(screen.queryByLabelText("Amount")).toBeNull();
+    await field("Account name", "Replacement cash");
+    await press("Create account");
+    expect(await screen.findByLabelText("Amount")).toHaveProp("value", "8.50");
+    expect(screen.getByLabelText("Note (optional)")).toHaveProp(
+      "value",
+      "Retained through account repair"
+    );
+  });
+
+  it("rechecks account readiness on foreground and treats a failed read as an error", async () => {
+    const h = harness();
+    const appState = jest.spyOn(AppState, "addEventListener");
+    jest.mocked(runtime.createRuntimeSession).mockReturnValue(h.controller);
+    let hasActiveAccounts = true;
+    let offline = false;
+    h.fetcher.mockImplementation(async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/v1/me") return response(alice);
+      if (path === "/v1/preferences") {
+        if (offline) throw new Error("private connection details");
+        return response({
+          entryCurrency: "CAD",
+          hasActiveAccounts,
+          defaultAccountId: null
+        });
+      }
+      return response({ items: [], nextCursor: null });
+    });
+    await openShell("/transactions");
+    expect(
+      await screen.findByRole("header", { name: "Transactions screen" })
+    ).toBeVisible();
+    const foreground = appState.mock.calls.find(
+      ([event]) => event === "change"
+    )?.[1];
+    expect(foreground).toBeDefined();
+    offline = true;
+    await act(async () => {
+      foreground?.("active");
+    });
+    expect(
+      await screen.findByText("Finance setup needs attention")
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Create account" })).toBeNull();
+    expect(screen.queryByText(/private connection details/)).toBeNull();
+    offline = false;
+    hasActiveAccounts = false;
+    await press("Try again");
+    expect(
+      await screen.findByRole("header", { name: "Set up an account screen" })
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("header", { name: "Transactions screen" })
+    ).toBeNull();
+  });
 
   it("keeps protected data hidden during an outage and retries verification", async () => {
     const h = harness();
+    h.fetcher.mockImplementation(async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/v1/me") return response(alice);
+      if (path === "/v1/preferences")
+        return response({
+          entryCurrency: "CAD",
+          hasActiveAccounts: true,
+          defaultAccountId: null
+        });
+      return response({ items: [], nextCursor: null });
+    });
     h.fetcher.mockRejectedValueOnce(new Error("private transport error"));
-    h.fetcher
-      .mockResolvedValueOnce(response(alice))
-      .mockResolvedValueOnce(response({ items: [], nextCursor: null }));
     jest.mocked(runtime.createRuntimeSession).mockReturnValue(h.controller);
     await openShell("/categories");
     expect(
@@ -283,6 +384,7 @@ describe("session navigation", () => {
     const h = harness(null);
     jest.mocked(runtime.createRuntimeSession).mockReturnValue(h.controller);
     let owner = alice;
+    let delayedCategories: Promise<Response> | null = null;
     const category = {
       id: "20000000-0000-4000-8000-000000000001",
       name: "Alice private category",
@@ -307,10 +409,15 @@ describe("session navigation", () => {
       if (path === "/v1/preferences")
         return response({
           entryCurrency: "CAD",
-          currencyLocked: false,
+          hasActiveAccounts: true,
           defaultAccountId: null
         });
       if (path === "/v1/auth/logout") return response({ ok: true });
+      if (path === "/v1/categories" && delayedCategories) {
+        const pending = delayedCategories;
+        delayedCategories = null;
+        return pending;
+      }
       return response({
         items: owner.id === alice.id ? [category] : [],
         nextCursor: null
@@ -334,7 +441,7 @@ describe("session navigation", () => {
       await press("Sign in with email");
       await screen.findByRole("header", { name: "Dashboard screen" });
       const pending = deferred<Response>();
-      h.fetcher.mockReturnValueOnce(pending.promise);
+      delayedCategories = pending.promise;
       await tap(screen.getByRole("link", { name: "Manage categories" }));
       expect(await screen.findByText("Loading categories")).toBeVisible();
       expect(screen.queryByText(category.name)).toBeNull();
@@ -433,7 +540,7 @@ describe("session navigation", () => {
 
   it("opens add/detail from the dashboard, retains selection on return and refreshes after edits", async () => {
     await openShell();
-    await enterDemo();
+    await enterDemo("JPY");
     await tap(screen.getByRole("link", { name: "Manage categories" }));
     await press("Add category");
     await field("Category name", "Dashboard food");
@@ -441,7 +548,6 @@ describe("session navigation", () => {
     await screen.findByText("Dashboard food");
     await press("Back to dashboard");
     await navigate(() => router.push("/settings"));
-    await press("Default currency JPY");
     await field("Account name", "History cash");
     await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
     await press("Create account");
@@ -489,7 +595,7 @@ describe("session navigation", () => {
       if (parsed.pathname === "/v1/preferences")
         return response({
           entryCurrency: "USD",
-          currencyLocked: false,
+          hasActiveAccounts: true,
           defaultAccountId: null
         });
       if (parsed.pathname === "/v1/auth/logout") return response({ ok: true });
@@ -552,9 +658,8 @@ describe("session navigation", () => {
 
   it("applies the session currency to dashboard/new forms and resets it when leaving demo", async () => {
     await openShell();
-    await enterDemo();
+    await enterDemo("KWD");
     await tap(screen.getByRole("link", { name: "Open settings" }));
-    await press("Default currency KWD");
     await press("Privacy and data retention");
     expect(
       await screen.findByRole("header", {

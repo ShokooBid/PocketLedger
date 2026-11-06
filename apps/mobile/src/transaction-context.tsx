@@ -15,6 +15,7 @@ import {
   type AccountSource
 } from "./account-data";
 import type { TransactionSource } from "./transaction-data";
+import { ClientFailure } from "./auth/transport";
 
 const Transactions = createContext<TransactionSource | null>(null);
 const Accounts = createContext<AccountSource | null>(null);
@@ -26,14 +27,19 @@ export function TransactionsProvider({ children }: PropsWithChildren) {
   const current = useRef(preferences);
   current.current = preferences;
   const [sources] = useState(() => {
+    const selectedCurrency = () => {
+      const currency = current.current.selectedCurrency;
+      if (currency === null)
+        throw new ClientFailure("validation", "CURRENCY_REQUIRED");
+      return currency;
+    };
     if (session.status === "demo")
       return createDemoFinanceSources(
         categories,
-        () => current.current.defaultCurrency,
+        selectedCurrency,
         (input, previous) => {
           if (!previous) {
             current.current.assertNewCurrency(input.currency);
-            current.current.transactionSaved();
           }
         }
       );
@@ -47,15 +53,40 @@ export function TransactionsProvider({ children }: PropsWithChildren) {
         ...source,
         async create(input: Parameters<TransactionSource["create"]>[0]) {
           current.current.assertNewCurrency(input.currency);
-          const row = await source.create(input);
-          current.current.transactionSaved();
-          return row;
+          return source.create(input);
         }
       }
     };
   });
+  const [accounts] = useState<AccountSource>(() => {
+    async function changed() {
+      const active =
+        session.status === "demo"
+          ? (await sources.accounts.list()).some((row) => !row.archivedAt)
+          : false; // API reload derives readiness from its database snapshot.
+      await current.current.accountsChanged(active);
+    }
+    return {
+      ...sources.accounts,
+      async create(input) {
+        const row = await sources.accounts.create(input);
+        await changed();
+        return row;
+      },
+      async update(id, patch) {
+        const row = await sources.accounts.update(id, patch);
+        await changed();
+        return row;
+      },
+      async archive(id) {
+        const row = await sources.accounts.archive(id);
+        await changed();
+        return row;
+      }
+    };
+  });
   return (
-    <Accounts.Provider value={sources.accounts}>
+    <Accounts.Provider value={accounts}>
       <Transactions.Provider value={sources.transactions}>
         {children}
       </Transactions.Provider>

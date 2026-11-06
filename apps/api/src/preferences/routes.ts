@@ -26,7 +26,7 @@ export function registerPreferencesRoutes(
         ...secured,
         querystring: empty,
         description:
-          "Owner-scoped persisted entry currency. CAD initially; locked by the first committed transaction. Gated off by default. Fresh test ledgers only; historical amounts are never relabelled.",
+          "Permanent owner-scoped currency, null until explicitly chosen, plus derived active-account readiness. Reading never selects a currency.",
         response: { ...errors, 200: preferencesSchema }
       }
     },
@@ -41,7 +41,7 @@ export function registerPreferencesRoutes(
         querystring: empty,
         body: preferencesPatch,
         description:
-          "Nonempty currency/default-account patch. Currency changes after the first posting return CURRENCY_LOCKED. Defaults must be owned, active and match the resulting currency. Changing currency alone clears an incompatible default without changing account money. Default selection requires the accounts preview gate.",
+          "Choose currency once or update the optional default account. Repeating the chosen currency succeeds; changing it returns CURRENCY_LOCKED. Defaults must be owned, active and match the permanent currency.",
         response: { ...errors, 200: preferencesSchema }
       }
     },

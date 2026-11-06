@@ -2,8 +2,8 @@ import { z } from "zod";
 import { currencySchema } from "../transactions/contracts.js";
 
 export const preferencesSchema = z.object({
-  entryCurrency: currencySchema,
-  currencyLocked: z.boolean(),
+  entryCurrency: currencySchema.nullable(),
+  hasActiveAccounts: z.boolean(),
   defaultAccountId: z.uuid().nullable()
 });
 export const preferencesPatch = z

@@ -3,31 +3,29 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../../src/app.js";
 import { createAuthService } from "../../src/auth/service.js";
 import { createPreferencesService } from "../../src/preferences/service.js";
+import { createAccountService } from "../../src/accounts/service.js";
 import { createTransactionService } from "../../src/transactions/service.js";
-import { testConfig, testAccount } from "../fixtures.js";
+import { testConfig } from "../fixtures.js";
 import { disposableDatabase } from "../support/disposable.js";
 
 const database = disposableDatabase();
 const db = database.db;
-const config = testConfig();
+const preferences = createPreferencesService(db);
+const accounts = createAccountService(db);
 let app: Awaited<ReturnType<typeof buildApp>>;
+type Owner = { id: string; token: string; email: string };
 
-type Owner = {
-  id: string;
-  token: string;
-  categoryId: string;
-  accountId: string;
-  email: string;
-};
 beforeAll(async () => {
   await database.start();
+  const config = testConfig();
   const auth = await createAuthService(db, config, async () => {
-    throw new Error("No external provider in preference tests.");
+    throw new Error("No provider calls.");
   });
   app = await buildApp(config, auth, {
     logger: false,
     rateLimitMax: 10000,
-    preferences: createPreferencesService(db),
+    preferences,
+    accounts,
     transactions: createTransactionService(db)
   });
 });
@@ -45,18 +43,12 @@ async function owner(): Promise<Owner> {
     url: "/v1/auth/register",
     payload: {
       email,
-      password: "synthetic currency password"
+      password: "synthetic permanent currency password"
     }
   });
   expect(result.statusCode).toBe(201);
-  const user = await db.user.findUniqueOrThrow({ where: { email } });
-  const category = await db.category.create({
-    data: { userId: user.id, name: "Synthetic food" }
-  });
   return {
-    id: user.id,
-    categoryId: category.id,
-    accountId: (await testAccount(db, user.id)).id,
+    id: (await db.user.findUniqueOrThrow({ where: { email } })).id,
     token: result.json().accessToken,
     email
   };
@@ -65,244 +57,231 @@ function request(
   user: Owner,
   method: "GET" | "PATCH" | "POST" | "DELETE",
   url = "/v1/preferences",
-  payload?: object,
-  server = app
+  payload?: object
 ) {
-  return server.inject({
+  return app.inject({
     method,
     url,
     headers: { authorization: `Bearer ${user.token}` },
     ...(payload ? { payload } : {})
   });
 }
-const input = (user: Owner, extra: object = {}) => ({
-  direction: "expense",
-  amountMinor: 1250,
-  currency: "CAD",
-  date: "2026-10-30",
-  categoryId: user.categoryId,
-  accountId: user.accountId,
-  clientRequestId: randomUUID(),
-  note: null,
-  ...extra
-});
-const storedInput = (user: Owner) => {
-  return {
-    accountId: user.accountId,
-    categoryId: user.categoryId,
-    amountMinor: 1250,
-    currency: "CAD",
-    direction: "expense" as const,
-    date: "2026-10-30",
-    note: null
-  };
+const accountInput = {
+  name: "First cash",
+  type: "cash" as const,
+  currency: "CAD" as const,
+  openingDate: "2026-01-01",
+  openingBalanceMinor: 0
 };
 
-describe("persisted currency preferences", () => {
-  it("requires verified authentication and rejects owner/lock injection and invalid currencies", async () => {
-    const user = await owner();
+describe("permanent currency and derived account readiness", () => {
+  it("authenticates before validation and rejects forged or invalid choices", async () => {
     for (const method of ["GET", "PATCH"] as const)
       expect(
         (await app.inject({ method, url: "/v1/preferences" })).statusCode
       ).toBe(401);
+    const user = await owner();
     for (const payload of [
       {},
       { entryCurrency: "XYZ" },
       { entryCurrency: "cad" },
+      { entryCurrency: null },
       { entryCurrency: "CAD", userId: randomUUID() },
-      { entryCurrency: "USD", currencyLocked: false },
-      { entryCurrency: "USD", defaultAccountId: "invalid" }
+      { entryCurrency: "CAD", currencyLocked: false },
+      { hasActiveAccounts: true },
+      { defaultAccountId: "invalid" }
     ])
       expect(
         (await request(user, "PATCH", undefined, payload)).statusCode
       ).toBe(422);
-    expect(
-      await db.financePreferences.findUnique({ where: { userId: user.id } })
-    ).toMatchObject({ entryCurrency: "CAD", currencyLockedAt: null });
+    expect((await preferences.get(user.id)).entryCurrency).toBeNull();
   });
 
-  it("starts at CAD, preserves updates across login/client recreation and isolates owners", async () => {
-    const alice = await owner(),
-      bob = await owner();
-    expect((await request(alice, "GET")).json()).toEqual({
-      entryCurrency: "CAD",
-      currencyLocked: false,
+  it("reading never chooses CAD and saving the initial choice is permanent before any account/posting", async () => {
+    const user = await owner();
+    expect((await request(user, "GET")).json()).toEqual({
+      entryCurrency: null,
+      hasActiveAccounts: false,
       defaultAccountId: null
     });
     expect(
       (
-        await request(alice, "PATCH", undefined, { entryCurrency: "KWD" })
-      ).json()
-    ).toMatchObject({ entryCurrency: "KWD", currencyLocked: false });
-    await request(alice, "POST", "/v1/auth/logout", {});
-    const login = await app.inject({
-      method: "POST",
-      url: "/v1/auth/login",
-      payload: { email: alice.email, password: "synthetic currency password" }
+        await db.financePreferences.findUniqueOrThrow({
+          where: { userId: user.id }
+        })
+      ).entryCurrency
+    ).toBeNull();
+    expect(
+      (await request(user, "PATCH", undefined, { entryCurrency: "CAD" })).json()
+    ).toEqual({
+      entryCurrency: "CAD",
+      hasActiveAccounts: false,
+      defaultAccountId: null
     });
-    expect(login.statusCode).toBe(200);
-    const restored = { ...alice, token: login.json().accessToken };
-    expect((await request(restored, "GET")).json().entryCurrency).toBe("KWD");
-    expect(
-      (await createPreferencesService(db).get(alice.id)).entryCurrency
-    ).toBe("KWD");
-    expect((await request(bob, "GET")).json().entryCurrency).toBe("CAD");
-  });
-
-  it("does not lock on failed saves and locks atomically on a confirmed first posting", async () => {
-    const user = await owner(),
-      foreign = await owner();
-    await request(user, "GET");
-    expect(
-      (
-        await request(
-          user,
-          "POST",
-          "/v1/transactions",
-          input(user, { categoryId: foreign.categoryId })
-        )
-      ).statusCode
-    ).toBe(404);
-    expect((await request(user, "GET")).json().currencyLocked).toBe(false);
-    // This fails a DB CHECK after the before-insert trigger has run.
-    await expect(
-      db.transaction.create({
-        data: {
-          ...storedInput(user),
-          direction: "expense",
-          userId: user.id,
-          amountMinor: 0,
-          date: new Date("2026-10-30T00:00:00Z")
-        }
-      })
-    ).rejects.toThrow();
-    expect((await request(user, "GET")).json().currencyLocked).toBe(false);
-    const created = await request(
-      user,
-      "POST",
-      "/v1/transactions",
-      input(user)
-    );
-    expect(created.statusCode).toBe(201);
-    expect(created.json()).toMatchObject({
-      amountMinor: 1250,
-      currency: "CAD"
-    });
-    expect((await request(user, "GET")).json().currencyLocked).toBe(true);
-    expect(
-      (await request(user, "PATCH", undefined, { entryCurrency: "USD" })).json()
-        .error.code
-    ).toBe("CURRENCY_LOCKED");
     expect(
       (await request(user, "PATCH", undefined, { entryCurrency: "CAD" }))
         .statusCode
     ).toBe(200);
-    expect(
-      (
-        await request(user, "PATCH", `/v1/transactions/${created.json().id}`, {
-          currency: "USD"
-        })
-      ).json().error.code
-    ).toBe("CURRENCY_IMMUTABLE");
-    expect(
-      (
-        await request(user, "PATCH", `/v1/transactions/${created.json().id}`, {
-          note: "Edited note"
-        })
-      ).statusCode
-    ).toBe(200);
-    await request(user, "DELETE", `/v1/transactions/${created.json().id}`);
-    expect((await request(user, "GET")).json()).toMatchObject({
-      entryCurrency: "CAD",
-      currencyLocked: true
+    const change = await request(user, "PATCH", undefined, {
+      entryCurrency: "KWD"
     });
-    await expect(
-      db.financePreferences.update({
-        where: { userId: user.id },
-        data: { currencyLockedAt: null }
-      })
-    ).rejects.toThrow();
-  });
-
-  it("rejects wrong-currency writes even if a client skips reading preferences", async () => {
-    const user = await owner();
-    expect(
-      (
-        await request(
-          user,
-          "POST",
-          "/v1/transactions",
-          input(user, { currency: "USD" })
-        )
-      ).json().error.code
-    ).toBe("CURRENCY_MISMATCH");
+    expect(change.statusCode).toBe(409);
+    expect(change.json().error.code).toBe("CURRENCY_LOCKED");
+    expect(await db.account.count({ where: { userId: user.id } })).toBe(0);
     expect(await db.transaction.count({ where: { userId: user.id } })).toBe(0);
-    expect((await request(user, "GET")).json()).toMatchObject({
-      entryCurrency: "CAD",
-      currencyLocked: false
-    });
   });
 
-  it("serializes concurrent currency changes and first postings without mismatched committed data", async () => {
-    for (let i = 0; i < 4; i++) {
-      const user = await owner();
-      await request(user, "GET");
-      const [change, create] = await Promise.all([
-        request(user, "PATCH", undefined, { entryCurrency: "EUR" }),
-        request(user, "POST", "/v1/transactions", input(user))
-      ]);
-      const saved = await db.transaction.findMany({
-        where: { userId: user.id }
-      });
-      const preferences = (await request(user, "GET")).json();
-      if (create.statusCode === 201) {
-        expect(change.statusCode).toBe(409);
-        expect(preferences).toMatchObject({
-          entryCurrency: "CAD",
-          currencyLocked: true
-        });
-        expect(saved).toHaveLength(1);
-        expect(saved[0]!.currency).toBe("CAD");
-      } else {
-        expect(change.statusCode).toBe(200);
-        expect(create.statusCode).toBe(422);
-        expect(preferences).toMatchObject({
-          entryCurrency: "EUR",
-          currencyLocked: false
-        });
-        expect(saved).toHaveLength(0);
+  it("persists across login/service recreation and isolates users", async () => {
+    const alice = await owner(),
+      bob = await owner();
+    await request(alice, "PATCH", undefined, { entryCurrency: "KWD" });
+    await request(alice, "POST", "/v1/auth/logout", {});
+    const login = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: {
+        email: alice.email,
+        password: "synthetic permanent currency password"
       }
-    }
+    });
+    expect(login.statusCode).toBe(200);
+    expect(
+      (
+        await request({ ...alice, token: login.json().accessToken }, "GET")
+      ).json().entryCurrency
+    ).toBe("KWD");
+    expect(
+      (await createPreferencesService(db).get(alice.id)).entryCurrency
+    ).toBe("KWD");
+    expect((await preferences.get(bob.id)).entryCurrency).toBeNull();
   });
 
-  it("enforces activated currency and permanent locks for direct database postings", async () => {
+  it("requires currency before accounts in the API and direct database writes, including a null preference row", async () => {
     const user = await owner();
-    await request(user, "GET");
+    expect(
+      (await request(user, "POST", "/v1/accounts", accountInput)).json().error
+        .code
+    ).toBe("CURRENCY_REQUIRED");
     await expect(
-      db.transaction.create({
+      db.account.create({
         data: {
-          ...storedInput(user),
+          ...accountInput,
           userId: user.id,
-          direction: "expense",
-          currency: "USD",
-          date: new Date("2026-10-30T00:00:00Z")
+          openingDate: new Date("2026-01-01")
         }
       })
     ).rejects.toThrow();
-    await db.transaction.create({
+    await preferences.update(user.id, { entryCurrency: "CAD" });
+    expect(
+      (
+        await request(user, "POST", "/v1/accounts", {
+          ...accountInput,
+          currency: "USD"
+        })
+      ).json().error.code
+    ).toBe("PREFERENCE_CHANGED");
+    const account = await request(user, "POST", "/v1/accounts", accountInput);
+    expect(account.statusCode).toBe(201);
+    expect(account.json().currency).toBe("CAD");
+    expect(await preferences.get(user.id)).toMatchObject({
+      hasActiveAccounts: true,
+      defaultAccountId: null
+    });
+  });
+
+  it("derives readiness after archival/replacement without deleting history or requiring a default", async () => {
+    const user = await owner();
+    await preferences.update(user.id, { entryCurrency: "CAD" });
+    const account = await accounts.create(user.id, accountInput);
+    const category = await db.category.create({
+      data: { userId: user.id, name: "Setup food" }
+    });
+    const transaction = await db.transaction.create({
       data: {
-        ...storedInput(user),
         userId: user.id,
+        accountId: account.id,
+        categoryId: category.id,
         direction: "expense",
-        date: new Date("2026-10-30T00:00:00Z")
+        amountMinor: 1250,
+        currency: "CAD",
+        date: new Date("2026-11-05")
       }
     });
-    expect((await request(user, "GET")).json().currencyLocked).toBe(true);
+    await preferences.update(user.id, { defaultAccountId: account.id });
+    await accounts.archive(user.id, account.id);
+    expect(await preferences.get(user.id)).toEqual({
+      entryCurrency: "CAD",
+      hasActiveAccounts: false,
+      defaultAccountId: null
+    });
+    expect(
+      await db.transaction.findUnique({ where: { id: transaction.id } })
+    ).not.toBeNull();
+    const rejected = await request(user, "POST", "/v1/transactions", {
+      accountId: account.id,
+      categoryId: category.id,
+      direction: "expense",
+      amountMinor: 1,
+      currency: "CAD",
+      date: "2026-11-05",
+      note: null,
+      clientRequestId: randomUUID()
+    });
+    expect(rejected.json().error.code).toBe("INVALID_ACCOUNT");
+    await accounts.create(user.id, { ...accountInput, name: "Replacement" });
+    expect(await preferences.get(user.id)).toMatchObject({
+      hasActiveAccounts: true,
+      defaultAccountId: null
+    });
+    await db.transaction.delete({ where: { id: transaction.id } });
     await expect(
-      db.financePreferences.update({
-        where: { userId: user.id },
-        data: { entryCurrency: "USD" }
-      })
+      preferences.update(user.id, { entryCurrency: "USD" })
+    ).rejects.toMatchObject({ code: "CURRENCY_LOCKED" });
+  });
+
+  it("serializes conflicting first choices and accepts identical concurrent retries", async () => {
+    const user = await owner();
+    const replies = await Promise.all([
+      request(user, "PATCH", undefined, { entryCurrency: "CAD" }),
+      request(user, "PATCH", undefined, { entryCurrency: "KWD" })
+    ]);
+    expect(replies.map((r) => r.statusCode).sort()).toEqual([200, 409]);
+    const chosen = (await preferences.get(user.id)).entryCurrency;
+    const retries = await Promise.all([
+      request(user, "PATCH", undefined, { entryCurrency: chosen }),
+      request(user, "PATCH", undefined, { entryCurrency: chosen })
+    ]);
+    expect(retries.map((r) => r.statusCode)).toEqual([200, 200]);
+  });
+
+  it("enforces write-once identity against direct updates, clearing, deletion and concurrent choices", async () => {
+    const user = await owner(),
+      other = await owner();
+    await preferences.get(user.id);
+    const results = await Promise.allSettled(
+      ["CAD", "USD"].map((entryCurrency) =>
+        db.financePreferences.update({
+          where: { userId: user.id },
+          data: { entryCurrency }
+        })
+      )
+    );
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const chosen = (await preferences.get(user.id)).entryCurrency!;
+    await db.financePreferences.update({
+      where: { userId: user.id },
+      data: { entryCurrency: chosen }
+    });
+    for (const data of [
+      { entryCurrency: null },
+      { entryCurrency: chosen === "CAD" ? "USD" : "CAD" },
+      { userId: other.id }
+    ])
+      await expect(
+        db.financePreferences.update({ where: { userId: user.id }, data })
+      ).rejects.toThrow();
+    await expect(
+      db.financePreferences.delete({ where: { userId: user.id } })
     ).rejects.toThrow();
   });
 });

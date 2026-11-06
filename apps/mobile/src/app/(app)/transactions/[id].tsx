@@ -22,7 +22,12 @@ function TransactionDetailScreen() {
   const accounts = useAccounts();
   const categories = useCategories();
   const { session } = useSession();
-  const { defaultCurrency, defaultAccountId, currencyState } = usePreferences();
+  const {
+    defaultCurrency,
+    defaultAccountId,
+    hasActiveAccounts,
+    currencyState
+  } = usePreferences();
   const router = useRouter();
   const [active, setActive] = useState(false);
   useFocusEffect(
@@ -59,7 +64,9 @@ function TransactionDetailScreen() {
           onAccountSettings={openDraftSettings}
           onCurrencySettings={openDraftSettings}
           preferencesReady={
-            currencyState.status === "ready" && !currencyState.saving
+            currencyState.status === "ready" &&
+            !currencyState.saving &&
+            hasActiveAccounts
           }
           demo={session.status === "demo"}
         />

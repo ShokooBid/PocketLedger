@@ -53,6 +53,9 @@ it("round-trips real merchant-free data, reconciles a lost response with the ori
   const category = await db.category.create({
     data: { userId: user.id, name: "Food" }
   });
+  // Registration no longer chooses CAD implicitly. This fixture must complete
+  // the same permanent-currency prerequisite as the real account setup flow.
+  await createPreferencesService(db).update(user.id, { entryCurrency: "CAD" });
   const account = await createAccountService(db).create(user.id, {
     name: "Cash",
     type: "cash",

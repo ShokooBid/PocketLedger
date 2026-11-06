@@ -19,13 +19,17 @@ import {
 import { NavigationLink, Screen, StateNotice } from "./ui";
 
 type Preferences = {
+  selectedCurrency: Currency | null;
+  hasActiveAccounts: boolean;
+  // Existing finance widgets require a concrete type. This fallback is never a
+  // persisted choice; FinanceSetup hides them until selection is complete.
   defaultCurrency: Currency;
   defaultAccountId: string | null;
   setDefaultAccount: (id: string | null) => Promise<void>;
   setDefaultCurrency: (currency: Currency) => Promise<void>;
   currencyState: CurrencySettingsState;
   assertNewCurrency: (currency: Currency) => void;
-  transactionSaved: () => void;
+  accountsChanged: (hasActiveAccounts: boolean) => Promise<void>;
 };
 type State = {
   data: CurrencyPreferences;
@@ -47,8 +51,8 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
   });
   const [state, setState] = useState<State>(() => ({
     data: {
-      entryCurrency: "CAD",
-      currencyLocked: false,
+      entryCurrency: null,
+      hasActiveAccounts: false,
       defaultAccountId: null
     },
     initialized: session.status === "demo",
@@ -59,36 +63,41 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
   const current = useRef(state);
   const mounted = useRef(false);
   const inFlight = useRef(false);
+  const pendingRead = useRef<Promise<void> | null>(null);
   const revision = useRef(0);
   const apply = useCallback((next: State) => {
     current.current = next;
     if (mounted.current) setState(next);
   }, []);
-  const reload = useCallback(async () => {
-    if (inFlight.current) return;
+  const reload = useCallback((): Promise<void> => {
+    if (inFlight.current) return pendingRead.current ?? Promise.resolve();
     inFlight.current = true;
     const version = revision.current;
     apply({ ...current.current, status: "loading", error: null });
-    try {
-      const data = source ? await source.get() : current.current.data;
-      if (mounted.current && version === revision.current)
-        apply({
-          data,
-          initialized: true,
-          status: "ready",
-          saving: false,
-          error: null
-        });
-    } catch (error) {
-      if (mounted.current && version === revision.current)
-        apply({
-          ...current.current,
-          status: "error",
-          error: preferenceFailureMessage(error)
-        });
-    } finally {
-      if (version === revision.current) inFlight.current = false;
-    }
+    const request = (async () => {
+      try {
+        const data = source ? await source.get() : current.current.data;
+        if (mounted.current && version === revision.current)
+          apply({
+            data,
+            initialized: true,
+            status: "ready",
+            saving: false,
+            error: null
+          });
+      } catch (error) {
+        if (mounted.current && version === revision.current)
+          apply({
+            ...current.current,
+            status: "error",
+            error: preferenceFailureMessage(error)
+          });
+      } finally {
+        if (version === revision.current) inFlight.current = false;
+      }
+    })();
+    pendingRead.current = request;
+    return request;
   }, [source, apply]);
   useEffect(() => {
     mounted.current = true;
@@ -103,12 +112,18 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
     async (value: Currency) => {
       if (!mounted.current) return;
       const currency = currencySchema.parse(value);
-      if (inFlight.current) return;
-      if (
-        current.current.status !== "ready" ||
-        current.current.data.currencyLocked
-      )
+      if (inFlight.current || current.current.status !== "ready") return;
+      if (current.current.data.entryCurrency !== null) {
+        if (current.current.data.entryCurrency !== currency)
+          apply({
+            ...current.current,
+            status: "error",
+            error: preferenceFailureMessage(
+              new ClientFailure("conflict", "CURRENCY_LOCKED")
+            )
+          });
         return;
+      }
       inFlight.current = true;
       const version = revision.current;
       apply({ ...current.current, saving: true, error: null });
@@ -117,11 +132,7 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
           ? await source.update(currency)
           : {
               ...current.current.data,
-              entryCurrency: currency,
-              defaultAccountId:
-                currency === current.current.data.entryCurrency
-                  ? current.current.data.defaultAccountId
-                  : null
+              entryCurrency: currency
             };
         if (mounted.current && version === revision.current)
           apply({
@@ -148,19 +159,33 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
   const assertNewCurrency = useCallback((currency: Currency) => {
     if (current.current.status !== "ready" || current.current.saving)
       throw new ClientFailure("validation", "PREFERENCES_NOT_READY");
+    if (current.current.data.entryCurrency === null)
+      throw new ClientFailure("validation", "CURRENCY_REQUIRED");
     if (current.current.data.entryCurrency !== currency)
       throw new ClientFailure("validation", "CURRENCY_MISMATCH");
   }, []);
-  const transactionSaved = useCallback(() => {
-    revision.current++;
-    inFlight.current = false;
-    apply({
-      ...current.current,
-      data: { ...current.current.data, currencyLocked: true },
-      status: "ready",
-      saving: false
-    });
-  }, [apply]);
+  const accountsChanged = useCallback(
+    async (hasActiveAccounts: boolean) => {
+      if (source) {
+        // A read started before an account mutation may contain the old count.
+        // Wait for it, then obtain a new snapshot rather than dropping the refresh.
+        await pendingRead.current;
+        await reload();
+      } else {
+        apply({
+          ...current.current,
+          data: {
+            ...current.current.data,
+            hasActiveAccounts,
+            defaultAccountId: hasActiveAccounts
+              ? current.current.data.defaultAccountId
+              : null
+          }
+        });
+      }
+    },
+    [source, reload, apply]
+  );
   const setDefaultAccount = useCallback(
     async (id: string | null) => {
       if (inFlight.current || current.current.status !== "ready")
@@ -192,16 +217,17 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
   return (
     <Context.Provider
       value={{
-        defaultCurrency: state.data.entryCurrency,
+        selectedCurrency: state.data.entryCurrency,
+        hasActiveAccounts: state.data.hasActiveAccounts,
+        defaultCurrency: state.data.entryCurrency ?? "CAD",
         defaultAccountId: state.data.defaultAccountId,
         setDefaultAccount,
         setDefaultCurrency,
         assertNewCurrency,
-        transactionSaved,
+        accountsChanged,
         currencyState: {
           initialized: state.initialized,
           status: state.status,
-          locked: state.data.currencyLocked,
           saving: state.saving,
           error: state.error,
           reload
@@ -219,9 +245,20 @@ export function usePreferences() {
 }
 
 export function PreferencesReady({ children }: PropsWithChildren) {
-  const { currencyState } = usePreferences();
-  // A failed refresh after initialization must not unmount and erase a draft.
-  if (currencyState.initialized) return <>{children}</>;
+  const { currencyState, selectedCurrency, hasActiveAccounts } =
+    usePreferences();
+  const ready =
+    currencyState.status === "ready" &&
+    selectedCurrency !== null &&
+    hasActiveAccounts;
+  const [admitted, setAdmitted] = useState(false);
+  useEffect(() => {
+    if (ready) setAdmitted(true);
+  }, [ready]);
+  // Do not initialize finance drafts until setup first succeeds. Afterwards a
+  // failed refresh/account repair must not unmount and erase an existing draft;
+  // the central FinanceSetup boundary hides it until access is ready again.
+  if (ready || admitted) return <>{children}</>;
   return (
     <Screen title="Currency settings">
       <StateNotice

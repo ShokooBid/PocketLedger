@@ -64,14 +64,14 @@ model TransactionCreation {
 }
 
 model FinancePreferences {
-  userId           String    @id @db.Uuid
-  entryCurrency    String    @default("CAD") @db.VarChar(3)
-  currencyLockedAt DateTime? @db.Timestamptz(3)
-  defaultAccountId String?   @db.Uuid
-  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
-  user             User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  defaultAccount   Account?  @relation(fields: [defaultAccountId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict, map: "FinancePreferences_default_account_owner_fkey")
+  userId           String   @id @db.Uuid
+  // Null until explicitly chosen; once set, SQL prevents changing or clearing it.
+  entryCurrency    String?  @db.VarChar(3)
+  defaultAccountId String?  @db.Uuid
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  user             User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  defaultAccount   Account? @relation(fields: [defaultAccountId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict, map: "FinancePreferences_default_account_owner_fkey")
 }
 
 model Account {
