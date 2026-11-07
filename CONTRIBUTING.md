@@ -25,9 +25,9 @@ and `package-lock.json` to agree. Use `npm install` when deliberately changing
 dependencies, and review both the manifest and lockfile diff afterward.
 
 The mobile demo needs no credentials or environment file. Real mobile authentication
-requires the public configuration described in README and a native development
+requires the public configuration in [DEVELOPMENT.md](DEVELOPMENT.md#connect-the-native-app) and a native development
 build for Google. The API requires
-validated database and signing configuration; see README's authentication setup.
+validated database and signing configuration; see the [API setup](DEVELOPMENT.md#configure-the-api-and-database).
 The local
 PostgreSQL service uses an ignored `.env` copied from `.env.example`; replace its
 password placeholder before starting the database. Prisma CLI explicitly reads
@@ -92,28 +92,25 @@ npm run typecheck
 npm run test
 npm run test:integration
 npm run build --workspace=@pocketledger/api
-npm run build --workspace=@pocketledger/shared
 git diff --check
 ```
 
 Use `npm run format` to apply formatting, then inspect the changes. `docs/` is
 currently excluded from Prettier; review Markdown links and layout manually.
-The shared unit runner still permits zero tests; API and mobile tests require real
-cases. Mobile uses Jest with Expo's preset; API/shared use Vitest. Mobile type checks
-generate ignored route declarations first, so clean checkouts and CI validate the
-same navigation contracts. Say which tests ran in a PR. The API integration suite
+API and mobile tests require real cases. Mobile uses Jest with Expo's preset;
+the API uses Vitest. Mobile type checks run Expo's TypeScript configuration step
+before TypeScript. Say which tests ran in a PR. The API integration suite
 tests migrations from zero, ownership constraints, synthetic seeding and
-authentication behavior. Start the
-separate test service and set `TEST_DATABASE_URL` as described in
-[README](README.md#prisma-and-database-tests) before running it locally. It creates
-and deletes only randomly named databases inside that disposable service. The mobile
+authentication behavior. Use `npm run test:integration:local` with local PostgreSQL
+and the root `.env`, or configure a separate local `TEST_DATABASE_URL`, as described
+in the [development guide](DEVELOPMENT.md#postgresql-integration-tests).
+Each suite creates and drops only its own random schema. The mobile
 integration suite also runs its actual session/client/category adapter against
 Fastify and a disposable database; native storage/provider boundaries are mocked
 separately in Jest. Put future
 integration tests in `apps/api/tests/integration/**/*.test.ts`; the API unit-test
-command excludes this directory. Use only a disposable test database and
-synthetic records. Integration and API unit tests do not permit zero tests; remove
-`passWithNoTests` from remaining suites when those gain real tests. Prisma Client
+command excludes this directory. Use only synthetic records in integration tests.
+Integration and unit tests do not permit zero tests. Prisma Client
 generation must run before type checks or builds; do not commit generated client
 files. Type checks include database tests, seed scripts, and Prisma configuration.
 
@@ -123,8 +120,8 @@ files. Type checks include database tests, seed scripts, and Prisma configuratio
 `main` and pushes to `main`, including documentation-only changes. Its single
 job has the stable check name **`quality`**. It installs the lockfile with
 `npm ci`, validates the schema and generates Prisma Client, then runs formatting,
-lint, type checks, unit tests, the API integration
-command, and the API/shared builds. Each command must exit successfully; a failed
+lint, type checks, unit tests, API/mobile integration tests, and the API build.
+Each command must exit successfully; a failed
 step fails the job and skips later normal steps. Native Android/iOS builds and
 device testing remain separate from these TypeScript build checks.
 

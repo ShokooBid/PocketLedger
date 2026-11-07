@@ -1,526 +1,114 @@
-# PocketLedger
+﻿# PocketLedger
 
-PocketLedger is a privacy-conscious personal-finance mobile application. Its first
-release lets an authenticated user organize categories, manually record income and
-expenses, review a dashboard, and import a CSV statement after previewing it.
-The mobile app supports email/password and native Google sign-in with persistent
-PocketLedger sessions in platform secure storage. Categories use the authenticated
-API after session verification. Native Google/device acceptance still needs OAuth
-setup and a development build. See the [authentication plan](docs/authentication-plan.md)
-and [implementation walkthrough](docs/issue-7-implementation-walkthrough.md).
+A personal-finance mobile app for tracking income, expenses, and monthly spending
+across financial accounts. Built with React Native, Expo, TypeScript, and a
+Fastify/PostgreSQL API.
 
-The project is implemented incrementally from an accepted design. The current
-decisions and product boundaries are documented here:
+PocketLedger focuses on accurate money handling, explicit data ownership, and
+secure mobile sessions. An isolated demo lets you explore the app without an
+account or a running backend.
 
-- [Architecture and API conventions](docs/architecture.md)
-- [MVP scope and product boundaries](docs/mvp-scope.md)
-- [Lightweight threat model](docs/threat-model.md)
+**Status:** Pre-release portfolio project. Core manual tracking is implemented;
+CSV import is a UI placeholder. Use synthetic data when evaluating the app.
 
-The initial stack is React Native with Expo and TypeScript for mobile; Node.js,
-Fastify, PostgreSQL, Prisma, Zod, and REST/OpenAPI for the API; and Docker,
-automated tests, and GitHub Actions for delivery.
+## What you can do
 
-## Local development
+- Sign in with email/password or Google on a configured native build; restore
+  sessions from secure device storage and sign out on one or all devices.
+- Choose a permanent ledger currency and create financial accounts with opening
+  balances and an optional default account.
+- Organize transactions with shared default categories and personal categories,
+  including subcategories and archival that preserves history.
+- Add, edit, delete, and filter income and expenses by account, category, date,
+  direction, and currency.
+- Review monthly income, expenses, net totals, category spending, and recent
+  transactions.
+- Explore categories, transactions, and summaries in a temporary in-memory demo.
 
-### Prerequisites
+## Try the demo
 
-- Node.js 22.13 or later
-- npm 10 or later (the repository uses npm workspaces)
-- An Expo development build on an Android/iOS device or emulator/simulator for
-  authentication; Expo Go and web remain available for the isolated demo
-- Docker Desktop or Rancher Desktop for the local PostgreSQL service
-
-Docker is required only for the local database. Demo and email/password development
-need no cloud account or production credentials. Google needs the OAuth setup below.
-
-### Install
-
+Use Node.js 22.x (at least 22.13; see [.nvmrc](.nvmrc)) and npm 10.x.
 From the repository root:
 
 ```sh
-npm install
-npm run db:generate --workspace=@pocketledger/api
+npm ci
+npm run dev --workspace=@pocketledger/mobile -- --web
 ```
 
-### Workspace layout
+Choose **Explore demo screens without signing in** on the sign-in screen. No database, environment file, or
+credentials are required. Demo changes are temporary and make no API requests;
+web supports demo mode only.
+
+For an SDK-compatible Expo Go demo, run
+`npm run dev --workspace=@pocketledger/mobile -- --go`.
+For the API, PostgreSQL, and native authentication setup, see
+[DEVELOPMENT.md](DEVELOPMENT.md).
+
+## Architecture and engineering decisions
 
 ```text
-apps/mobile       Expo + React Native app
-apps/api          Fastify API, authentication service, Prisma schema and tests
+React Native / Expo -> Fastify REST API -> PostgreSQL
+  secure sessions       Zod contracts      Prisma + SQL migrations
 ```
 
-The API owns persistence and server-only validation. The mobile app validates the
-HTTP boundary without importing Prisma or backend modules. A shared workspace can
-be introduced when there is reusable portable code; the placeholder was removed.
-
-### Commands
-
-| Command                    | Purpose                                            |
-| -------------------------- | -------------------------------------------------- |
-| `npm run dev:mobile`       | Start the Expo development server.                 |
-| `npm run dev:api`          | Run the API in watch mode using the root `.env`.   |
-| `npm run start:api`        | Run the API using the root `.env` file.            |
-| `npm run dev`              | Run every available workspace development command. |
-| `npm run format`           | Format supported files with Prettier.              |
-| `npm run format:check`     | Verify formatting without changing files.          |
-| `npm run lint`             | Lint the repository.                               |
-| `npm run typecheck`        | Type-check each workspace.                         |
-| `npm run test`             | Run each workspace's test command.                 |
-| `npm run test:integration` | Test migrations and ownership on a disposable DB.  |
-
-The mobile app verifies saved credentials before rendering protected navigation.
-Native sign-in connects category list/add/edit/archive to the owner-scoped API.
-Category lists traverse every page, including archived history. Logout clears
-device credentials and revokes the server session when reachable. Transient
-failures preserve credentials; an uncertain refresh requires explicit sign-in
-recovery rather than replaying a possibly consumed token.
-
-The separately labeled demo uses temporary in-memory categories and makes no API
-requests. Transactions support add/edit/delete and filtered history in both modes.
-The dashboard shows monthly API summaries for verified sessions and temporary
-transaction summaries in demo mode. CSV import remains a screen preview.
-Web is demo-only. Archive requires confirmation and preserves history.
-
-Run `npm run dev:mobile` for the development client. Use
-`npm run dev --workspace=@pocketledger/mobile -- --go` for an SDK-compatible Expo Go
-demo (native Google is unavailable there).
-From `apps/mobile`, `npm run android` opens an available Android target,
-`npm run ios` needs a macOS iOS simulator, and `npm run web` opens the web preview.
-Categories and CSV import retain loading/empty/error previews. Dashboard,
-transactions and Settings show their actual data states. Demo Settings also offers a
-rendering-error recovery exercise and a demo exit button.
-
-Mobile screens use white surfaces, violet controls and pink-to-lilac organic
-shapes. See the [purple/pink UI walkthrough](docs/purple-pink-ui-walkthrough.md)
-for design tokens, component responsibilities and verification details.
-
-### Canonical finance API
-
-The authenticated application uses one `/v1` API for preferences, accounts,
-categories, transactions and dashboard summaries. Choose currency explicitly
-after sign-in; CAD is only suggested locally. The choice is permanent immediately.
-Create a named financial account inheriting it, optionally select it as default,
-and record transactions with that account and an active category. Main finance
-routes require the choice and an active account; Settings and repair stay accessible. Opening
-balances affect tracked balances without becoming income. The form uses one
-optional note and no merchant field. Historical stored merchant values remain.
-
-The old finance implementations, `/v2` paths and rollout flags are removed. This
-is an intentional pre-release contract replacement; API and app must be updated
-together. #94 derives transaction currency from immutable accounts and removes
-the obsolete finance backfill CLI. #95 stores request identity and the original
-creation fingerprint on Transaction, replacing TransactionCreation. Retry
-protection lasts while that row exists; hard deletion releases its request key.
-#96 shares one immutable 80-row catalog across users; personal categories remain
-private. Signup no longer creates category copies. Initialize the approved catalog
-once per database with `npm run categories:init` after migrations and before serving traffic. Future transfers, custom keypad and statement
-processing remain separate issues.
-
-`npm run typecheck --workspace=@pocketledger/mobile` runs TypeScript directly.
-Expo generates its ignored navigation types when its development server runs.
-`npm run test --workspace=@pocketledger/mobile` runs Expo/Jest screen and navigation
-tests and requires tests to exist. See the [Issue #9 walkthrough](docs/issue-9-implementation-walkthrough.md)
-for file responsibilities, commands, learning notes, and device-verification limits.
-
-## Local PostgreSQL
-
-Issue #4 provides a development-only PostgreSQL container. Issue #6 adds the
-Prisma schema, migrations, synthetic seeds, and a database client factory.
-The API exposes health, authentication, owner-protected categories, transaction CRUD,
-and date-range dashboard summaries. The import API comes later.
-
-From the repository root in PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-# Edit .env and replace POSTGRES_PASSWORD with a unique local password.
-docker compose up -d db
-docker compose ps
-```
-
-`Copy-Item` creates your local configuration file; it is manually created, not
-generated, and Git ignores it. `up -d` downloads the PostgreSQL image if needed
-and starts the `db` service in the background. `ps` should eventually show the
-service as `healthy`; the health check waits for PostgreSQL to accept
-connections. The database is reachable only from this computer at
-`localhost:<POSTGRES_PORT>` (default `5432`).
-
-Use `docker compose restart db` to restart PostgreSQL without deleting its data.
-Use `docker compose stop db` to stop it and `docker compose up -d db` to resume
-it. The named volume retains data across those commands.
-
-> **Warning:** `docker compose down --volumes` deletes the local PostgreSQL
-> volume and permanently erases its database data. Do this only when you intend
-> to reset local development data; it cannot be undone unless you made a backup.
-
-See the [Issue #4 walkthrough](docs/issue-4-implementation-walkthrough.md) for
-installation choices, each command's purpose, connection details, and a safe
-reset procedure.
-
-## Prisma and database tests
-
-The hand-written schema is `apps/api/prisma/schema.prisma`. The generated
-Prisma Client stays ignored in `apps/api/src/generated/prisma/`; regenerate it
-after installing dependencies or changing the schema. Migration SQL is tracked.
-
-Add `DATABASE_URL` to your existing ignored `.env` using `.env.example` as a
-reference; do not overwrite an existing `.env`. Match your local PostgreSQL
-credentials and URL-encode reserved characters in the password. To apply the
-reviewed migrations to an empty development database when ready:
-
-```powershell
-npm run db:validate --workspace=@pocketledger/api
-npm run db:generate --workspace=@pocketledger/api
-npm run db:deploy --workspace=@pocketledger/api
-npm run categories:init
-npm run db:status --workspace=@pocketledger/api
-```
-
-`db:deploy` changes the database named by `DATABASE_URL`; inspect that target
-first. It applies existing migrations without resetting data. Optional seeds
-require `$env:ALLOW_SYNTHETIC_SEED = 'true'` followed by
-`npm run db:seed --workspace=@pocketledger/api`; then remove the flag with
-`Remove-Item Env:ALLOW_SYNTHETIC_SEED`. Seeds contain fictional records and a
-disabled account, not a working login.
-
-Migration history includes authentication, finance preferences, category catalog/
-hierarchy, accounts and account-linked transactions. Applied SQL files are never
-rewritten. The #94 migration removes Transaction.currency and Account.legacyCurrency,
-replaces the posting account foreign key with an owner-safe reference, and updates
-live guards. The obsolete finance backfill CLI is removed. Fresh empty databases
-can deploy the complete history directly; old development data preservation is
-outside this issue. Any development data reset remains an explicit owner action.
-
-To run both API and mobile integration suites using your existing local
-PostgreSQL database and the root `.env`, use:
-
-```powershell
-npm run test:integration:local
-```
-
-The runner passes the local `DATABASE_URL` to its child as `TEST_DATABASE_URL`.
-Each suite creates a random `pocketledger_test_*` schema, deploys its own migrations
-and drops only that schema afterward. Application schemas and rows are preserved.
-**You do not need to run `db:deploy` on your development database first.**
-The PostgreSQL role needs permission to create schemas in this local database.
-
-For a different local test instance, set `TEST_DATABASE_URL` to its loopback
-PostgreSQL URL without query parameters and run `npm run test:integration`. Both
-commands use the same schema harness. The unused `compose.test.yaml` is removed;
-CI retains its PostgreSQL service and supplies a loopback URL. No running container
-or volume is deleted by this refactor.
-
-See the [Issue #6 walkthrough](docs/issue-6-implementation-walkthrough.md) for
-the ownership constraints, schema choices, generated files, and commands.
-
-## Contributing and security
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) for the supported development baseline,
-branch/PR workflow, local checks, dependency review, and GitHub settings to inspect.
-The repository includes [.env.example](.env.example) for PostgreSQL and API setup.
-The demo requires no credentials. Native authentication needs public API/OAuth
-configuration; the API requires validated server configuration.
-
-GitHub Actions runs the **`quality`** check on pull requests to `main` and pushes
-to `main`: locked install, formatting, lint, type checks, unit/integration test
-commands, Prisma validation/generation, and the API build. Database integration
-tests apply migrations from zero and test ownership and authentication. API unit
-tests verify contracts, safe errors/logs, rate limiting and local Google signatures;
-mobile tests cover sessions, client boundaries, category UI and navigation; the shared suite still permits zero
-tests. Generated OpenAPI is a separate CI
-artifact. See the
-[Issue #5 walkthrough](docs/issue-5-implementation-walkthrough.md) for how CI
-works and the [required-check setup](CONTRIBUTING.md#github-actions-and-required-checks).
-
-Report vulnerabilities privately using [SECURITY.md](SECURITY.md).
-The step-by-step [Issue #3 walkthrough](docs/issue-3-implementation-walkthrough.md)
-explains the repository safeguards and their verification.
-
-## Run the authentication API
-
-Preserve your existing `.env`; manually add the API settings from `.env.example`.
-Generate a local signing secret with
-`node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"`
-and paste the result into `ACCESS_TOKEN_SECRET` in that ignored file. Never commit
-or share it. Google IDs may stay empty while testing email/password.
-
-The third migration is additive. Review its normalized-email index before applying
-it; legacy email collisions stop deployment rather than merge accounts. This task
-does **not** apply it to your development database. When you choose to apply it,
-inspect your target and run `npm run db:deploy`. Do not reset the database.
-
-From the repository root, explicitly load the ignored configuration:
-
-```powershell
-npm run start:api
-# Or, after npm run build --workspace=@pocketledger/api:
-node --env-file=.env apps/api/dist/index.js
-```
-
-`npm run start:api` runs
-`node --env-file=.env --import tsx apps/api/src/index.ts` without watch mode.
-
-`GET /health` is public. Register/login at `/v1/auth/register` and `/v1/auth/login`
-with JSON `{ "email": "learner@example.invalid", "password": "synthetic long passphrase" }`.
-Use the returned access token as `Authorization: Bearer <accessToken>` for
-`GET /v1/me`. Use `/v1/auth/refresh` with `{ "refreshToken": "<refreshToken>" }`
-once per token; persist its replacement securely. `/v1/auth/logout` accepts
-`{}` for the current session or `{ "allSessions": true }` for all devices.
-Use synthetic identities only; the optional disabled seed is not a login account.
-
-`npm run openapi --workspace=@pocketledger/api` writes the generated contract to
-`apps/api/dist/openapi.json` without database or Google credentials.
-See the [walkthrough](docs/issue-7-implementation-walkthrough.md) for Google
-proof/linking requests, lifetimes, maintenance, limitations and command explanations.
-
-## Category management
-
-All category routes require a real PocketLedger bearer token. The server derives
-the owner from that session; request bodies never accept `userId`.
-
-| Method and path                   | Behavior                                                                                                                                                                     |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /v1/categories`              | Shared defaults plus active personal categories. `status=archived` or `all` includes history; `limit` is 1–100 (default 50); pass `nextCursor` as `after` for the next page. |
-| `GET /v1/categories/:id`          | Visible shared or personal category, including archived personal history; foreign and missing IDs both return 404.                                                           |
-| `POST /v1/categories`             | Create with `name` and optional `parentId`; returns 201.                                                                                                                     |
-| `PATCH /v1/categories/:id`        | Rename an active category with `{ "name": "Food" }`.                                                                                                                         |
-| `POST /v1/categories/:id/archive` | Send `{}` after confirmation; repeated archive preserves its timestamp.                                                                                                      |
-
-Names collapse ASCII whitespace and trim it, preserving display case. Active
-duplicates compare ASCII letters without case within one visible sibling group.
-A personal name conflicts with shared defaults and that user's personal siblings;
-different users may reuse personal names, including under the same shared root. Non-ASCII
-letters, accents and Unicode normalization forms remain distinct. Names must
-contain visible text, have 1–100 UTF-16 units after normalization, and contain no
-control/format/surrogate characters; raw input is bounded at 1000 units.
-Duplicates return 409 `CATEGORY_NAME_CONFLICT`; archived renames return 409
-`CATEGORY_ARCHIVED`; invalid inputs return 422. No delete or restore route exists.
-
-Archiving retains the ID and historical transaction association, hides it from
-the active selection list, and frees its name for a new category with a different
-ID. A database trigger rejects new transaction assignments to archived categories.
-History reads must include archived associations; historical renames are not
-snapshotted (renaming an active category changes its displayed name on history).
-
-Categories use one table: null owner means a shared default with a globally unique
-permanent key; a non-null owner means a private personal row with no catalog key.
-`isDefault` is consistent with that identity; owner IDs are not exposed in DTOs.
-References use category IDs plus service/SQL access guards, allowing only shared
-or same-owner rows. Transactions remain scoped to the authenticated user.
-
-Categories form two levels: select a root or child. Fixed catalog records cannot
-be renamed or archived; personal children may be added under fixed or personal
-roots. Root archival also archives its personal children. New assignments require
-an active ancestor. See the [current contract](docs/mobile-redesign/finance-contracts.md)
-and the [foundation decision record](docs/mobile-redesign/README.md).
-
-`npm run categories:init` is repeatable and separate from synthetic `db:seed`. It
-uses the approved manifest's permanent IDs/keys, inserts missing rows atomically
-and rejects drift or visible-name collisions without adopting private data. Run
-it before app traffic. Catalog changes require a deliberate reviewed deployment;
-ordinary reruns never rewrite labels, parents, metadata or timestamps. Signup,
-login and linking do not initialize or copy categories. The obsolete
-`categories:backfill` command and reconciliation implementation are removed.
-Demo loads the same catalog IDs into isolated memory; its personal rows and
-transaction recents remain session-local.
-
-## Native sign-in and live categories
-
-Use `apps/mobile/.env.example` as a reference for a new ignored
-`apps/mobile/.env.local`; preserve existing files. Set `EXPO_PUBLIC_API_URL` to an
-API origin with no path, query or credentials. Production requires HTTPS. For an
-Android development build using synthetic data on a private LAN, you may explicitly
-set `EXPO_PUBLIC_ALLOW_LOCAL_HTTP=true` and use `http://<computer-LAN-IP>:3000`.
-Rebuild after changing native configuration. A phone's `localhost` is the phone.
-Use HTTPS for iOS device testing.
-
-Email/password works without Google configuration once the API and its reviewed
-migrations are ready. Account creation requires a 12–128 character password.
-Use synthetic test identities and records.
-
-Google additionally requires a Google Cloud project, an OAuth consent screen with
-your test account, a Web OAuth client ID, and an Android OAuth client registered for
-`com.shokoobid.pocketledger` and the development build's SHA-1 signing fingerprint.
-Set `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`; configure that Web ID in the backend's
-`GOOGLE_CLIENT_IDS` and the applicable native/Web authorized presenter IDs in
-`GOOGLE_PRESENTER_IDS`. For iOS register the same bundle identifier and set
-`EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`. Client IDs are public; client secrets and signing
-keys must stay out of the app. No Google project is created by this implementation.
-
-The selected `react-native-nitro-google-signin` package uses Android Credential
-Manager. The app passes the server's fresh challenge nonce into explicit native
-sign-in and exchanges the proof for PocketLedger credentials.
-
-With Android Studio/SDK, Java and USB debugging configured, run from `apps/mobile`:
-
-```powershell
-npx expo run:android --device
-# After the development binary is installed:
-npm run dev -- --dev-client
-```
-
-Alternatively, after configuring an Expo/EAS account and public build environment,
-`npx eas-cli build --platform android --profile development` builds an installable
-APK using `eas.json`. Cloud builds and account/project creation are manual steps.
-iOS native builds require macOS/Xcode or EAS and Apple provisioning.
-Native Google login cannot run in Expo Go. See the [Issue #11 walkthrough](docs/issue-11-implementation-walkthrough.md)
-for signing fingerprints, restart/logout tests, file responsibilities and limits.
-
-`npm run test:integration` now runs API database tests followed by the real portable
-mobile client against Fastify and disposable PostgreSQL. It uses only
-`TEST_DATABASE_URL`; the local runner derives it from the development URL but
-isolates every suite in its own schema. These tests verify the live
-contracts; OS storage and provider/device behavior still need native verification.
-
-## Transactions
-
-Verified sessions can list, add, edit and delete income/expenses. Demo transactions
-stay in memory for the current demo session. The dashboard summarizes those records;
-CSV import remains a preview.
-Transaction currency comes from the immutable related account, including archived
-history. Requests omit currency and responses expose it for formatting.
-
-| Method and path               | Contract                                                                                                               |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `GET /v1/transactions`        | Owned rows, newest calendar date first, then UUID descending. `limit` 1-100, default 50. Pass `nextCursor` as `after`. |
-| `GET /v1/transactions/:id`    | Owned row; foreign/missing IDs both return 404.                                                                        |
-| `POST /v1/transactions`       | Create; returns 201, or 200 when the same operation is replayed.                                                       |
-| `PATCH /v1/transactions/:id`  | Partial update with at least one field; omitted fields stay unchanged.                                                 |
-| `DELETE /v1/transactions/:id` | Delete owned row; returns `{ "ok": true }`. Mobile asks for confirmation.                                              |
-
-Create fields: `direction` (`income`/`expense`), positive `amountMinor` integer
-(1-2147483647), `date` (`YYYY-MM-DD`, real calendar day, years 0001-9999),
-`categoryId`, required `accountId`, UUID `clientRequestId`, and optional nullable
-`note` (up to 2000 UTF-16 units). No merchant, owner or client import fields are
-accepted. Supported currencies are CAD/USD/EUR/GBP/INR (two decimal places), JPY
-(zero), and KWD (three). Money conversion uses digits and integer bounds rather
-than floating-point arithmetic. Parse decimal input using the selected account
-exponent. New accounts inherit the permanent choice. Transaction create/patch
-bodies reject currency; cross-currency account reassignment fails without
-converting or changing the amount. Reports filter through account currency.
-
-List filters combine with AND: `accountId`, `currency`, `direction`, `categoryId`, and inclusive `from`/`to`.
-`includeSubcategories=true` explicitly includes children of a selected category.
-Supply both dates or neither; a range may span at most 366 days. Pagination uses
-`YYYY-MM-DD_UUID` sort boundaries and is live, not a snapshot: editing dates during
-paging can move rows. Refresh to reconcile concurrent changes. Archived categories
-remain readable; retaining an existing historical association during an edit is
-allowed, while a new/different assignment requires an active owned category.
-
-Failed submissions retain form values. Pending submissions are locked. An ambiguous
-write requires reloading and reviewing saved rows before explicitly enabling another
-write. Creates retain the original key and payload for an explicit safe retry;
-there are no automatic network write retries. The server keeps immutable
-`clientRequestId` and SHA-256 `creationFingerprint` on each manually created row,
-unique by owner and request UUID. Equivalent retries return the current resource
-without undoing edits; changed intent returns `409 IDEMPOTENCY_KEY_REUSED`.
-Internal/generated postings may omit both fields. Hard deletion removes the
-identity, so a late retry can create a new transaction; no tombstones or soft
-deletes are retained. A confirmed
-save appears immediately, even if the subsequent list reload fails. Logout/account
-changes unmount transaction data alongside category data. Routine API logs contain
-no transaction bodies, IDs, date/category queries or credentials.
-
-## Dashboard summary API (Issue #14)
-
-`GET /v1/dashboard/summary?from=2026-10-01&to=2026-10-31&currency=USD`
-requires a real PocketLedger bearer session. The mobile dashboard now consumes this
-API; Issue #14 provides the backend and Issue #15 provides its mobile screen.
-
-Required `from` and `to` are inclusive `YYYY-MM-DD` calendar dates (years 0001-9999),
-ordered and at most 366 days apart, matching the history endpoint's bound.
-Both endpoints are included, so the maximum is 367 included calendar dates.
-For a monthly summary, send the month's first and last dates. These are dates in
-the user's intended accounting calendar: the API does not shift them using the
-server timezone, UTC offsets or daylight-saving rules. Audit timestamps do not
-determine inclusion. No `timezone` parameter or implicit current month is accepted.
-
-Required `currency` selects one supported currency (CAD/USD/EUR/GBP/INR/JPY/KWD).
-All totals, categories and recent rows use that currency and period. There is no
-conversion or mixed-currency grand total. Optional `recentLimit` is 1-20 (default 5).
-Unknown query fields, including `userId`, are rejected with 422.
-
-The response contains `from`, `to`, `currency`, `incomeMinor`, `expensesMinor`,
-`netMinor`, `categoryBreakdown`, and `recentTransactions`. Income and expenses are
-nonnegative integer minor units; net is income minus expenses and can be negative.
-Each category entry has `categoryId`, `categoryName`, and those three totals.
-Only categories with matching transactions appear, including archived categories;
-names are current, not historical snapshots. Categories sort by UUID ascending.
-Recent rows use the existing transaction response shape, sorted by date descending
-then UUID descending. Totals cover every match regardless of `recentLimit`.
-
-Empty periods return zero totals and empty arrays. Reads share one database snapshot.
-Aggregates use exact integers and return 422 `SUMMARY_AMOUNT_OUT_OF_RANGE` if any
-total exceeds JavaScript's safe integer range; amounts are never silently rounded.
-The existing owner/date/ID index supports these queries; no migration is added.
-Responses remain `Cache-Control: no-store`, and logs exclude financial payloads.
-
-See the [detailed Issue #14 walkthrough](docs/issue-14-implementation-walkthrough.md)
-for the workflow, file responsibilities, SQL, interview concepts and checks.
-
-## Monthly mobile dashboard (Issue #15)
-
-After signing in on the mobile app, Dashboard shows income, expenses, net,
-category spending and up to five recent transactions for the selected month and
-currency. It starts with the device's current calendar month and session default
-currency (explicitly chosen during setup). Use Previous
-month/Next month or Choose month (`YYYY-MM`), and Change currency to select another
-supported currency. Each summary covers the first through last accounting date of
-that month; there is no currency conversion.
-
-Empty months explain the absence of records and offer Add transaction. That action
-opens the existing transaction form with the selected currency and the month's
-first date. Date remains editable; entry uses Settings currency, and a different
-report currency requires explicit draft replacement rather than conversion. Recent activity opens the transaction detail screen.
-Returning to the dashboard retains the selection and reloads the summary. Refresh
-summary also reloads explicitly. Month/currency changes clear the old figures;
-late responses cannot overwrite a newer selection. Read failures show safe retry
-feedback without logging financial values or raw exceptions.
-
-The separately labeled demo makes no API requests and summarizes only its temporary
-transactions. Demo access never creates an authenticated session. To see real API
-data, use the app's email/password sign-in on a configured mobile build; web remains
-demo-only. No dashboard data is persisted on the device.
-
-Cards have combined screen-reader labels, net states use words as well as amounts,
-and controls wrap with large text. Native TalkBack/VoiceOver and maximum system-font
-checks still require a device. See the [Issue #15 learning walkthrough](docs/issue-15-implementation-walkthrough.md)
-for file responsibilities, concurrency examples, verification and the phone checklist.
-
-## Settings, privacy and account controls (Issue #16)
-
-Open Settings from the dashboard after native sign-in. It shows the account's
-email/password and Google-method state, app version, the device-calendar timezone
-policy, and the permanent currency choice, displayed read-only. New accounts
-inherit that choice; transaction display and parsing use the related account
-currency. Authenticated preferences persist across sessions; demo preferences
-remain isolated in memory. Saved accounting dates never shift.
-
-Password accounts without Google can choose Link Google. Re-enter the current
-PocketLedger password, then explicitly select the Google identity in a configured
-native development build. The app requests recent reauthentication and a fresh
-session-bound linking challenge. The backend verifies both proofs and retains the
-same user and ledger. Email matches never merge accounts. Cancelled/rejected proofs
-do not attach a method, and ambiguous failures require a status reload before
-another attempt. No unlink, add-password or password-recovery controls are exposed.
-
-Sign out revokes the current session. Sign out on all devices requires confirmation
-and revokes this user's sessions, including this device. Both clear local secure
-credentials and invalidate old clients. An outage reports local-only sign-out
-without claiming confirmed server revocation. Sign-out never deletes ledger data.
-
-Privacy and data retention opens an in-app information page. Server account/ledger
-records have no automatic retention expiry in this pre-release MVP; backup/log
-retention and deletion timelines are not established. The app describes secure
-credential storage, identity-only Google use, operator access, and the absence of
-bank connections and unsupported security/compliance guarantees.
-
-Deletion requests have manual contact instructions using the maintainer address
-already documented in SECURITY.md. Per the implementation request, the app neither
-sends nor drafts email, accepts a deletion request, nor claims to delete data.
-**The expected support response time remains pending at the maintainer's request.**
-This Issue #16 acceptance item is not complete. Only synthetic test data should
-be used before beta safeguards are established.
-
-See the [Issue #16 learning walkthrough](docs/issue-16-implementation-walkthrough.md)
-for file responsibilities, security sequences, commands, tests and device limits.
+The mobile client validates API responses without importing server or database
+modules. The API publishes an OpenAPI contract from its route schemas and enforces
+server-side authorization.
+
+- **Exact money:** amounts use integer minor units with currency-specific decimal
+  parsing. Account currency determines transaction currency; reports never combine
+  currencies into a converted total.
+- **Data ownership:** authenticated sessions determine the ledger owner. Service
+  checks and database constraints protect account and transaction relationships;
+  shared default categories remain visible across users.
+- **Explicit retry handling:** transaction creation uses a request UUID and an
+  immutable creation fingerprint to recognize equivalent retries. Protection lasts
+  while the transaction exists; hard deletion releases the key.
+- **Session recovery:** refresh-token rotation, server revocation, and secure
+  credential storage are handled outside UI rendering. Ambiguous refresh outcomes
+  require explicit sign-in recovery.
+- **Accounting dates:** transactions use calendar dates rather than converting
+  accounting days through server timezones.
+
+## Explore the code
+
+| Area                  | Start here                                                                                                | What to look for                                                  |
+| --------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| API composition       | [app.ts](apps/api/src/app.ts)                                                                             | Route registration, dependencies, and error handling.             |
+| Transaction rules     | [service.ts](apps/api/src/transactions/service.ts)                                                        | Ownership, validation, and retry identity.                        |
+| Database design       | [schema.prisma](apps/api/prisma/schema.prisma) and [migrations](apps/api/prisma/migrations)               | Relationships, indexes, and SQL-enforced invariants.              |
+| Mobile authentication | [session-controller.ts](apps/mobile/src/auth/session-controller.ts)                                       | Session lifecycle and injected storage/provider boundaries.       |
+| Mobile dashboard      | [dashboard.tsx](apps/mobile/src/dashboard.tsx) and [dashboard-data.ts](apps/mobile/src/dashboard-data.ts) | Rendering separated from date, money, and data-source logic.      |
+| Integration tests     | [API tests](apps/api/tests/integration)                                                                   | Real PostgreSQL migrations, authorization, and finance contracts. |
+| Delivery checks       | [quality.yml](.github/workflows/quality.yml)                                                              | Automated validation and generated OpenAPI artifact.              |
+
+## Stack and verification
+
+| Layer       | Tools                                                            |
+| ----------- | ---------------------------------------------------------------- |
+| Mobile      | React Native, Expo Router, TypeScript, Expo SecureStore          |
+| API         | Node.js, Fastify, Zod, REST/OpenAPI                              |
+| Persistence | PostgreSQL, Prisma, SQL migrations                               |
+| Tests       | Vitest, Jest, React Native Testing Library                       |
+| Tooling     | npm workspaces, Docker Compose, ESLint, Prettier, GitHub Actions |
+
+The [quality workflow](.github/workflows/quality.yml) runs formatting, lint, type
+checks, unit tests, API/mobile integration tests against PostgreSQL, Prisma
+validation/generation, and the API build on pull requests and pushes to `main`.
+Native Google sign-in and device accessibility still require manual verification.
+See [development checks](DEVELOPMENT.md#verification) for local commands.
+
+## Current boundaries
+
+CSV file selection and import, transfers, bank connections, and offline sync are
+not implemented. Google sign-in requires OAuth configuration and a native
+development build. Account deletion uses manual contact instructions; automated
+deletion and a support response-time commitment are not established.
+
+## Documentation
+
+- [Development guide](DEVELOPMENT.md): database, API, native configuration, and tests.
+- [Product scope](docs/mvp-scope.md): MVP boundaries and planned capabilities.
+- [Threat model](docs/threat-model.md): trust boundaries and security limitations.
+- [Contributing](CONTRIBUTING.md): development baseline and contribution workflow.
+- [Security policy](SECURITY.md): private vulnerability reporting.
