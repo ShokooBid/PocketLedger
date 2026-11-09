@@ -47,6 +47,7 @@ model User {
   sessions           Session[]
   financePreferences FinancePreferences?
   accounts           Account[]
+  transfers          Transfer[]
 }
 
 model FinancePreferences {
@@ -74,6 +75,8 @@ model Account {
   user                User                 @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   defaultFor          FinancePreferences[]
   transactions        Transaction[]
+  outgoingTransfers   Transfer[]           @relation("TransferSource")
+  incomingTransfers   Transfer[]           @relation("TransferDestination")
 
   @@unique([id, userId])
   // Active normalized-name uniqueness lives in the hand-written partial index.
@@ -175,7 +178,8 @@ model Transaction {
   // SQL enforces pair consistency and immutability; hard deletion releases the key.
   clientRequestId     String?              @db.Uuid
   creationFingerprint String?              @db.VarChar(64)
-  categoryId          String               @db.Uuid
+  categoryId          String?              @db.Uuid
+  transferId          String?              @db.Uuid
   importId            String?              @db.Uuid
   accountId           String               @db.Uuid
   direction           TransactionDirection
@@ -187,15 +191,41 @@ model Transaction {
   createdAt           DateTime             @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime             @default(now()) @updatedAt @db.Timestamptz(3)
   user                User                 @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  category            Category             @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "Transaction_category_fkey")
+  category            Category?            @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "Transaction_category_fkey")
+  transfer            Transfer?            @relation(fields: [transferId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict, map: "Transaction_transfer_owner_fkey")
   import              Import?              @relation(fields: [importId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict)
   account             Account              @relation(fields: [accountId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict, map: "Transaction_account_owner_fkey")
 
   @@unique([userId, clientRequestId])
+  @@unique([transferId, direction])
   @@index([userId, accountId, date(sort: Desc), id(sort: Desc)])
   @@index([userId, date(sort: Desc), id(sort: Desc)])
   @@index([userId, categoryId, date(sort: Desc), id(sort: Desc)])
   @@index([userId, importId])
+}
+
+// One logical movement, never income or spending. SQL requires two balanced legs
+// at commit; creation identity lives here and is released by hard deletion.
+model Transfer {
+  id                  String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId              String        @db.Uuid
+  fromAccountId       String        @db.Uuid
+  toAccountId         String        @db.Uuid
+  amountMinor         Int
+  date                DateTime      @db.Date
+  note                String?       @db.VarChar(2000)
+  clientRequestId     String        @db.Uuid
+  creationFingerprint String        @db.VarChar(64)
+  createdAt           DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime      @default(now()) @updatedAt @db.Timestamptz(3)
+  user                User          @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  fromAccount         Account       @relation("TransferSource", fields: [fromAccountId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict)
+  toAccount           Account       @relation("TransferDestination", fields: [toAccountId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict)
+  postings            Transaction[]
+
+  @@unique([id, userId])
+  @@unique([userId, clientRequestId])
+  @@index([userId, date(sort: Desc), id(sort: Desc)])
 }
 
 // Metadata only. CSV parsing, preview storage and confirmation arrive later.

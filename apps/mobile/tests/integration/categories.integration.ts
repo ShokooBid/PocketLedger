@@ -553,8 +553,9 @@ describe("authenticated mobile category flow", () => {
       where: { id: tx.id },
       include: { category: true }
     });
-    expect(history.category.id).toBe(original.id);
-    expect(history.category.archivedAt).not.toBeNull();
+    expect(history.category).not.toBeNull();
+    expect(history.category?.id).toBe(original.id);
+    expect(history.category?.archivedAt).not.toBeNull();
     await db.category.createMany({
       data: Array.from({ length: 102 }, (_, n) => ({
         userId: user.user.id,

@@ -7,6 +7,7 @@ import type { TransactionService } from "./transactions/service.js";
 import type { DashboardService } from "./dashboard/service.js";
 import type { PreferencesService } from "./preferences/service.js";
 import type { AccountService } from "./accounts/service.js";
+import type { TransferService } from "./transfers/service.js";
 
 // Route registration only: no database connection, provider call or credentials.
 const config = readConfig({
@@ -20,7 +21,8 @@ const app = await buildApp(config, {} as AuthService, {
   transactions: {} as TransactionService,
   dashboard: {} as DashboardService,
   preferences: {} as PreferencesService,
-  accounts: {} as AccountService
+  accounts: {} as AccountService,
+  transfers: {} as TransferService
 });
 try {
   await app.ready();

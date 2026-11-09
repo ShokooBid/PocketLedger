@@ -9,6 +9,7 @@ import { createTransactionService } from "./transactions/service.js";
 import { createDashboardService } from "./dashboard/service.js";
 import { createPreferencesService } from "./preferences/service.js";
 import { createAccountService } from "./accounts/service.js";
+import { createTransferService } from "./transfers/service.js";
 
 // Explicit environment only; no implicit .env loading or configuration dumps.
 const config = readConfig(process.env);
@@ -19,6 +20,7 @@ const app = await buildApp(config, auth, {
   transactions: createTransactionService(db),
   preferences: createPreferencesService(db),
   accounts: createAccountService(db),
+  transfers: createTransferService(db),
   dashboard: createDashboardService(db)
 });
 app.addHook("onClose", async () => {

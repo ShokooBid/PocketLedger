@@ -16,9 +16,11 @@ import {
 } from "./account-data";
 import type { TransactionSource } from "./transaction-data";
 import { ClientFailure } from "./auth/transport";
+import { createApiTransferSource, type TransferSource } from "./transfer-data";
 
 const Transactions = createContext<TransactionSource | null>(null);
 const Accounts = createContext<AccountSource | null>(null);
+const Transfers = createContext<TransferSource | null>(null);
 // The session-keyed application layout discards both sources on account changes.
 export function TransactionsProvider({ children }: PropsWithChildren) {
   const categories = useCategories(),
@@ -46,9 +48,17 @@ export function TransactionsProvider({ children }: PropsWithChildren) {
     if (session.status !== "authenticated")
       throw new Error("Finance requires an application session.");
     const client = controller.client(session.generation),
-      source = createApiTransactionSource(client);
+      source = createApiTransactionSource(client),
+      transfers = createApiTransferSource(client);
     return {
       accounts: createApiAccountSource(client),
+      transfers: {
+        ...transfers,
+        async create(input: Parameters<TransferSource["create"]>[0]) {
+          current.current.assertNewCurrency(selectedCurrency());
+          return transfers.create(input);
+        }
+      },
       transactions: {
         ...source,
         async create(input: Parameters<TransactionSource["create"]>[0]) {
@@ -88,7 +98,9 @@ export function TransactionsProvider({ children }: PropsWithChildren) {
   return (
     <Accounts.Provider value={accounts}>
       <Transactions.Provider value={sources.transactions}>
-        {children}
+        <Transfers.Provider value={sources.transfers}>
+          {children}
+        </Transfers.Provider>
       </Transactions.Provider>
     </Accounts.Provider>
   );
@@ -100,6 +112,11 @@ export function useTransactions() {
 }
 export function useAccounts() {
   const source = useContext(Accounts);
+  if (!source) throw new Error("TransactionsProvider is required.");
+  return source;
+}
+export function useTransfers() {
+  const source = useContext(Transfers);
   if (!source) throw new Error("TransactionsProvider is required.");
   return source;
 }

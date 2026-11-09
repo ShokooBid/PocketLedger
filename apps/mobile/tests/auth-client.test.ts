@@ -218,6 +218,8 @@ describe("transport boundaries", () => {
       "/v1/accounts/00000000-0000-4000-8000-000000000001?asOf=2026-11-03",
       "/v1/accounts/00000000-0000-4000-8000-000000000001/archive",
       "/v1/transactions",
+      "/v1/transfers",
+      "/v1/transfers/00000000-0000-4000-8000-000000000001",
       "/v1/transactions/00000000-0000-4000-8000-000000000001"
     ];
     for (const path of allowed) await client.send("GET", path, z.unknown());
@@ -225,7 +227,7 @@ describe("transport boundaries", () => {
       "/v2/transactions",
       "/v2/preferences",
       "/v1/imports",
-      "/v1/transfers",
+      "/v1/transfers-other",
       "/v1/history",
       "/v1/accounts-other",
       "/v1/transactions-other",

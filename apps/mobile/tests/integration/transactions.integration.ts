@@ -6,9 +6,12 @@ import { createAccountService } from "../../../api/src/accounts/service.js";
 import { createCategoryService } from "../../../api/src/categories/service.js";
 import { createPreferencesService } from "../../../api/src/preferences/service.js";
 import { createTransactionService } from "../../../api/src/transactions/service.js";
+import { createTransferService } from "../../../api/src/transfers/service.js";
 import { disposableDatabase } from "../../../api/tests/support/disposable.js";
 import { testConfig } from "../../../api/tests/fixtures.js";
 import { createApiTransactionSource } from "../../src/transaction-api";
+import { createApiTransferSource } from "../../src/transfer-data";
+import { createApiAccountSource } from "../../src/account-data";
 import {
   createTransport,
   type FetchRequest,
@@ -28,10 +31,100 @@ beforeAll(async () => {
     logger: false,
     rateLimitMax: 10000,
     transactions: createTransactionService(db),
+    transfers: createTransferService(db),
     categories: createCategoryService(db),
     accounts: createAccountService(db),
     preferences: createPreferencesService(db)
   });
+});
+
+it("round-trips atomic transfers through the mobile adapter and reconciles a lost response", async () => {
+  const email = `${randomUUID()}@example.invalid`;
+  const registration = await app.inject({
+    method: "POST",
+    url: "/v1/auth/register",
+    payload: { email, password: "synthetic transfer passphrase" }
+  });
+  expect(registration.statusCode).toBe(201);
+  const user = await db.user.findUniqueOrThrow({ where: { email } });
+  await createPreferencesService(db).update(user.id, { entryCurrency: "CAD" });
+  const accounts = createAccountService(db),
+    fields = {
+      type: "cash" as const,
+      currency: "CAD" as const,
+      openingDate: "2026-01-01",
+      openingBalanceMinor: 0
+    };
+  const from = await accounts.create(user.id, {
+      ...fields,
+      name: "From",
+      openingBalanceMinor: 10000
+    }),
+    to = await accounts.create(user.id, { ...fields, name: "To" });
+  let loseResponse = true,
+    creates = 0;
+  const fetcher: FetchRequest = async (url, options) => {
+    const parsed = new URL(url);
+    const result = await app.inject({
+      method: options.method as "GET" | "POST" | "PATCH" | "DELETE",
+      url: parsed.pathname + parsed.search,
+      headers: Object.fromEntries(new Headers(options.headers).entries()),
+      ...(typeof options.body === "string" ? { payload: options.body } : {})
+    });
+    if (options.method === "POST" && parsed.pathname === "/v1/transfers") {
+      creates++;
+      if (loseResponse) {
+        loseResponse = false;
+        throw new Error("Synthetic lost response after commit");
+      }
+    }
+    return new Response(result.body, { status: result.statusCode });
+  };
+  const transport = createTransport("https://api.example.invalid", fetcher);
+  const client: Transport = {
+    send: (method, path, schema, body) =>
+      transport.send(
+        method,
+        path,
+        schema,
+        body,
+        registration.json().accessToken
+      )
+  };
+  const api = createApiTransferSource(client),
+    accountApi = createApiAccountSource(client);
+  const original = Object.freeze({
+    fromAccountId: from.id,
+    toAccountId: to.id,
+    amountMinor: 2500,
+    date: "2026-02-01",
+    note: null,
+    clientRequestId: randomUUID()
+  });
+  await expect(api.create(original)).rejects.toMatchObject({ kind: "network" });
+  expect(creates).toBe(1);
+  const saved = await api.create(original);
+  expect((await api.list({ accountId: to.id })).items).toEqual([saved]);
+  expect(await accountApi.get(from.id, original.date)).toMatchObject({
+    balanceMinor: 7500
+  });
+  expect(await accountApi.get(to.id, original.date)).toMatchObject({
+    balanceMinor: 2500
+  });
+  expect((await createApiTransactionSource(client).list({})).items).toEqual([]);
+  const edited = await api.update(saved.id, {
+    amountMinor: 3000,
+    note: "Updated"
+  });
+  expect(await api.create(original)).toEqual(edited);
+  await expect(
+    api.create({ ...original, amountMinor: 1 })
+  ).rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED" });
+  await api.remove(saved.id);
+  expect(await accountApi.get(from.id, original.date)).toMatchObject({
+    balanceMinor: 10000
+  });
+  expect((await api.create(original)).id).not.toBe(saved.id);
 });
 afterAll(async () => {
   try {

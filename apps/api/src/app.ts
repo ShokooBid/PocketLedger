@@ -28,6 +28,8 @@ import { registerPreferencesRoutes } from "./preferences/routes.js";
 import type { PreferencesService } from "./preferences/service.js";
 import type { AccountService } from "./accounts/service.js";
 import { registerAccountRoutes } from "./accounts/routes.js";
+import { registerTransferRoutes } from "./transfers/routes.js";
+import type { TransferService } from "./transfers/service.js";
 
 export async function buildApp(
   config: Config,
@@ -40,6 +42,7 @@ export async function buildApp(
     dashboard?: DashboardService;
     preferences?: PreferencesService;
     accounts?: AccountService;
+    transfers?: TransferService;
   } = {}
 ) {
   const app = Fastify({
@@ -179,5 +182,6 @@ export async function buildApp(
   if (options.dashboard) registerDashboardRoutes(app, options.dashboard);
   if (options.preferences) registerPreferencesRoutes(app, options.preferences);
   if (options.accounts) registerAccountRoutes(app, options.accounts);
+  if (options.transfers) registerTransferRoutes(app, options.transfers);
   return app;
 }
