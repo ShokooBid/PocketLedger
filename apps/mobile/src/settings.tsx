@@ -14,7 +14,8 @@ export function Settings({
   defaultCurrency,
   currencyState,
   version,
-  onPrivacy
+  onPrivacy,
+  onBeforeSignOut
 }: {
   user: User | null;
   controller: Pick<
@@ -25,6 +26,7 @@ export function Settings({
   currencyState?: CurrencySettingsState;
   version: string;
   onPrivacy: () => void;
+  onBeforeSignOut?: (action: () => void) => void;
 }) {
   const [linking, setLinking] = useState(false);
   const [password, setPassword] = useState("");
@@ -217,7 +219,11 @@ export function Settings({
                 label="Confirm sign out on all devices"
                 variant="primary"
                 disabled={busy}
-                onPress={() => void act("logout-all")}
+                onPress={() => {
+                  const action = () => void act("logout-all");
+                  if (onBeforeSignOut) onBeforeSignOut(action);
+                  else action();
+                }}
               />
               <Button
                 label="Cancel all-device sign out"

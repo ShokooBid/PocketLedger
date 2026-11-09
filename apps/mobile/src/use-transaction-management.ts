@@ -59,6 +59,7 @@ export function useTransactionManagement({
   active?: boolean;
   detailId?: string;
   onOpenDetail?: (id: string) => void;
+  onAdd?: () => void;
 }) {
   const pendingCreate = useRef<TransactionCreate | null>(null);
   const [accountChoices, setAccountChoices] = useState<Account[]>([]);

@@ -1,5 +1,12 @@
 import type { PropsWithChildren } from "react";
-import { Keyboard, Modal, ScrollView, StyleSheet, Text } from "react-native";
+import {
+  Keyboard,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Account, AccountSource } from "./account-data";
 import type { Category, CategorySource } from "./category-data";
@@ -9,6 +16,7 @@ import { theme } from "./theme";
 import type { Currency } from "./transaction-data";
 import { useAccountPicker, useCategoryPicker } from "./use-finance-picker";
 import { Body, Button, Field, StateNotice } from "./ui";
+import { ScreenDecoration } from "./screen-decoration";
 
 function PickerModal({
   title,
@@ -38,6 +46,7 @@ function PickerModal({
           automaticallyAdjustKeyboardInsets
           keyboardDismissMode="on-drag"
         >
+          <ScreenDecoration entry />
           <Text accessibilityRole="header" style={styles.heading}>
             {title}
           </Text>
@@ -183,7 +192,15 @@ export function CategoryPicker({
                 />
                 {root ? (
                   <>
-                    <Body>{root.name}</Body>
+                    <View style={styles.categoryHeader}>
+                      <CategoryIcon iconKey={root.iconKey} size={56} />
+                      <Text
+                        accessibilityRole="header"
+                        style={styles.categoryName}
+                      >
+                        {root.name}
+                      </Text>
+                    </View>
                     <Button
                       label={`Use this category: ${root.name}${root.id === selectedId ? " (selected)" : ""}`}
                       selected={root.id === selectedId}
@@ -393,8 +410,19 @@ const styles = StyleSheet.create({
     alignSelf: "center"
   },
   heading: {
-    color: theme.color.primary,
+    color: theme.color.onPrimary,
     fontSize: theme.font.heading,
+    fontWeight: "700",
+    minHeight: 88,
+    padding: 12,
+    borderRadius: 18,
+    backgroundColor: theme.color.primary
+  },
+  categoryHeader: { flexDirection: "row", alignItems: "center", gap: 14 },
+  categoryName: {
+    flex: 1,
+    color: theme.color.text,
+    fontSize: 24,
     fontWeight: "700"
   }
 });

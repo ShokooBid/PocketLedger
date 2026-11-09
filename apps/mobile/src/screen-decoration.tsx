@@ -12,9 +12,11 @@ import { theme } from "./theme";
 // Hand-drawn vectors, not a screenshot asset. Only ornamental geometry lives
 // here; the screen/controls remain normal native accessible components.
 export function ScreenDecoration({
-  prominent = false
+  prominent = false,
+  entry = false
 }: {
   prominent?: boolean;
+  entry?: boolean;
 }) {
   return (
     <View
@@ -24,17 +26,19 @@ export function ScreenDecoration({
       importantForAccessibility="no-hide-descendants"
       style={StyleSheet.absoluteFill}
     >
-      <Shape edge="top" prominent={prominent} />
+      <Shape edge="top" prominent={prominent} entry={entry} />
       <Shape edge="bottom" prominent={prominent} />
     </View>
   );
 }
 function Shape({
   edge,
-  prominent
+  prominent,
+  entry = false
 }: {
   edge: "top" | "bottom";
   prominent: boolean;
+  entry?: boolean;
 }) {
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   return (
@@ -45,17 +49,29 @@ function Shape({
           ? edge === "top"
             ? styles.topProminent
             : styles.bottomProminent
-          : styles.subtle
+          : styles.subtle,
+        entry && styles.entry
       ]}
     >
-      <Svg width="100%" height="100%" viewBox="0 0 320 180" accessible={false}>
+      <Svg
+        width="100%"
+        height="100%"
+        viewBox="0 0 320 180"
+        preserveAspectRatio="none"
+        accessible={false}
+      >
         <Defs>
           <LinearGradient id={id} x1="0%" y1="50%" x2="100%" y2="50%">
             <Stop offset="0%" stopColor={theme.color.gradientStart} />
             <Stop offset="100%" stopColor={theme.color.gradientEnd} />
           </LinearGradient>
         </Defs>
-        {edge === "top" ? (
+        {entry ? (
+          <Path
+            fill={`url(#${id})`}
+            d="M0 0H320V150C260 113 210 180 120 150C60 130 25 128 0 158Z"
+          />
+        ) : edge === "top" ? (
           <>
             <Path
               fill={`url(#${id})`}
@@ -90,5 +106,6 @@ const styles = StyleSheet.create({
   },
   topProminent: { width: 280, height: 158 },
   bottomProminent: { width: 320, height: 180 },
-  subtle: { opacity: 0.14 }
+  subtle: { opacity: 0.14 },
+  entry: { width: "100%", height: 132, opacity: 1 }
 });

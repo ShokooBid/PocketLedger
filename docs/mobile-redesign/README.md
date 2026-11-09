@@ -55,7 +55,9 @@ reuse personal names. `categories:init` initializes once per database, separatel
 from synthetic seeds and signup, and rejects drift rather than rewriting it.
 Per-user provisioning/backfill commands are removed. Demo uses the same default
 IDs with isolated personal data. All four foundation increments are implemented;
-#72 navigation/keypad and later reporting/transfers remain separate work.
+#72 navigation/keypad is now implemented locally; see the [learning walkthrough](issue-72.md)
+for file responsibilities, verification commands and outstanding device acceptance.
+Later reporting/transfers remain separate work.
 Earlier #65/#69 handoffs and the verification record preserve historical behavior.
 
 ## Confirmed product decisions

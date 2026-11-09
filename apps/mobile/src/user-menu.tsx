@@ -18,7 +18,10 @@ type MenuActions = {
 };
 const Context = createContext<MenuActions | null>(null);
 
-export function UserMenuProvider({ children }: PropsWithChildren) {
+export function UserMenuProvider({
+  children,
+  onBeforeSignOut
+}: PropsWithChildren<{ onBeforeSignOut?: (action: () => void) => void }>) {
   const { session, controller, exitDemo } = useSession();
   const demo = session.status === "demo";
   return (
@@ -26,7 +29,14 @@ export function UserMenuProvider({ children }: PropsWithChildren) {
       value={
         demo || session.status === "authenticated"
           ? {
-              signOut: () => (demo ? exitDemo() : void controller.logout()),
+              signOut: () => {
+                const action = () => {
+                  if (demo) exitDemo();
+                  else void controller.logout();
+                };
+                if (onBeforeSignOut) onBeforeSignOut(action);
+                else action();
+              },
               signOutLabel: demo
                 ? "Exit demo and return to sign in"
                 : "Sign out"

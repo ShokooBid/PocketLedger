@@ -3,8 +3,13 @@ import { useCategories } from "../../category-context";
 import { useTransactions, useAccounts } from "../../transaction-context";
 import { TransactionManagement } from "../../transaction-management";
 import { useSession } from "../../session";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { calendarDate, currencySchema } from "../../transaction-data";
+import {
+  Redirect,
+  useFocusEffect,
+  useLocalSearchParams,
+  useRouter
+} from "expo-router";
+import { parseAddLink } from "../../entry-data";
 import { PreferencesReady, usePreferences } from "../../preferences";
 import { useCallback, useState } from "react";
 
@@ -36,12 +41,7 @@ function TransactionsScreen() {
     }, [currencyState.reload])
   );
   const { action, date, currency } = useLocalSearchParams();
-  const parsedDate = calendarDate.safeParse(date);
-  const parsedCurrency = currencySchema.safeParse(currency);
-  const initialCreate =
-    action === "add" && parsedDate.success && parsedCurrency.success
-      ? { date: parsedDate.data, currency: parsedCurrency.data }
-      : undefined;
+  const initialCreate = action === "add" ? parseAddLink(date, currency) : null;
   const openDraftSettings = () =>
     router.push({
       pathname: "/settings",
@@ -53,19 +53,16 @@ function TransactionsScreen() {
         <StateNotice
           kind="error"
           title="Invalid add transaction request"
-          message="Return to the dashboard and choose Add transaction again."
+          message="Open Add to start a transaction. Your existing draft is unchanged."
         />
       </Screen>
     );
+  if (initialCreate)
+    return <Redirect href={{ pathname: "/", params: initialCreate }} />;
   return (
-    <Screen title="Transactions" back>
+    <Screen title="History">
       <TransactionManagement
-        key={
-          initialCreate
-            ? `${initialCreate.date}_${initialCreate.currency}`
-            : "history"
-        }
-        {...(initialCreate ? { initialCreate } : {})}
+        onAdd={() => router.navigate("/")}
         defaultCurrency={defaultCurrency}
         defaultAccountId={defaultAccountId}
         accounts={accounts}

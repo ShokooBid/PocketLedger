@@ -16,6 +16,7 @@ import {
 import { router } from "expo-router";
 import { AppState } from "react-native";
 import { parsePreviewState } from "../src/navigation";
+import { localDate } from "../src/entry-data";
 import * as sessionModule from "../src/session";
 import * as runtime from "../src/auth/runtime";
 import {
@@ -65,6 +66,15 @@ async function navigate(action: () => void) {
 }
 
 async function field(label: string, value: string) {
+  if (
+    label === "Transaction date (YYYY-MM-DD)" &&
+    !screen.queryByLabelText(label)
+  ) {
+    await press("Choose transaction date");
+    await field(label, value);
+    await press("Use entered date");
+    return;
+  }
   await act(async () => {
     fireEvent.changeText(screen.getByLabelText(label), value);
   });
@@ -95,8 +105,10 @@ async function enterDemo(currency: "CAD" | "JPY" | "KWD" = "CAD") {
   await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
   await press("Create account");
   expect(
-    await screen.findByRole("header", { name: "Dashboard screen" })
+    await screen.findByRole("header", { name: "New transaction screen" })
   ).toBeVisible();
+  // Existing reporting/settings flows start at Overview; #72 cases use Add.
+  await tap(screen.getByRole("link", { name: "Overview" }));
 }
 
 afterEach(() => {
@@ -104,6 +116,83 @@ afterEach(() => {
 });
 
 describe("session navigation", () => {
+  // The first scenario includes cold router initialization, tab switching and
+  // both confirmation paths. Keep lookup deadlines unchanged; only allow the
+  // complete flow the same budget as the other long navigation scenarios.
+  it("keeps Add drafts across the four tabs and confirms leaving without a discard button", async () => {
+    await openShell();
+    await enterDemo();
+    await tap(screen.getByRole("link", { name: "Add" }));
+    await screen.findByRole("header", { name: "New transaction screen" });
+    await press("Digit 1");
+    await press("Decimal point");
+    await press("Digit 2");
+    await field("Note (optional)", "Keep across tabs");
+    for (const name of ["History", "Overview", "Settings"] as const) {
+      await tap(screen.getByRole("link", { name }));
+      await tap(screen.getByRole("link", { name: "Add" }));
+      expect(await screen.findByLabelText("Amount")).toHaveProp("value", "1.2");
+      expect(screen.getByLabelText("Note (optional)")).toHaveProp(
+        "value",
+        "Keep across tabs"
+      );
+    }
+    expect(
+      screen.queryByRole("button", { name: "Discard transaction draft" })
+    ).toBeNull();
+    expect(screen.getByLabelText("Note (optional)")).toHaveProp(
+      "placeholder",
+      "Description (optional)"
+    );
+    await openSettings();
+    await press("User menu");
+    await press("Exit demo and return to sign in");
+    await press("Keep transaction draft");
+    await tap(screen.getByRole("link", { name: "Add" }));
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "1.2");
+    await press("User menu");
+    await press("Exit demo and return to sign in");
+    await press("Confirm discard draft");
+    expect(
+      await screen.findByRole("header", { name: "Sign in screen" })
+    ).toBeVisible();
+  }, 15000);
+
+  it("uses keypad confirm as Save and retains selections for the next transaction", async () => {
+    await openShell();
+    await enterDemo();
+    await tap(screen.getByRole("link", { name: "Add" }));
+    await chooseAccount("Demo setup cash");
+    await chooseCategory("Food & Drinks");
+    await press("Digit 7");
+    await press("Decimal point");
+    await press("Digit 5");
+    await field("Note (optional)", "Keypad purchase");
+    expect(screen.queryByText(/Transaction saved/)).toBeNull();
+    await press("Save transaction");
+    await screen.findByText("Transaction saved. Ready for the next entry.");
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "");
+    expect(screen.getByLabelText("Note (optional)")).toHaveProp("value", "");
+    expect(
+      screen.getByRole("button", {
+        name: "Account: Demo setup cash",
+        selected: true
+      })
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", {
+        name: "Category: Food & Drinks",
+        selected: true
+      })
+    ).toBeVisible();
+    await tap(screen.getByRole("link", { name: "History" }));
+    expect(
+      await screen.findByRole("button", {
+        name: "View details for Keypad purchase"
+      })
+    ).toBeVisible();
+  });
+
   it("creates an account through Settings and returns to every unchanged draft field", async () => {
     await openShell();
     await enterDemo();
@@ -112,7 +201,7 @@ describe("session navigation", () => {
     await field("Category name", "Onboarding food");
     await press("Save category");
     await screen.findByText("Onboarding food");
-    await press("Back to dashboard");
+    await press("Back to previous screen");
     await press("Add transaction");
     await screen.findByText("New transaction");
     await field("Amount", "12.34");
@@ -146,10 +235,9 @@ describe("session navigation", () => {
       ).toBeEnabled()
     );
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
-    expect(screen.getByLabelText("Transaction date (YYYY-MM-DD)")).toHaveProp(
-      "value",
-      "2026-11-01"
-    );
+    expect(
+      screen.getByRole("button", { name: "Choose transaction date" })
+    ).toHaveProp("accessibilityHint", "2026-11-01");
     expect(screen.getByLabelText("Note (optional)")).toHaveProp(
       "value",
       "Keep this draft"
@@ -218,7 +306,7 @@ describe("session navigation", () => {
     );
     jest.spyOn(router, "canGoBack").mockReturnValue(false);
     await press("Return to transaction draft");
-    expect(shell.getPathname()).toBe("/transactions");
+    expect(shell.getPathname()).toBe("/");
   });
 
   // This full navigation flow also pays for the first cold router render.
@@ -231,7 +319,7 @@ describe("session navigation", () => {
     await field("Category name", "Currency food");
     await press("Save category");
     await screen.findByText("Currency food");
-    await press("Back to dashboard");
+    await press("Back to previous screen");
     await press("Add transaction");
     await screen.findByText("New transaction");
     await field("Amount", "12.34");
@@ -277,7 +365,7 @@ describe("session navigation", () => {
     await openSettings();
     expect(await screen.findByText("Google: not linked")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Create account" })).toBeNull();
-    await press("Back to dashboard");
+    await press("Back to previous screen");
     expect(
       await screen.findByRole("header", { name: "Choose your currency screen" })
     ).toBeVisible();
@@ -328,7 +416,7 @@ describe("session navigation", () => {
     });
     await openShell("/transactions");
     expect(
-      await screen.findByRole("header", { name: "Transactions screen" })
+      await screen.findByRole("header", { name: "History screen" })
     ).toBeVisible();
     const foreground = appState.mock.calls.find(
       ([event]) => event === "change"
@@ -349,9 +437,7 @@ describe("session navigation", () => {
     expect(
       await screen.findByRole("header", { name: "Set up an account screen" })
     ).toBeVisible();
-    expect(
-      screen.queryByRole("header", { name: "Transactions screen" })
-    ).toBeNull();
+    expect(screen.queryByRole("header", { name: "History screen" })).toBeNull();
   });
 
   it("keeps protected data hidden during an outage and retries verification", async () => {
@@ -419,9 +505,9 @@ describe("session navigation", () => {
         });
       if (path === "/v1/auth/logout") return response({ ok: true });
       if (path === "/v1/categories" && delayedCategories) {
-        const pending = delayedCategories;
-        delayedCategories = null;
-        return pending;
+        // Entry and category management share this source. Both reads should
+        // remain pending until the synthetic response is released.
+        return delayedCategories;
       }
       return response({
         items: owner.id === alice.id ? [category] : [],
@@ -433,11 +519,12 @@ describe("session navigation", () => {
       await field("Email address", alice.email);
       await field("Password", "synthetic password");
       await press("Sign in with email");
-      await screen.findByRole("header", { name: "Dashboard screen" });
+      await screen.findByRole("header", { name: "New transaction screen" });
+      await tap(screen.getByRole("link", { name: "Overview" }));
       await tap(screen.getByRole("link", { name: "Manage categories" }));
       expect(await screen.findByText(category.name)).toBeVisible();
       expect(screen.queryByText(/Demo only/)).toBeNull();
-      await press("Back to dashboard");
+      await press("Back to previous screen");
       await openSettings();
       await press("User menu");
       await press("Sign out");
@@ -445,7 +532,8 @@ describe("session navigation", () => {
       await field("Email address", bob.email);
       await field("Password", "synthetic password");
       await press("Sign in with email");
-      await screen.findByRole("header", { name: "Dashboard screen" });
+      await screen.findByRole("header", { name: "New transaction screen" });
+      await tap(screen.getByRole("link", { name: "Overview" }));
       const pending = deferred<Response>();
       delayedCategories = pending.promise;
       await tap(screen.getByRole("link", { name: "Manage categories" }));
@@ -474,7 +562,7 @@ describe("session navigation", () => {
     ).toBeVisible();
     expect(screen.queryByRole("header", { name: "Sign in screen" })).toBeNull();
     expect(
-      screen.queryByRole("header", { name: "Dashboard screen" })
+      screen.queryByRole("header", { name: "Overview screen" })
     ).toBeNull();
   });
 
@@ -516,7 +604,7 @@ describe("session navigation", () => {
     await enterDemo();
     await tap(screen.getByRole("link", { name: "View transactions" }));
     await navigate(() => router.back());
-    expect(shell.getPathname()).toBe("/");
+    expect(shell.getPathname()).toBe("/overview");
     await openSettings();
     await press("User menu");
     await press("Exit demo and return to sign in");
@@ -540,7 +628,7 @@ describe("session navigation", () => {
     await field("Account name", "Menu test account");
     await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
     await press("Create account");
-    await screen.findByRole("header", { name: "Dashboard screen" });
+    await screen.findByRole("header", { name: "New transaction screen" });
     for (const path of [
       "/transactions",
       "/categories",
@@ -581,10 +669,10 @@ describe("session navigation", () => {
     await field("Category name", "Synthetic demo category");
     await press("Save category");
     expect(await screen.findByText("Synthetic demo category")).toBeVisible();
-    await press("Back to dashboard");
+    await press("Back to previous screen");
     await tap(screen.getByRole("link", { name: "Manage categories" }));
     expect(await screen.findByText("Synthetic demo category")).toBeVisible();
-    await press("Back to dashboard");
+    await press("Back to previous screen");
     await openSettings();
     await press("User menu");
     await press("Exit demo and return to sign in");
@@ -593,6 +681,9 @@ describe("session navigation", () => {
     expect(screen.queryByText("Synthetic demo category")).toBeNull();
   });
 
+  // This complete flow creates category/account data, saves a posting, edits it
+  // through details and verifies both overview refreshes. Budget the whole flow
+  // like the other long navigation scenarios, keeping per-lookup limits intact.
   it("opens add/detail from the dashboard, retains selection on return and refreshes after edits", async () => {
     await openShell();
     await enterDemo("JPY");
@@ -601,7 +692,7 @@ describe("session navigation", () => {
     await field("Category name", "Dashboard food");
     await press("Save category");
     await screen.findByText("Dashboard food");
-    await press("Back to dashboard");
+    await press("Back to previous screen");
     await navigate(() => router.push("/settings"));
     await field("Account name", "History cash");
     await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
@@ -613,18 +704,18 @@ describe("session navigation", () => {
 
     await press("Add transaction");
     expect(await screen.findByText("New transaction")).toBeVisible();
-    expect(screen.getByLabelText("Transaction date (YYYY-MM-DD)")).toHaveProp(
-      "value",
-      "2024-02-01"
-    );
-    expect(screen.getByText("Currency: JPY")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Choose transaction date" })
+    ).toHaveProp("accessibilityHint", localDate());
+    await field("Transaction date (YYYY-MM-DD)", "2024-02-01");
+    expect(screen.getByLabelText("Account currency: JPY")).toBeVisible();
     await chooseAccount("History cash");
     await field("Amount", "250");
     await field("Note (optional)", "Dashboard shop");
     await chooseCategory("Dashboard food");
     await press("Save transaction");
     await screen.findByText(/Transaction saved/);
-    await press("Back to dashboard");
+    await tap(screen.getByRole("link", { name: "Overview" }));
     expect(await screen.findByLabelText("Net deficit. JPY -250")).toBeVisible();
     expect(screen.getByText("February 2024 · JPY")).toBeVisible();
     await press("View Dashboard shop on 2024-02-01");
@@ -637,7 +728,7 @@ describe("session navigation", () => {
     await screen.findByText(/Transaction saved/);
     await press("Back to previous screen");
     expect(await screen.findByLabelText("Net deficit. JPY -300")).toBeVisible();
-  });
+  }, 15000);
 
   it("clears dashboard amounts and rejects a pending old-account summary on logout", async () => {
     const h = harness();
@@ -677,7 +768,7 @@ describe("session navigation", () => {
       }
       return response({ items: [], nextCursor: null });
     });
-    await openShell();
+    await openShell("/overview");
     expect(await screen.findByLabelText("Income. USD 123.45")).toBeVisible();
     delayed = true;
     await press("Refresh summary");
@@ -706,9 +797,9 @@ describe("session navigation", () => {
       await screen.findByText("Invalid add transaction request")
     ).toBeVisible();
     expect(screen.queryByText(/private-invalid-value/)).toBeNull();
-    await press("Back to dashboard");
+    await press("Back to previous screen");
     expect(
-      screen.getByRole("header", { name: "Dashboard screen" })
+      screen.getByRole("header", { name: "Overview screen" })
     ).toBeVisible();
   });
 
@@ -725,17 +816,18 @@ describe("session navigation", () => {
     expect(screen.getByText(/no automatic retention expiry/)).toBeVisible();
     await press("Back to Settings");
     expect(screen.getByText("Default currency: KWD")).toBeVisible();
-    await press("Back to dashboard");
+    await tap(screen.getByRole("link", { name: "Overview" }));
     expect(
       await screen.findByLabelText("Net balanced. KWD 0.000")
     ).toBeVisible();
     await tap(screen.getByRole("link", { name: "View transactions" }));
     await press("Add transaction");
-    expect(screen.getByText("Currency: KWD")).toBeVisible();
-    await press("Back to dashboard");
+    expect(screen.getByLabelText("Account currency: KWD")).toBeVisible();
+    await tap(screen.getByRole("link", { name: "Overview" }));
     await openSettings();
     await press("User menu");
     await press("Exit demo and return to sign in");
+    // A pristine Add view does not create a dirty draft.
     await enterDemo();
     expect(
       await screen.findByLabelText("Net balanced. CAD 0.00")
@@ -791,9 +883,9 @@ describe("screen state previews", () => {
       await press("Try again");
       expect(await screen.findByText(readyText)).toBeVisible();
       if (link) {
-        await press("Back to dashboard");
+        await press("Back to previous screen");
         expect(
-          screen.getByRole("header", { name: "Dashboard screen" })
+          screen.getByRole("header", { name: "Overview screen" })
         ).toBeVisible();
       }
     }
