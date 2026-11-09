@@ -47,6 +47,7 @@ export function createDashboardService(db: PrismaClient) {
             JOIN "Category" c ON c.id = t."categoryId" AND (c."userId" IS NULL OR c."userId" = t."userId")
             LEFT JOIN "Category" p ON p.id = c."parentId" AND (p."userId" IS NULL OR p."userId" = t."userId")
             WHERE t."userId" = ${userId}::uuid
+              AND t."transferId" IS NULL
               AND t.date >= ${query.from}::date AND t.date <= ${query.to}::date
               AND a.currency = ${query.currency}
             GROUP BY t."categoryId", c.name, p.id, p.name, c.id
@@ -55,6 +56,7 @@ export function createDashboardService(db: PrismaClient) {
           const recent = await tx.transaction.findMany({
             where: {
               userId,
+              transferId: null,
               account: { currency: query.currency },
               date: { gte: new Date(query.from), lte: new Date(query.to) }
             },

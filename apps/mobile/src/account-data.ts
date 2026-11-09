@@ -8,6 +8,7 @@ import {
   type Currency
 } from "./transaction-data";
 import type { CategorySource } from "./category-data";
+import { createDemoTransferLedger } from "./transfer-data";
 
 export const accountInput = z.strictObject({
   name: z
@@ -124,6 +125,15 @@ export function createDemoFinanceSources(
 ) {
   let rows: Account[] = [],
     sequence = 0;
+  let writes = Promise.resolve();
+  function write<T>(action: () => Promise<T>) {
+    const result = writes.then(action);
+    writes = result.then(
+      () => {},
+      () => {}
+    );
+    return result;
+  }
   const missing = () => new ClientFailure("unavailable");
   function checkedName(input: AccountInput, except?: string) {
     const name = input.name
@@ -147,7 +157,9 @@ export function createDemoFinanceSources(
       if (!row) throw missing();
       if (asOf < row.openingDate)
         throw new ClientFailure("validation", "INVALID_ACCOUNT");
-      let balance = BigInt(row.openingBalanceMinor),
+      let balance =
+          BigInt(row.openingBalanceMinor) +
+          transfers.balanceAdjustment(id, asOf),
         after: string | undefined;
       do {
         const page = await transactions.list({ accountId: id }, after);
@@ -222,5 +234,22 @@ export function createDemoFinanceSources(
       beforeWrite?.(currency, previous);
     }
   );
-  return { accounts, transactions };
+  const transfers = createDemoTransferLedger(
+    accounts,
+    getCurrency,
+    write,
+    (currency) => beforeWrite?.(currency)
+  );
+  return {
+    accounts: {
+      ...accounts,
+      get: (id: string, asOf?: string) => write(() => accounts.get(id, asOf)),
+      create: (input: AccountInput) => write(() => accounts.create(input)),
+      update: (id: string, patch: Parameters<AccountSource["update"]>[1]) =>
+        write(() => accounts.update(id, patch)),
+      archive: (id: string) => write(() => accounts.archive(id))
+    },
+    transactions,
+    transfers: transfers.source
+  };
 }

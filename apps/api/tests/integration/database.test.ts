@@ -372,7 +372,8 @@ describe("initial migration and database ownership", () => {
       where: { id: result.rows[0].id },
       include: { category: true }
     });
-    expect(record.category.archivedAt).toBeInstanceOf(Date);
+    expect(record.category).not.toBeNull();
+    expect(record.category?.archivedAt).toBeInstanceOf(Date);
   });
 
   it("enforces positive integer money and required owners", async () => {

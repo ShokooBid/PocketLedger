@@ -37,6 +37,10 @@ type TransactionWithAccount = Prisma.TransactionGetPayload<{
   include: typeof withAccountCurrency;
 }>;
 export function serializeTransaction(row: TransactionWithAccount) {
+  if (row.transferId || row.categoryId === null)
+    throw new Error(
+      "Transfer legs cannot use the normal transaction contract."
+    );
   return {
     id: row.id,
     accountId: row.accountId,
@@ -125,6 +129,7 @@ export function createTransactionService(db: PrismaClient) {
         const rows = await tx.transaction.findMany({
           where: {
             userId,
+            transferId: null,
             ...(query.accountId ? { accountId: query.accountId } : {}),
             ...(query.currency
               ? { account: { currency: query.currency } }
@@ -171,7 +176,7 @@ export function createTransactionService(db: PrismaClient) {
     get(userId: string, id: string) {
       return run(async (tx) => {
         const row = await tx.transaction.findFirst({
-          where: { id, userId },
+          where: { id, userId, transferId: null },
           include: withAccountCurrency
         });
         if (!row) throw missing();
@@ -223,7 +228,7 @@ export function createTransactionService(db: PrismaClient) {
       return run(async (tx) => {
         await lockFinanceOwner(tx, userId);
         const row = await tx.transaction.findFirst({
-          where: { id, userId },
+          where: { id, userId, transferId: null },
           include: withAccountCurrency
         });
         if (!row) throw missing();
@@ -265,7 +270,7 @@ export function createTransactionService(db: PrismaClient) {
       return run(async (tx) => {
         await lockFinanceOwner(tx, userId);
         const result = await tx.transaction.deleteMany({
-          where: { id, userId }
+          where: { id, userId, transferId: null }
         });
         if (!result.count) throw missing();
         return { ok: true as const };

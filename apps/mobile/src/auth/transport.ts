@@ -104,7 +104,7 @@ export function createTransport(
             path
           ) ||
           /^\/v1\/categories\/recent(?:\?[A-Za-z0-9=&_.%+-]+)?$/.test(path) ||
-          /^\/v1\/transactions(?:\/[0-9a-f-]{36})?(?:\?[A-Za-z0-9=&_.%+-]+)?$/i.test(
+          /^\/v1\/(?:transactions|transfers)(?:\/[0-9a-f-]{36})?(?:\?[A-Za-z0-9=&_.%+-]+)?$/i.test(
             path
           ) ||
           /^\/v1\/dashboard\/summary\?[A-Za-z0-9=&_.%+-]+$/.test(path)
@@ -156,6 +156,7 @@ export function createTransport(
                 data.error.code === "ACCOUNT_NAME_CONFLICT" ||
                 data.error.code === "ACCOUNT_ARCHIVED" ||
                 data.error.code === "INVALID_ACCOUNT" ||
+                data.error.code === "INVALID_TRANSFER" ||
                 data.error.code === "PREFERENCE_CHANGED" ||
                 data.error.code === "IDEMPOTENCY_KEY_REUSED" ||
                 data.error.code === "SUMMARY_AMOUNT_OUT_OF_RANGE" ||
