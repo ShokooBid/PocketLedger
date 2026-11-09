@@ -231,7 +231,7 @@ export function TransactionManagement(
               label="Add transaction"
               variant="primary"
               disabled={disabled}
-              onPress={() => edit()}
+              onPress={props.onAdd ?? (() => edit())}
             />
           </>
         )}

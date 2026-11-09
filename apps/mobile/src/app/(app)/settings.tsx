@@ -7,11 +7,13 @@ import Constants from "expo-constants";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { usePreferences } from "../../preferences";
 import { Settings } from "../../settings";
+import { useEntry } from "../../entry-context";
 
 export { ErrorBoundary } from "../../error-boundary";
 
 export default function SettingsScreen() {
   const { session, controller } = useSession();
+  const entry = useEntry();
   const [shouldFail, setShouldFail] = useState(false);
   const preferences = usePreferences();
   const accounts = useAccounts();
@@ -36,9 +38,7 @@ export default function SettingsScreen() {
             backAction: {
               label: "Return to transaction draft",
               onPress: () =>
-                router.canGoBack()
-                  ? router.back()
-                  : router.replace("/transactions")
+                router.canGoBack() ? router.back() : router.replace("/")
             }
           }
         : {})}
@@ -50,6 +50,11 @@ export default function SettingsScreen() {
         defaultCurrency={preferences.selectedCurrency}
         version={Constants.expoConfig?.version ?? "Development"}
         onPrivacy={() => router.push("/privacy")}
+        onBeforeSignOut={entry.requestDiscard}
+      />
+      <Button
+        label="Manage categories"
+        onPress={() => router.push("/categories")}
       />
       {preferences.selectedCurrency !== null && (
         <AccountManagement

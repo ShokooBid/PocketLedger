@@ -77,47 +77,77 @@ export function Screen({
   children,
   back = false,
   backAction,
+  showUserMenu = true,
+  onViewportLayout,
   appearance = "standard"
 }: PropsWithChildren<{
   title: string;
   back?: boolean;
   backAction?: { label: string; onPress: () => void };
-  appearance?: "standard" | "welcome";
+  showUserMenu?: boolean;
+  onViewportLayout?: (layout: { width: number; height: number }) => void;
+  appearance?: "standard" | "welcome" | "entry";
 }>) {
   const router = useRouter();
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={
+        appearance === "entry"
+          ? ["top", "left", "right"]
+          : ["top", "bottom", "left", "right"]
+      }
+    >
       <ScrollView
+        onLayout={(event) => onViewportLayout?.(event.nativeEvent.layout)}
         contentContainerStyle={[
           styles.content,
-          appearance === "welcome" && styles.welcomeContent
+          appearance === "welcome" && styles.welcomeContent,
+          appearance === "entry" && styles.entryContent
         ]}
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
         keyboardDismissMode="on-drag"
+        bounces={appearance !== "entry"}
+        showsVerticalScrollIndicator={appearance !== "entry"}
       >
-        <ScreenDecoration prominent={appearance === "welcome"} />
+        <ScreenDecoration
+          prominent={appearance === "welcome"}
+          entry={appearance === "entry"}
+        />
         {(back || backAction) && (
           <Button
-            label={backAction?.label ?? "Back to dashboard"}
-            onPress={backAction?.onPress ?? (() => router.dismissTo("/"))}
+            label={backAction?.label ?? "Back to previous screen"}
+            onPress={
+              backAction?.onPress ??
+              (() => {
+                if (router.canGoBack()) router.back();
+                else router.replace("/transactions");
+              })
+            }
           />
         )}
         {appearance === "welcome" && (
           <Text style={styles.brand}>POCKETLEDGER</Text>
         )}
-        <View style={styles.toolbar}>
+        <View
+          style={[
+            styles.toolbar,
+            appearance === "entry" && styles.entryToolbar
+          ]}
+        >
           <Text
             accessibilityRole="header"
             accessibilityLabel={`${title} screen`}
             style={[
               styles.heading,
-              appearance === "welcome" && styles.welcomeHeading
+              appearance === "welcome" && styles.welcomeHeading,
+              appearance === "entry" && styles.entryHeading
             ]}
           >
             {title}
           </Text>
-          <UserMenu />
+          {showUserMenu && <UserMenu />}
         </View>
         {children}
       </ScrollView>
@@ -135,7 +165,8 @@ export function NavigationLink({
     | "/import"
     | "/settings"
     | "/sign-in"
-    | "/";
+    | "/"
+    | "/overview";
   label: string;
 }) {
   return (
@@ -212,6 +243,17 @@ const styles = StyleSheet.create({
     alignSelf: "center"
   },
   welcomeContent: { maxWidth: 440, paddingTop: 164, paddingBottom: 164 },
+  entryContent: {
+    paddingTop: 4,
+    paddingBottom: 4,
+    paddingHorizontal: 12,
+    gap: 6
+  },
+  entryToolbar: {
+    marginBottom: 0,
+    paddingHorizontal: 8
+  },
+  entryHeading: { color: theme.color.onPrimary, fontSize: 20 },
   welcomeHeading: { textAlign: "center", fontSize: 34, fontWeight: "800" },
   brand: {
     color: theme.color.muted,
