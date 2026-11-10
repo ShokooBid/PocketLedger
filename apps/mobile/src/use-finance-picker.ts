@@ -173,7 +173,8 @@ const accountFailure = (error: unknown) =>
 export function useAccountPicker(
   source: AccountSource,
   currency: Currency,
-  onSelect: (id: string, rows: Account[]) => void
+  onSelect: (id: string, rows: Account[]) => void,
+  excludeId?: string
 ) {
   const task = usePickerTask(accountFailure);
   const [rows, setRows] = useState<Account[] | null>(null);
@@ -190,7 +191,7 @@ export function useAccountPicker(
     void reload();
   }, [reload]);
   const eligible = (row: Account) =>
-    !row.archivedAt && row.currency === currency;
+    !row.archivedAt && row.currency === currency && row.id !== excludeId;
   const available = (rows ?? []).filter(eligible);
   const matches = available.filter((row) =>
     row.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())

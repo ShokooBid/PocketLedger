@@ -1,6 +1,13 @@
 import { Screen, StateNotice } from "../../ui";
 import { useCategories } from "../../category-context";
-import { useTransactions, useAccounts } from "../../transaction-context";
+import {
+  useTransactions,
+  useAccounts,
+  useTransfers,
+  useFinanceChanges
+} from "../../transaction-context";
+import { TransferManagement } from "../../transfer-management";
+import { useEntry } from "../../entry-context";
 import { TransactionManagement } from "../../transaction-management";
 import { useSession } from "../../session";
 import {
@@ -22,6 +29,9 @@ export default function TransactionsRoute() {
 }
 function TransactionsScreen() {
   const source = useTransactions();
+  const transfers = useTransfers(),
+    changes = useFinanceChanges(),
+    entry = useEntry();
   const accounts = useAccounts();
   const categories = useCategories();
   const { session } = useSession();
@@ -79,6 +89,17 @@ function TransactionsScreen() {
         demo={session.status === "demo"}
         onOpenDetail={(id) =>
           router.push({ pathname: "/transactions/[id]", params: { id } })
+        }
+      />
+      <TransferManagement
+        source={transfers}
+        accounts={accounts}
+        active={active}
+        writeBlocked={entry.busy || entry.uncertain}
+        onReconciled={changes.invalidate}
+        onEdit={(row) => entry.editTransfer(row, () => router.navigate("/"))}
+        onOpenDetail={(id) =>
+          router.push({ pathname: "/transfers/[id]", params: { id } })
         }
       />
     </Screen>

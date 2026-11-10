@@ -111,7 +111,7 @@ export function dashboardFailureMessage(error: unknown) {
 
 export function createApiDashboardSource(
   client: Transport,
-  changes: Pick<TransactionSource, "subscribe">
+  changes: { subscribe(listener: () => void): () => void }
 ): DashboardSource {
   return {
     subscribe: (listener) => changes.subscribe(listener),
@@ -139,10 +139,11 @@ export function createApiDashboardSource(
 // Explicit demo simulation only. Live finance totals always come from the API.
 export function createDemoDashboardSource(
   transactions: TransactionSource,
-  categories: CategorySource
+  categories: CategorySource,
+  changes: { subscribe(listener: () => void): () => void } = transactions
 ): DashboardSource {
   return {
-    subscribe: (listener) => transactions.subscribe(listener),
+    subscribe: (listener) => changes.subscribe(listener),
     async summary({ month, currency }) {
       const range = monthRange(month);
       let rows: Transaction[] = [];

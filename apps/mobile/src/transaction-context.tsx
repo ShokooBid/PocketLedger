@@ -21,6 +21,10 @@ import { createApiTransferSource, type TransferSource } from "./transfer-data";
 const Transactions = createContext<TransactionSource | null>(null);
 const Accounts = createContext<AccountSource | null>(null);
 const Transfers = createContext<TransferSource | null>(null);
+const Changes = createContext<{
+  subscribe(listener: () => void): () => void;
+  invalidate(): void;
+} | null>(null);
 // The session-keyed application layout discards both sources on account changes.
 export function TransactionsProvider({ children }: PropsWithChildren) {
   const categories = useCategories(),
@@ -95,11 +99,35 @@ export function TransactionsProvider({ children }: PropsWithChildren) {
       }
     };
   });
+  const [changes] = useState(() => {
+    const listeners = new Set<() => void>();
+    return {
+      subscribe(listener: () => void) {
+        listeners.add(listener);
+        const normal = sources.transactions.subscribe(listener),
+          transfer = sources.transfers.subscribe(listener);
+        return () => {
+          listeners.delete(listener);
+          normal();
+          transfer();
+        };
+      },
+      invalidate() {
+        for (const listener of listeners) {
+          try {
+            listener();
+          } catch {
+            /* Confirmed reconciliation stays successful. */
+          }
+        }
+      }
+    };
+  });
   return (
     <Accounts.Provider value={accounts}>
       <Transactions.Provider value={sources.transactions}>
         <Transfers.Provider value={sources.transfers}>
-          {children}
+          <Changes.Provider value={changes}>{children}</Changes.Provider>
         </Transfers.Provider>
       </Transactions.Provider>
     </Accounts.Provider>
@@ -117,6 +145,11 @@ export function useAccounts() {
 }
 export function useTransfers() {
   const source = useContext(Transfers);
+  if (!source) throw new Error("TransactionsProvider is required.");
+  return source;
+}
+export function useFinanceChanges() {
+  const source = useContext(Changes);
   if (!source) throw new Error("TransactionsProvider is required.");
   return source;
 }

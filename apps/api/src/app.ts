@@ -45,6 +45,29 @@ export async function buildApp(
     transfers?: TransferService;
   } = {}
 ) {
+  const development = config.environment === "development";
+  // Keep error diagnostics local to development. Never serialize arbitrary error
+  // properties: database adapters can attach queries, parameters or credentials.
+  function serializeError(
+    error: unknown,
+    depth = 0
+  ): { type: string; message: string; stack: string; [key: string]: unknown } {
+    if (!development)
+      return { type: "InternalError", message: "Internal error", stack: "" };
+    if (!(error instanceof Error))
+      return { type: "UnknownError", message: "Non-Error failure", stack: "" };
+    return {
+      type: error.name,
+      message: error.message,
+      stack: error.stack ?? "",
+      ...("code" in error && typeof error.code === "string"
+        ? { code: error.code }
+        : {}),
+      ...(depth < 2 && error.cause instanceof Error
+        ? { cause: serializeError(error.cause, depth + 1) }
+        : {})
+    };
+  }
   const app = Fastify({
     logger:
       options.logger === false
@@ -63,11 +86,7 @@ export async function buildApp(
             ],
             serializers: {
               req: (request) => ({ method: request.method }),
-              err: () => ({
-                type: "InternalError",
-                message: "Internal error",
-                stack: ""
-              })
+              err: (error) => serializeError(error)
             }
           },
     logController: new LogController({ disableRequestLogging: true }),
@@ -117,21 +136,51 @@ export async function buildApp(
           ? "Too many attempts. Try again later."
           : "The request could not be processed.";
     }
-    if (status >= 500)
-      request.log.error({ requestId: request.id, code }, "request failed");
+    const diagnostic = {
+      requestId: request.id,
+      method: request.method,
+      route: request.routeOptions.url,
+      statusCode: status,
+      code,
+      ...(development
+        ? {
+            err: error,
+            ...(error.validation
+              ? {
+                  validation: error.validation.map((issue) => ({
+                    field: issue.instancePath,
+                    message: issue.message
+                  }))
+                }
+              : {})
+          }
+        : {})
+    };
+    if (status >= 500) request.log.error(diagnostic, "request failed");
+    else if (development) request.log.warn(diagnostic, "request rejected");
     return reply
       .code(status)
       .send({ error: { code, message, requestId: request.id } });
   });
-  app.setNotFoundHandler((request, reply) =>
-    reply.code(404).send({
+  app.setNotFoundHandler((request, reply) => {
+    if (development)
+      request.log.warn(
+        {
+          requestId: request.id,
+          method: request.method,
+          statusCode: 404,
+          code: "NOT_FOUND"
+        },
+        "route not found"
+      );
+    return reply.code(404).send({
       error: {
         code: "NOT_FOUND",
         message: "Resource not found.",
         requestId: request.id
       }
-    })
-  );
+    });
+  });
   await app.register(cors, {
     origin: (origin, callback) => {
       if (!origin || config.origins.includes(origin)) callback(null, true);

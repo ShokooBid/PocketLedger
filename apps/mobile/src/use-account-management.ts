@@ -17,6 +17,7 @@ export type AccountManagementProps = {
   onReloadPreferences?: () => Promise<void>;
   preferencesReady?: boolean;
   active?: boolean;
+  changes?: { subscribe(listener: () => void): () => void };
 };
 
 function actionMessage(failure: unknown) {
@@ -43,7 +44,8 @@ export function useAccountManagement({
   onDefault,
   onReloadPreferences,
   preferencesReady = true,
-  active = true
+  active = true,
+  changes
 }: AccountManagementProps) {
   const [rows, setRows] = useState<Account[]>([]);
   const [name, setName] = useState("");
@@ -133,6 +135,10 @@ export function useAccountManagement({
   useEffect(() => {
     if (active) setRefreshRequested(true);
   }, [active, reload]);
+  useEffect(
+    () => changes?.subscribe(() => setRefreshRequested(true)),
+    [changes]
+  );
   useEffect(() => {
     // A focus event during an older read/write still needs a fresh read afterward.
     if (active && !busy && refreshRequested) {

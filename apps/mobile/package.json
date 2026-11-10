@@ -9,7 +9,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "eslint . --max-warnings=0",
-    "test": "jest --runInBand",
+    "test": "node -e \"process.env.NODE_ENV='test'; require('jest').run(process.argv.slice(1));\" -- --runInBand",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "expo customize tsconfig.json && tsc -p tsconfig.json --noEmit"
   },

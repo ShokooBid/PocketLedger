@@ -7,7 +7,7 @@ import {
   createDemoDashboardSource
 } from "../../dashboard-data";
 import { useSession } from "../../session";
-import { useTransactions } from "../../transaction-context";
+import { useTransactions, useFinanceChanges } from "../../transaction-context";
 import { useCategories } from "../../category-context";
 import { PreferencesReady, usePreferences } from "../../preferences";
 
@@ -21,17 +21,18 @@ export default function DashboardRoute() {
 function DashboardScreen() {
   const { session, controller } = useSession();
   const transactions = useTransactions();
+  const changes = useFinanceChanges();
   const categories = useCategories();
   const { defaultCurrency } = usePreferences();
   const router = useRouter();
   const [active, setActive] = useState(false);
   const [source] = useState(() => {
     if (session.status === "demo")
-      return createDemoDashboardSource(transactions, categories);
+      return createDemoDashboardSource(transactions, categories, changes);
     if (session.status === "authenticated")
       return createApiDashboardSource(
         controller.client(session.generation),
-        transactions
+        changes
       );
     throw new Error("Dashboard requires an application session.");
   });

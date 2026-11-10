@@ -61,10 +61,14 @@ const pageSchema = z.object({
   nextCursor: cursor.nullable()
 });
 export type Transfer = z.infer<typeof transferSchema>;
+export type TransferInput = z.infer<typeof transferInput>;
 export type TransferCreate = z.infer<typeof transferCreate>;
 export type TransferPatch = z.infer<typeof transferPatch>;
 export type TransferFilter = z.infer<typeof filterSchema>;
+export type TransferChange =
+  { type: "saved"; row: Transfer } | { type: "deleted"; id: string };
 export interface TransferSource {
+  subscribe(listener: (change: TransferChange) => void): () => void;
   list(
     filter?: TransferFilter,
     after?: string
@@ -74,6 +78,63 @@ export interface TransferSource {
   update(id: string, patch: TransferPatch): Promise<Transfer>;
   remove(id: string): Promise<void>;
 }
+// Publish whole aggregates after confirmed writes. Observers cannot fail a write.
+function observeTransfers(
+  source: Omit<TransferSource, "subscribe">
+): TransferSource {
+  const listeners = new Set<(change: TransferChange) => void>();
+  function publish(change: TransferChange) {
+    for (const listener of listeners) {
+      try {
+        listener(change);
+      } catch {
+        /* Keep confirmed writes successful. */
+      }
+    }
+  }
+  return {
+    ...source,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    async create(input) {
+      const row = await source.create(input);
+      publish({ type: "saved", row });
+      return row;
+    },
+    async update(id, patch) {
+      const row = await source.update(id, patch);
+      publish({ type: "saved", row });
+      return row;
+    },
+    async remove(id) {
+      await source.remove(id);
+      publish({ type: "deleted", id });
+    }
+  };
+}
+export function transferFailureMessage(error: unknown) {
+  if (error instanceof ClientFailure) {
+    if (error.code === "INVALID_ACCOUNT")
+      return "An account was archived or is not open on this date. Reload accounts and repair the draft.";
+    if (error.code === "CURRENCY_MISMATCH")
+      return "Choose two accounts in the transfer's original currency. Amounts are never converted.";
+    if (error.code === "INVALID_TRANSFER")
+      return "Choose different From and To accounts.";
+    if (error.kind === "unavailable")
+      return "This transfer or account is unavailable. Reload before continuing.";
+    if (error.code === "IDEMPOTENCY_KEY_REUSED")
+      return "This save identity belongs to different content. Review saved transfers before starting another draft.";
+    if (error.kind === "validation")
+      return "Check the amount, both active accounts, date and description. Your draft is kept.";
+    if (error.kind === "rate-limit")
+      return "Too many requests. Wait before trying again.";
+  }
+  return "The transfer change could not be confirmed. Keep this draft and check saved transfers before retrying.";
+}
 function checked<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
   if (!result.success) throw new ClientFailure("validation");
@@ -81,7 +142,7 @@ function checked<T>(schema: z.ZodType<T>, value: unknown): T {
 }
 export function createApiTransferSource(client: Transport): TransferSource {
   const path = (id: string) => `/v1/transfers/${checked(z.uuid(), id)}`;
-  return {
+  return observeTransfers({
     list(filter = {}, after) {
       const query = Object.entries({
         ...checked(filterSchema, filter),
@@ -112,7 +173,7 @@ export function createApiTransferSource(client: Transport): TransferSource {
     async remove(id) {
       await client.send("DELETE", path(id), z.object({ ok: z.literal(true) }));
     }
-  };
+  });
 }
 
 // Internal demo composition: account archival and transfer writes share a queue.
@@ -168,7 +229,7 @@ export function createDemoTransferLedger(
       throw new ClientFailure("validation", "CURRENCY_MISMATCH");
     return from.currency;
   }
-  const source: TransferSource = {
+  const source: Omit<TransferSource, "subscribe"> = {
     async list(filter = {}, after) {
       const query = checked(filterSchema, filter);
       if (after !== undefined) checked(cursor, after);
@@ -274,7 +335,7 @@ export function createDemoTransferLedger(
     }
   };
   return {
-    source,
+    source: observeTransfers(source),
     balanceAdjustment(accountId: string, asOf: string) {
       return rows.reduce(
         (sum, { resource: row }) =>
