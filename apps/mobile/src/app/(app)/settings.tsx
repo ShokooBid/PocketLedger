@@ -1,5 +1,5 @@
 import { AccountManagement } from "../../account-management";
-import { useAccounts } from "../../transaction-context";
+import { useAccounts, useFinanceChanges } from "../../transaction-context";
 import { useCallback, useState } from "react";
 import { useSession } from "../../session";
 import { Button, Screen } from "../../ui";
@@ -17,6 +17,7 @@ export default function SettingsScreen() {
   const [shouldFail, setShouldFail] = useState(false);
   const preferences = usePreferences();
   const accounts = useAccounts();
+  const changes = useFinanceChanges();
   const [active, setActive] = useState(false);
   const { returnTo } = useLocalSearchParams();
   const returningToDraft = returnTo === "transaction-draft";
@@ -59,6 +60,7 @@ export default function SettingsScreen() {
       {preferences.selectedCurrency !== null && (
         <AccountManagement
           source={accounts}
+          changes={changes}
           currency={preferences.defaultCurrency}
           defaultAccountId={preferences.defaultAccountId}
           onDefault={preferences.setDefaultAccount}

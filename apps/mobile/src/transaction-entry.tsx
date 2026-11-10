@@ -54,9 +54,9 @@ export function TransactionEntry() {
     spacious ? 52 : 48,
     Math.ceil(28 * fontScale + 12)
   );
-  const [picker, setPicker] = useState<"account" | "category" | "date" | null>(
-    null
-  );
+  const [picker, setPicker] = useState<
+    "account" | "category" | "toAccount" | "date" | null
+  >(null);
   const amountRef = useRef<ComponentRef<typeof TextInput>>(null),
     noteRef = useRef<ComponentRef<typeof TextInput>>(null);
   const accountRef = useRef<ComponentRef<typeof View>>(null),
@@ -109,13 +109,21 @@ export function TransactionEntry() {
   }, [date, currency, entry, router]);
   useEffect(() => {
     const first = (
-      ["amount", "accountId", "categoryId", "date", "note"] as EntryField[]
+      [
+        "amount",
+        "accountId",
+        "toAccountId",
+        "categoryId",
+        "date",
+        "note"
+      ] as EntryField[]
     ).find((key) => entry.errors[key]);
     if (!first) return;
     const targets = {
       amount: amountRef,
       accountId: accountRef,
       categoryId: categoryRef,
+      toAccountId: categoryRef,
       date: dateRef,
       note: noteRef
     };
@@ -130,6 +138,12 @@ export function TransactionEntry() {
     });
   };
   const currencyLabel = entry.account?.currency ?? entry.draft.currency;
+  const transfer = entry.draft.direction === "transfer";
+  const destination = entry.accounts.find(
+    (row) => row.id === entry.draft.toAccountId
+  );
+  const saveDisabled =
+    entry.disabled || (transfer && entry.activeAccounts.length < 2);
   const category = entry.categories.find(
     (row) => row.id === entry.draft.categoryId
   );
@@ -142,7 +156,7 @@ export function TransactionEntry() {
     ) : null;
   }
   function selection(
-    field: "accountId" | "categoryId" | "date",
+    field: "accountId" | "categoryId" | "toAccountId" | "date",
     label: string,
     value: string,
     action: () => void
@@ -150,7 +164,7 @@ export function TransactionEntry() {
     const ref =
       field === "accountId"
         ? accountRef
-        : field === "categoryId"
+        : field === "categoryId" || field === "toAccountId"
           ? categoryRef
           : dateRef;
     return (
@@ -177,10 +191,14 @@ export function TransactionEntry() {
             {field !== "date" && (
               <Text style={styles.caption}>
                 {field === "accountId"
-                  ? "Account"
-                  : field === "categoryId"
-                    ? "Category"
-                    : "Date"}
+                  ? transfer
+                    ? "From Account"
+                    : "Account"
+                  : field === "toAccountId"
+                    ? "To Account"
+                    : field === "categoryId"
+                      ? "Category"
+                      : "Date"}
               </Text>
             )}
             <Text
@@ -199,32 +217,38 @@ export function TransactionEntry() {
   }
   return (
     <Screen
-      title="New transaction"
+      title={entry.editingTransfer ? "Edit transfer" : "New transaction"}
       appearance="entry"
       onViewportLayout={setViewport}
     >
       <View
-        accessibilityElementsHidden={picker !== null}
-        importantForAccessibility={picker ? "no-hide-descendants" : "auto"}
-        pointerEvents={picker ? "none" : "auto"}
+        accessibilityElementsHidden={picker !== null || !!entry.confirmation}
+        importantForAccessibility={
+          picker || entry.confirmation ? "no-hide-descendants" : "auto"
+        }
+        pointerEvents={picker || entry.confirmation ? "none" : "auto"}
         style={[
           styles.entry,
           { gap, paddingTop: compact ? 28 : spacious ? 72 : 64 }
         ]}
       >
         <View style={styles.segment}>
-          {(["expense", "income"] as const).map((direction) => (
+          {(["expense", "income", "transfer"] as const).map((direction) => (
             <Pressable
               key={direction}
               accessibilityRole="button"
               accessibilityLabel={
-                direction === "expense" ? "Expense" : "Income"
+                direction === "expense"
+                  ? "Expense"
+                  : direction === "income"
+                    ? "Income"
+                    : "Transfer"
               }
               accessibilityState={{
                 selected: entry.draft.direction === direction,
-                disabled: entry.disabled
+                disabled: entry.modeDisabled || !!entry.editingTransfer
               }}
-              disabled={entry.disabled}
+              disabled={entry.modeDisabled || !!entry.editingTransfer}
               onPress={() => entry.change({ direction })}
               style={[
                 styles.segmentButton,
@@ -237,7 +261,11 @@ export function TransactionEntry() {
                   entry.draft.direction === direction && styles.selectedText
                 ]}
               >
-                {direction === "expense" ? "Expense" : "Income"}
+                {direction === "expense"
+                  ? "Expense"
+                  : direction === "income"
+                    ? "Income"
+                    : "Transfer"}
               </Text>
             </Pressable>
           ))}
@@ -271,7 +299,9 @@ export function TransactionEntry() {
           <Text
             accessibilityLiveRegion="polite"
             numberOfLines={
-              entry.message.startsWith("Transaction saved.") ? 1 : undefined
+              /^(Transaction|Transfer) saved\./.test(entry.message)
+                ? 1
+                : undefined
             }
             ellipsizeMode="tail"
             style={styles.message}
@@ -313,7 +343,9 @@ export function TransactionEntry() {
               if (accepted === next || (next === "0" && accepted === "0"))
                 entry.change({ amount: next });
             }}
-            onSubmitEditing={() => void entry.save()}
+            onSubmitEditing={() => {
+              if (!saveDisabled) void entry.save();
+            }}
             returnKeyType="done"
             style={[
               styles.amount,
@@ -325,18 +357,32 @@ export function TransactionEntry() {
         <View style={styles.pair}>
           {selection(
             "accountId",
-            entry.draft.accountId
-              ? `Account: ${entry.account?.name ?? "Unavailable"}`
-              : "Choose account",
-            entry.account?.name ?? "Choose account",
+            transfer
+              ? entry.draft.accountId
+                ? `From Account: ${entry.account?.name ?? "Unavailable"}`
+                : "Choose From Account"
+              : entry.draft.accountId
+                ? `Account: ${entry.account?.name ?? "Unavailable"}`
+                : "Choose account",
+            entry.account?.name ??
+              (transfer ? "Choose From Account" : "Choose account"),
             () => setPicker("account")
           )}
-          {selection(
-            "categoryId",
-            category ? `Category: ${selectedCategory}` : "Choose category",
-            selectedCategory,
-            () => setPicker("category")
-          )}
+          {transfer
+            ? selection(
+                "toAccountId",
+                destination
+                  ? `To Account: ${destination.name}`
+                  : "Choose To Account",
+                destination?.name ?? "Choose To Account",
+                () => setPicker("toAccount")
+              )
+            : selection(
+                "categoryId",
+                category ? `Category: ${selectedCategory}` : "Choose category",
+                selectedCategory,
+                () => setPicker("category")
+              )}
         </View>
         {selection("date", "Choose transaction date", entry.draft.date, () =>
           setPicker("date")
@@ -357,8 +403,35 @@ export function TransactionEntry() {
           />
         </View>
         {error("note")}
-        {!entry.activeAccounts.length && entry.ready && (
-          <Button label="Add an account in Settings" onPress={settings} />
+        {entry.ready &&
+          (!entry.activeAccounts.length ||
+            (transfer && entry.activeAccounts.length < 2)) && (
+            <Body>
+              Transfers need two active accounts in {entry.draft.currency}.
+            </Body>
+          )}
+        {entry.ready &&
+          (!entry.activeAccounts.length ||
+            (transfer && entry.activeAccounts.length < 2)) && (
+            <Button label="Add an account in Settings" onPress={settings} />
+          )}
+        {entry.editingTransfer && (
+          <Button
+            label="Cancel transfer editing"
+            disabled={entry.busy || entry.uncertain}
+            onPress={() => entry.requestDiscard()}
+          />
+        )}
+        {entry.savedTransfer && (
+          <Button
+            label="View saved transfer"
+            onPress={() =>
+              router.push({
+                pathname: "/transfers/[id]",
+                params: { id: entry.savedTransfer!.id }
+              })
+            }
+          />
         )}
         {entry.uncertain && (
           <View style={styles.recovery}>
@@ -367,7 +440,9 @@ export function TransactionEntry() {
               identity are frozen. Hard deletion removes replay protection.
             </Body>
             <Button
-              label="Check saved transactions"
+              label={
+                transfer ? "Check saved transfers" : "Check saved transactions"
+              }
               disabled={entry.busy}
               onPress={() => void entry.review()}
             />
@@ -474,18 +549,26 @@ export function TransactionEntry() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={
-                entry.busy ? "Saving transaction…" : "Save transaction"
+                entry.busy
+                  ? "Saving transaction…"
+                  : transfer
+                    ? "Review transfer"
+                    : "Save transaction"
               }
-              accessibilityHint="Confirm and save the transaction"
+              accessibilityHint={
+                transfer
+                  ? "Review both accounts and the amount before confirming"
+                  : "Confirm and save the transaction"
+              }
               accessibilityState={{
-                disabled: entry.disabled,
+                disabled: saveDisabled,
                 busy: entry.busy
               }}
-              disabled={entry.disabled}
+              disabled={saveDisabled}
               onPress={() => void entry.save()}
               style={({ pressed }) => [
                 styles.confirmKey,
-                (pressed || entry.disabled) && styles.keyDisabled
+                (pressed || saveDisabled) && styles.keyDisabled
               ]}
             >
               {entry.busy ? (
@@ -516,12 +599,33 @@ export function TransactionEntry() {
           source={accountSource}
           currency={entry.draft.currency}
           selectedId={entry.draft.accountId}
+          title={transfer ? "Choose From Account" : "Choose account"}
+          {...(transfer ? { excludeId: entry.draft.toAccountId } : {})}
           onClose={() => setPicker(null)}
           onSelect={(id, rows) => {
             entry.selectAccount(id, rows);
             setPicker(null);
           }}
           onSettings={settings}
+        />
+      )}
+      {picker === "toAccount" && (
+        <AccountPicker
+          source={accountSource}
+          currency={currencyLabel}
+          selectedId={entry.draft.toAccountId}
+          title="Choose To Account"
+          excludeId={entry.draft.accountId}
+          onClear={() => {
+            entry.change({ toAccountId: "" });
+            setPicker(null);
+          }}
+          onClose={() => setPicker(null)}
+          onSettings={settings}
+          onSelect={(id, rows) => {
+            entry.selectAccount(id, rows, "to");
+            setPicker(null);
+          }}
         />
       )}
       {picker === "category" && (

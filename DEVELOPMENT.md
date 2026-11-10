@@ -108,6 +108,37 @@ registration requires a 12-128 character password. Send the returned access toke
 as `Authorization: Bearer <accessToken>` to authenticated routes such as
 `GET /v1/me`. Refresh tokens rotate after use; persist their replacements securely.
 
+### Backend errors while testing with Expo
+
+Keep the API running in its own terminal. The development script sets
+`NODE_ENV=development` automatically:
+
+```powershell
+npm run dev:api
+```
+
+The script uses a Node preload to set the variable on Windows, macOS and Linux
+without a shell-specific command or an extra dependency. `start:api` still uses
+your configured environment.
+
+Run `npm run dev:mobile` in another terminal. When Expo sends a failing API request,
+the API terminal prints a structured JSON diagnostic: method, route template, status,
+error code and request ID. In development it also includes `err.message`, `err.stack`,
+bounded Error causes and error codes such as Prisma's `P2022`. Validation failures
+include field paths and schema messages. Server errors use error level; rejected
+requests (including validation/authentication failures) and unmatched routes use
+warning level. Startup failures such as an occupied port also include their cause.
+
+The server-generated `requestId` matches the response error and `x-request-id` header,
+so you can find the corresponding terminal entry. Response messages remain generic
+for unexpected errors; stack traces are never sent to the mobile app. Bodies, headers,
+query strings and arbitrary error metadata are not logged. Development error text
+can still contain details from a database driver, so use the synthetic local data
+described in this guide. Production and test logging keep the restricted diagnostics.
+
+Expo rendering errors and failures that occur before a request reaches the API stay
+in Expo/Metro or the device's JavaScript console; the backend cannot log those.
+
 Generate the implemented API contract without database or Google credentials:
 
 ```sh
@@ -187,6 +218,13 @@ API unit tests use Vitest; mobile tests use Jest with Expo and React Native Test
 Library. Both workspaces require real tests. For focused checks, append
 `--workspace=@pocketledger/api` or `--workspace=@pocketledger/mobile` to the
 workspace-level `test` or `typecheck` command.
+
+The mobile test script explicitly sets `NODE_ENV=test` before loading Jest/Expo
+and forwards additional Jest arguments. Jest normally sets this variable only if
+it is absent. A terminal that still has `NODE_ENV=development` from local API work
+would otherwise leave Expo Router without its test safe-area measurements, causing
+blank `<RNCSafeAreaProvider />` trees and missing-screen failures. The script sets
+the value only in its child Node process; your API's development mode is preserved.
 
 ### PostgreSQL integration tests
 

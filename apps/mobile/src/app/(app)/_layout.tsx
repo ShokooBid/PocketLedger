@@ -52,6 +52,7 @@ function AppScreens() {
           <Tabs.Screen name="import" />
           <Tabs.Screen name="privacy" />
           <Tabs.Screen name="transactions/[id]" />
+          <Tabs.Screen name="transfers/[id]" />
         </Tabs>
       </FinanceSetup>
     </UserMenuProvider>

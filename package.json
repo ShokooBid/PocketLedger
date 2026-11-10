@@ -22,7 +22,7 @@
     "categories:init": "node --env-file=.env --import tsx apps/api/src/categories/initialize.ts",
     "icons:generate": "node --import tsx scripts/generate-category-icons.mjs",
     "dev": "npm run dev --workspaces --if-present",
-    "dev:api": "node --env-file=.env --import tsx --watch apps/api/src/index.ts",
+    "dev:api": "node --env-file=.env --import \"data:text/javascript,process.env.NODE_ENV='development'\" --import tsx --watch apps/api/src/index.ts",
     "dev:mobile": "npm run dev --workspace=@pocketledger/mobile",
     "start:api": "node --env-file=.env --import tsx apps/api/src/index.ts",
     "format": "prettier --write .",

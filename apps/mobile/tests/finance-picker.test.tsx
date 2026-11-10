@@ -16,6 +16,7 @@ import {
 import { TransactionManagement } from "../src/transaction-management";
 import { createDemoTransactionSource } from "../src/transaction-data";
 import { accounts, accountId, deferred } from "./auth-fixtures";
+import type { Account } from "../src/account-data";
 
 const category = (
   id: string,
@@ -502,6 +503,44 @@ it("preserves every other draft field through picker cancellation, creation and 
     accountId: accountId("CAD"),
     note: "Keep my draft"
   });
+});
+
+it("excludes the other transfer account and rechecks archival before accepting a selection", async () => {
+  const all = await accounts.list(),
+    from = all.find((row) => row.id === accountId("CAD"))!;
+  const to: Account = {
+    ...from,
+    id: "20000000-0000-4000-8000-000000000099",
+    name: "CAD savings"
+  };
+  let rows = [...all, to];
+  const onSelect = jest.fn<(id: string, rows: Account[]) => void>();
+  render(
+    <AccountPicker
+      source={{ ...accounts, list: async () => rows }}
+      currency="CAD"
+      selectedId=""
+      excludeId={from.id}
+      title="Choose To Account"
+      onClose={() => {}}
+      onSelect={onSelect}
+    />
+  );
+  await screen.findByRole("button", { name: "Account: CAD savings" });
+  expect(
+    screen.queryByRole("button", { name: `Account: ${from.name}` })
+  ).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Account: Test JPY" })
+  ).toBeNull();
+  rows = rows.map((row) =>
+    row.id === to.id ? { ...row, archivedAt: new Date().toISOString() } : row
+  );
+  await press("Account: CAD savings");
+  expect(onSelect).not.toHaveBeenCalled();
+  expect(
+    await screen.findByText("Account selection needs attention")
+  ).toBeVisible();
 });
 
 jest.mock("expo-crypto", () => {

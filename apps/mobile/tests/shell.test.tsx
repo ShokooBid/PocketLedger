@@ -944,6 +944,83 @@ describe("screen state previews", () => {
   });
 });
 
+describe("transfer navigation", () => {
+  it("uses the shared form, retains its draft during account creation, and manages one whole transfer", async () => {
+    await openShell();
+    await enterDemo();
+    await tap(screen.getByRole("link", { name: "Add" }));
+    await press("Transfer");
+    expect(
+      screen.queryByRole("button", { name: "Choose category" })
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Review transfer" })
+    ).toBeDisabled();
+    await field("Amount", "25");
+    await field("Note (optional)", "Cash move");
+    await press("Choose From Account");
+    await press("Account: Demo setup cash");
+    await press("Choose To Account");
+    expect(
+      screen.queryByRole("button", { name: "Account: Demo setup cash" })
+    ).toBeNull();
+    await press("Add an account in Settings");
+    await field("Account name", "Savings");
+    await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
+    await press("Create account");
+    await press("Return to transaction draft");
+    expect(await screen.findByLabelText("Amount")).toHaveProp("value", "25");
+    expect(screen.getByLabelText("Note (optional)")).toHaveProp(
+      "value",
+      "Cash move"
+    );
+    await press("Choose To Account");
+    await press("Account: Savings");
+    await press("Review transfer");
+    expect(screen.getByText("From Account: Demo setup cash")).toBeVisible();
+    expect(screen.getByText("To Account: Savings")).toBeVisible();
+    expect(screen.getByText("Amount: 25.00 CAD")).toBeVisible();
+    await press("Return to transfer draft");
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "25");
+    await press("Review transfer");
+    await press("Confirm transfer");
+    await press("View saved transfer");
+    expect(
+      await screen.findByRole("header", { name: "Transfer details screen" })
+    ).toBeVisible();
+    expect(
+      await screen.findByText(/From tracked balance.*-25.00 CAD/)
+    ).toBeVisible();
+    expect(screen.getByText(/To tracked balance.*25.00 CAD/)).toBeVisible();
+    await press("Edit transfer");
+    expect(
+      await screen.findByRole("header", { name: "Edit transfer screen" })
+    ).toBeVisible();
+    await field("Amount", "30");
+    await press("Review transfer");
+    await press("Confirm transfer changes");
+    await press("View saved transfer");
+    expect(
+      await screen.findByText(/From tracked balance.*-30.00 CAD/)
+    ).toBeVisible();
+    await press("Delete transfer");
+    await press("Keep transfer");
+    expect(screen.getByRole("button", { name: "Edit transfer" })).toBeEnabled();
+    await press("Delete transfer");
+    await press("Confirm delete transfer");
+    expect(
+      await screen.findByText(
+        /This transfer is unavailable or has been deleted/
+      )
+    ).toBeVisible();
+    await tap(screen.getByRole("link", { name: "History" }));
+    expect(await screen.findByText("No transfers yet.")).toBeVisible();
+    await tap(screen.getByRole("link", { name: "Overview" }));
+    expect(await screen.findByLabelText("Income. CAD 0.00")).toBeVisible();
+    expect(screen.getByLabelText("Expenses. CAD 0.00")).toBeVisible();
+  }, 20000);
+});
+
 describe("external preview parameter validation", () => {
   it.each(["loading", "empty", "error"])("accepts %s", (value) => {
     expect(parsePreviewState(value)).toBe(value);

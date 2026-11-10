@@ -12,9 +12,10 @@ afterEach(async () => {
 });
 async function setup(
   auth = {} as AuthService,
-  options: Parameters<typeof buildApp>[2] = { logger: false }
+  options: Parameters<typeof buildApp>[2] = { logger: false },
+  config = testConfig()
 ) {
-  const app = await buildApp(testConfig(), auth, options);
+  const app = await buildApp(config, auth, options);
   apps.push(app);
   return app;
 }
@@ -176,6 +177,154 @@ describe("Fastify foundation", () => {
     });
     expect(lines.join("")).not.toMatch(/synthetic-/);
     expect(lines.join("")).toContain("request completed");
+  });
+  it.each(["development", "production"] as const)(
+    "keeps detailed terminal errors limited to development (%s)",
+    async (environment) => {
+      const lines: string[] = [];
+      const stream = new Writable({
+        write(chunk, _encoding, callback) {
+          lines.push(String(chunk));
+          callback();
+        }
+      });
+      const failure = Object.assign(
+        new Error("Synthetic missing database column", {
+          cause: new Error("Synthetic driver cause")
+        }),
+        {
+          code: "P2022",
+          meta: { query: "private-error-metadata" }
+        }
+      );
+      const app = await setup(
+        {
+          login: async () => {
+            throw failure;
+          }
+        } as unknown as AuthService,
+        { logger: { level: "info", stream } },
+        { ...testConfig(), environment }
+      );
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/auth/login?token=private-query-value",
+        headers: { authorization: "Bearer private-header-value" },
+        payload: {
+          email: "private-payload@example.invalid",
+          password: "private-password-value"
+        }
+      });
+      expect(response.statusCode).toBe(500);
+      expect(response.body).not.toMatch(/Synthetic|P2022|stack/);
+      const output = lines.join("");
+      const records = output
+        .trim()
+        .split("\n")
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              msg: string;
+              requestId?: string;
+              route?: string;
+              statusCode?: number;
+              err?: {
+                message?: string;
+                stack?: string;
+                code?: string;
+                cause?: { message?: string };
+              };
+            }
+        );
+      const record = records.find((row) => row.msg === "request failed")!;
+      expect(record).toMatchObject({
+        requestId: response.headers["x-request-id"],
+        route: "/v1/auth/login",
+        statusCode: 500
+      });
+      if (environment === "development") {
+        expect(record.err).toMatchObject({
+          message: failure.message,
+          code: "P2022",
+          cause: { message: "Synthetic driver cause" }
+        });
+        expect(record.err?.stack).toContain("app.test.ts");
+      } else {
+        expect(record.err).toBeUndefined();
+        expect(output).not.toMatch(/Synthetic|P2022/);
+      }
+      expect(output).not.toMatch(
+        /private-query-value|private-header-value|private-payload|private-password-value|private-error-metadata/
+      );
+      // Startup errors use this same serializer without a request context.
+      lines.length = 0;
+      app.log.error({ err: failure }, "API startup failed.");
+      if (environment === "development")
+        expect(lines.join("")).toContain(failure.message);
+      else expect(lines.join("")).not.toMatch(/Synthetic|P2022/);
+    }
+  );
+  it("logs rejected requests and validation fields in development without logging request bodies", async () => {
+    const lines: string[] = [];
+    const stream = new Writable({
+      write(chunk, _encoding, callback) {
+        lines.push(String(chunk));
+        callback();
+      }
+    });
+    const app = await setup(
+      {} as AuthService,
+      { logger: { level: "info", stream } },
+      { ...testConfig(), environment: "development" }
+    );
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/v1/auth/login",
+          payload: { email: "invalid", password: "private-password-value" }
+        })
+      ).statusCode
+    ).toBe(422);
+    expect((await app.inject("/v1/me")).statusCode).toBe(401);
+    expect(
+      (await app.inject("/missing?token=private-query-value")).statusCode
+    ).toBe(404);
+    const records = lines
+      .join("")
+      .trim()
+      .split("\n")
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            msg: string;
+            level: number;
+            statusCode?: number;
+            validation?: { field: string; message: string }[];
+          }
+      );
+    const invalid = records.find(
+      (row) => row.msg === "request rejected" && row.statusCode === 422
+    )!;
+    expect(invalid.level).toBe(40);
+    expect(
+      invalid.validation?.some(
+        (issue) => issue.field.includes("email") && !!issue.message
+      )
+    ).toBe(true);
+    expect(
+      records.some(
+        (row) => row.msg === "request rejected" && row.statusCode === 401
+      )
+    ).toBe(true);
+    expect(
+      records.some(
+        (row) => row.msg === "route not found" && row.statusCode === 404
+      )
+    ).toBe(true);
+    expect(lines.join("")).not.toMatch(
+      /private-password-value|private-query-value/
+    );
   });
   it("validates configuration without echoing secrets", () => {
     expect(() =>

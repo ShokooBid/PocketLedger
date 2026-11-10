@@ -316,7 +316,10 @@ export function AccountPicker({
   selectedId,
   onSelect,
   onClose,
-  onSettings
+  onSettings,
+  excludeId,
+  onClear,
+  title = "Choose account"
 }: {
   source: AccountSource;
   currency: Currency;
@@ -324,14 +327,32 @@ export function AccountPicker({
   onSelect: (id: string, rows: Account[]) => void;
   onClose: () => void;
   onSettings?: () => void;
+  excludeId?: string;
+  onClear?: () => void;
+  title?: string;
 }) {
-  const state = useAccountPicker(source, currency, (id, rows) => {
-    Keyboard.dismiss();
-    onSelect(id, rows);
-  });
+  const state = useAccountPicker(
+    source,
+    currency,
+    (id, rows) => {
+      Keyboard.dismiss();
+      onSelect(id, rows);
+    },
+    excludeId
+  );
   return (
-    <PickerModal title="Choose account" onClose={onClose}>
+    <PickerModal title={title} onClose={onClose}>
       <Body>Active accounts in {currency}</Body>
+      {onClear && selectedId && (
+        <Button
+          label="Clear account selection"
+          disabled={state.busy}
+          onPress={() => {
+            Keyboard.dismiss();
+            onClear();
+          }}
+        />
+      )}
       <Field
         label="Search accounts"
         value={state.query}
