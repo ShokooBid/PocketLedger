@@ -59,7 +59,7 @@ local file:
 ```powershell
 git diff
 git status --short
-git add CONTRIBUTING.md SECURITY.md .gitignore .env.example .gitattributes .nvmrc .github README.md docs/issue-3-implementation-walkthrough.md
+git add CONTRIBUTING.md SECURITY.md .gitignore .env.example .gitattributes .nvmrc .github README.md
 git diff --cached --check
 git diff --cached
 git commit -m "chore: add repository safeguards and contribution standards (#3)"
@@ -145,9 +145,8 @@ and local signing keys; native Google sign-in is tested separately in Issue #11.
 After you push the branch and create its PR, inspect the `quality` check. Verify
 a deliberate formatter/lint/type/test failure is red, remove that temporary
 change, then verify the final revision is green. See the
-[Issue #5 walkthrough](docs/issue-5-implementation-walkthrough.md) for the exact
-failure exercise and handoff checklist. Commits, pushes, and PR creation remain
-the contributor's responsibility.
+[quality workflow](.github/workflows/quality.yml) for the enforced checks. Commits,
+pushes, and PR creation remain the contributor's responsibility.
 
 In repository Settings > Branches (or Rules > Rulesets), inspect existing rules
 for `main` before editing them. If your plan and permissions support enforcement,

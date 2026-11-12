@@ -6,8 +6,8 @@ dist/
 coverage/
 .expo/
 .expo-shared/
-# Keep local walkthroughs/planning notes ignored; version the accepted redesign spec.
-/docs/*
+# Public project documentation lives in docs/; personal learning notes live here.
+/local-docs/
 *.tsbuildinfo
 
 # Environment configuration: examples must contain placeholders only
@@ -34,6 +34,9 @@ service-account*.json
 /secrets/
 *.dump
 *.backup
+
+# Personal engineering achievements and draft notes
+/.brag/
 
 # Local logs and operating-system files
 *.log

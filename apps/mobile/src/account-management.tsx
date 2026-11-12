@@ -10,7 +10,9 @@ import {
   type AccountManagementProps
 } from "./use-account-management";
 
-export function AccountManagement(props: AccountManagementProps) {
+export function AccountManagement(
+  props: AccountManagementProps & { onOpenHistory?: (id: string) => void }
+) {
   const { currency, defaultAccountId, preferencesReady = true } = props;
   const state = useAccountManagement(props);
   const { busy, disabled } = state;
@@ -78,6 +80,13 @@ export function AccountManagement(props: AccountManagementProps) {
         >
           {state.selectedId === row.id && (
             <View style={styles.section}>
+              {props.onOpenHistory && (
+                <Button
+                  label={`View history for ${row.name}`}
+                  disabled={busy || !state.ready}
+                  onPress={() => props.onOpenHistory?.(row.id)}
+                />
+              )}
               <Text accessibilityRole="header" style={styles.heading}>
                 Account details: {row.name}
               </Text>

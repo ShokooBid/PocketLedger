@@ -9,16 +9,28 @@ Read the [UX specification](ux.md) and [finance contracts](finance-contracts.md)
 together. Follow-up issues implement the screens, services and migrations; #64
 does not change runtime behavior, schema or generated OpenAPI.
 
-The first implementation increment is documented in the [#65 handoff](issue-65.md).
-Category hierarchy is documented in the [#66 handoff](issue-66.md).
-Account-linked transactions and the staged upgrade are documented in the
-[#69 walkthrough](issue-69.md).
-The supplied default catalog and local preview are documented in the [#67 handoff](issue-67.md).
+The implementation increments are tracked in
+[#65](https://github.com/ShokooBid/PocketLedger/issues/65),
+[#66](https://github.com/ShokooBid/PocketLedger/issues/66),
+[#67](https://github.com/ShokooBid/PocketLedger/issues/67), and
+[#69](https://github.com/ShokooBid/PocketLedger/issues/69).
 The #69 cleanup supersedes the earlier rollout/version instructions: current
-finance uses one `/v1` contract without feature flags. Earlier handoffs preserve
-the implementation history. Settings accounts and account-linked entry are wired
+finance uses one `/v1` contract without feature flags. The linked GitHub issues
+preserve the implementation history. Settings accounts and account-linked entry are wired
 to the live API; custom presentation, transfers and statement processing remain
 future work.
+
+## Live History implementation (2026-11-10)
+
+Issue [#75](https://github.com/ShokooBid/PocketLedger/issues/75) adds live filtered,
+date-grouped History, category icons, logical transfer pagination, full-day totals
+and parent/exact Overview breakdowns. Implement
+[#106](https://github.com/ShokooBid/PocketLedger/issues/106) next for automatic
+post-save navigation and shared-editor Add/Edit state; finish
+[#77](https://github.com/ShokooBid/PocketLedger/issues/77) after that and #76.
+The #75 increment leaves demo implementations unchanged and has no schema/migration
+changes. Tests are supplied for the owner to run; static checks are recorded in
+[verification](verification.md#issue-75-live-history-implementation).
 
 ## Finance foundation revision (2026-11-06)
 
@@ -55,10 +67,10 @@ reuse personal names. `categories:init` initializes once per database, separatel
 from synthetic seeds and signup, and rejects drift rather than rewriting it.
 Per-user provisioning/backfill commands are removed. Demo uses the same default
 IDs with isolated personal data. All four foundation increments are implemented;
-#72 navigation/keypad is now implemented locally; see the [learning walkthrough](issue-72.md)
-for file responsibilities, verification commands and outstanding device acceptance.
+#72 navigation/keypad is now implemented locally; see
+[#72](https://github.com/ShokooBid/PocketLedger/issues/72) for its scope.
 Later reporting/transfers remain separate work.
-Earlier #65/#69 handoffs and the verification record preserve historical behavior.
+The linked GitHub issues and verification record preserve historical behavior.
 
 ## Confirmed product decisions
 

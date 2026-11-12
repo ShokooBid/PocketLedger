@@ -31,6 +31,13 @@ export const summarySchema = totals.extend({
   to: calendarDate,
   currency: currencySchema,
   categoryBreakdown: z.array(
+    totals.extend({
+      categoryId: z.uuid(),
+      categoryName: z.string(),
+      rootId: z.uuid().optional()
+    })
+  ),
+  rootCategoryBreakdown: z.array(
     totals.extend({ categoryId: z.uuid(), categoryName: z.string() })
   ),
   recentTransactions: z.array(transactionSchema).max(20)

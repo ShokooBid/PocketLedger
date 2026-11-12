@@ -143,6 +143,7 @@ describe("protected dashboard summary", () => {
       expensesMinor: 0,
       netMinor: 0,
       categoryBreakdown: [],
+      rootCategoryBreakdown: [],
       recentTransactions: []
     });
   });
@@ -209,6 +210,7 @@ describe("protected dashboard summary", () => {
         {
           categoryId: alice.categoryId,
           categoryName: "Synthetic category",
+          rootId: alice.categoryId,
           incomeMinor: 50,
           expensesMinor: 250,
           netMinor: -200
@@ -216,6 +218,7 @@ describe("protected dashboard summary", () => {
         {
           categoryId: salary.id,
           categoryName: "Synthetic salary",
+          rootId: salary.id,
           incomeMinor: 2000,
           expensesMinor: 0,
           netMinor: 2000

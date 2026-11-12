@@ -255,18 +255,51 @@ export function Dashboard({
           ) : (
             <>
               <Text accessibilityRole="header" style={styles.heading}>
-                Category spending
+                {summary.rootCategoryBreakdown
+                  ? "Category breakdown"
+                  : "Category spending"}
               </Text>
+              {summary.rootCategoryBreakdown && (
+                <>
+                  <Body>
+                    Each parent total includes its direct entries and
+                    subcategories once. The amounts below each parent explain
+                    that total.
+                  </Body>
+                  {summary.rootCategoryBreakdown.map((root) => (
+                    <View key={root.categoryId} style={styles.card}>
+                      <SummaryCard
+                        label={`${root.categoryName} (parent total)`}
+                        value={`Income: ${moneyLabel(root.incomeMinor, currency)} · Expenses: ${moneyLabel(root.expensesMinor, currency)} · Net: ${moneyLabel(root.netMinor, currency)}`}
+                      />
+                      {summary.categoryBreakdown
+                        .filter((group) => group.rootId === root.categoryId)
+                        .map((group) => (
+                          <SummaryCard
+                            key={group.categoryId}
+                            label={
+                              group.categoryId === root.categoryId
+                                ? `${group.categoryName} (direct entries)`
+                                : group.categoryName
+                            }
+                            value={`Income: ${moneyLabel(group.incomeMinor, currency)} · Expenses: ${moneyLabel(group.expensesMinor, currency)} · Net: ${moneyLabel(group.netMinor, currency)}`}
+                          />
+                        ))}
+                    </View>
+                  ))}
+                </>
+              )}
               {spending.length === 0 && (
                 <Body>No expenses in this month and currency.</Body>
               )}
-              {spending.map((group) => (
-                <SummaryCard
-                  key={group.categoryId}
-                  label={group.categoryName}
-                  value={`Expenses: ${moneyLabel(group.expensesMinor, currency)}`}
-                />
-              ))}
+              {!summary.rootCategoryBreakdown &&
+                spending.map((group) => (
+                  <SummaryCard
+                    key={group.categoryId}
+                    label={group.categoryName}
+                    value={`Expenses: ${moneyLabel(group.expensesMinor, currency)}`}
+                  />
+                ))}
               <Text accessibilityRole="header" style={styles.heading}>
                 Recent transactions
               </Text>

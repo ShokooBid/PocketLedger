@@ -32,14 +32,49 @@ export const dashboardSchema = z
       z.object({
         categoryId: z.uuid(),
         categoryName: z.string(),
+        rootId: z.uuid().optional(),
         ...totalFields
       })
     ),
+    rootCategoryBreakdown: z
+      .array(
+        z.object({
+          categoryId: z.uuid(),
+          categoryName: z.string(),
+          ...totalFields
+        })
+      )
+      .optional(),
     recentTransactions: z.array(transactionSchema).max(5)
   })
   .refine((summary) => {
     const groups = summary.categoryBreakdown;
+    const roots = summary.rootCategoryBreakdown;
+    const validRoots =
+      !roots ||
+      (new Set(roots.map((root) => root.categoryId)).size === roots.length &&
+        groups.every((group) =>
+          roots.some((root) => root.categoryId === group.rootId)
+        ) &&
+        roots.every((root) => {
+          const children = groups.filter(
+            (group) => group.rootId === root.categoryId
+          );
+          return (
+            BigInt(root.netMinor) ===
+              BigInt(root.incomeMinor) - BigInt(root.expensesMinor) &&
+            children.reduce(
+              (sum, group) => sum + BigInt(group.incomeMinor),
+              0n
+            ) === BigInt(root.incomeMinor) &&
+            children.reduce(
+              (sum, group) => sum + BigInt(group.expensesMinor),
+              0n
+            ) === BigInt(root.expensesMinor)
+          );
+        }));
     return (
+      validRoots &&
       BigInt(summary.netMinor) ===
         BigInt(summary.incomeMinor) - BigInt(summary.expensesMinor) &&
       groups.every(

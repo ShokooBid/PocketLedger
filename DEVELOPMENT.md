@@ -253,11 +253,12 @@ verification.
 apps/mobile/          Expo app, portable client logic, and UI tests
 apps/api/             Fastify services, route contracts, and API tests
 apps/api/prisma/      Database schema, migrations, and synthetic seeds
-docs/                 Tracked product/security documents and local planning notes
+docs/                 Public product, architecture, security, and finance documents
+local-docs/           Personal learning walkthroughs, handoffs, and planning notes
 .github/workflows/    Automated quality checks
 ```
 
-Some local walkthroughs and planning notes under `docs/` are intentionally ignored
-by Git. Keep public documentation links pointed at tracked files. See
+`local-docs/` is ignored by Git. Keep public documentation links pointed at
+published files. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the branch/PR workflow and
 [SECURITY.md](SECURITY.md) for vulnerability reporting.
