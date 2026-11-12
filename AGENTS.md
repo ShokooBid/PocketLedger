@@ -14,3 +14,7 @@
 ## Efficient workflow
 
 - Inspect the code, callers, tests, and configuration needed to understand the change; expand the search when behavior or dependencies are unclear. Keep command output and final reports concise without omitting important findings.
+
+## Reusable workflows
+
+- When the user invokes `$deep-task-planning` or requests deeper task analysis before implementation, use `.agents/skills/deep-task-planning/SKILL.md` for investigation, independent verification criteria, an improved request, and an implementation plan.

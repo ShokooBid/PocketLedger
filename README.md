@@ -108,7 +108,10 @@ deletion and a support response-time commitment are not established.
 ## Documentation
 
 - [Development guide](DEVELOPMENT.md): database, API, native configuration, and tests.
+- [Architecture](docs/architecture.md): system shape and API conventions.
 - [Product scope](docs/mvp-scope.md): MVP boundaries and planned capabilities.
+- [Authentication plan](docs/authentication-plan.md): account and session design.
+- [Mobile redesign](docs/mobile-redesign/README.md): decisions, UX, finance contracts, and verification.
 - [Threat model](docs/threat-model.md): trust boundaries and security limitations.
 - [Contributing](CONTRIBUTING.md): development baseline and contribution workflow.
 - [Security policy](SECURITY.md): private vulnerability reporting.

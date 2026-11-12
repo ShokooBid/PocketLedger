@@ -1,4 +1,4 @@
-import { Screen, StateNotice } from "../../ui";
+import { Button, Screen, StateNotice } from "../../ui";
 import { useCategories } from "../../category-context";
 import {
   useTransactions,
@@ -19,6 +19,9 @@ import {
 import { parseAddLink } from "../../entry-data";
 import { PreferencesReady, usePreferences } from "../../preferences";
 import { useCallback, useState } from "react";
+import { HistoryScreen } from "../../history-screen";
+import { createApiHistorySource, historyFocus } from "../../history-data";
+import { z } from "zod";
 
 export default function TransactionsRoute() {
   return (
@@ -34,7 +37,12 @@ function TransactionsScreen() {
     entry = useEntry();
   const accounts = useAccounts();
   const categories = useCategories();
-  const { session } = useSession();
+  const { session, controller } = useSession();
+  const [history] = useState(() =>
+    session.status === "authenticated"
+      ? createApiHistorySource(controller.client(session.generation))
+      : null
+  );
   const {
     defaultCurrency,
     defaultAccountId,
@@ -50,7 +58,14 @@ function TransactionsScreen() {
       return () => setActive(false);
     }, [currencyState.reload])
   );
-  const { action, date, currency } = useLocalSearchParams();
+  const { action, date, currency, focusId, focusKind, accountId } =
+    useLocalSearchParams();
+  const focus =
+    focusId !== undefined || focusKind !== undefined
+      ? historyFocus.safeParse({ id: focusId, kind: focusKind })
+      : null;
+  const account =
+    accountId !== undefined ? z.uuid().safeParse(accountId) : null;
   const initialCreate = action === "add" ? parseAddLink(date, currency) : null;
   const openDraftSettings = () =>
     router.push({
@@ -69,6 +84,59 @@ function TransactionsScreen() {
     );
   if (initialCreate)
     return <Redirect href={{ pathname: "/", params: initialCreate }} />;
+  if (history)
+    return (
+      <Screen title="History">
+        {(focus && !focus.success) || (account && !account.success) ? (
+          <>
+            <StateNotice
+              kind="error"
+              title="Invalid history selection"
+              message="Clear the selection to open History again."
+            />
+            <Button
+              label="Clear history selection"
+              onPress={() =>
+                router.setParams({
+                  focusId: undefined,
+                  focusKind: undefined,
+                  accountId: undefined
+                })
+              }
+            />
+          </>
+        ) : (
+          <HistoryScreen
+            source={history}
+            accounts={accounts}
+            categories={categories}
+            changes={changes}
+            active={active}
+            ready={
+              currencyState.status === "ready" &&
+              !currencyState.saving &&
+              hasActiveAccounts
+            }
+            writeBlocked={entry.busy || entry.uncertain}
+            {...(focus?.success ? { focus: focus.data } : {})}
+            {...(account?.success ? { initialAccountId: account.data } : {})}
+            onFocusConsumed={() =>
+              router.setParams({ focusId: undefined, focusKind: undefined })
+            }
+            onAccountConsumed={() => router.setParams({ accountId: undefined })}
+            onSelect={(row) =>
+              router.push({
+                pathname:
+                  row.kind === "transfer"
+                    ? "/transfers/[id]"
+                    : "/transactions/[id]",
+                params: { id: row.id }
+              })
+            }
+          />
+        )}
+      </Screen>
+    );
   return (
     <Screen title="History">
       <TransactionManagement

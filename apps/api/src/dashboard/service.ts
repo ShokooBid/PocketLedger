@@ -84,6 +84,7 @@ export function createDashboardService(db: PrismaClient) {
             return {
               categoryId: group.categoryId,
               categoryName: group.categoryName,
+              rootId,
               ...totals(group.incomeMinor, group.expensesMinor)
             };
           });
@@ -93,8 +94,8 @@ export function createDashboardService(db: PrismaClient) {
             currency: query.currency,
             ...totals(income, expenses),
             categoryBreakdown,
-            // Kept separate from exact totals. The v1 serializer omits this
-            // primitive; #75 will expose it with account-aware reporting.
+            // Roots include direct postings and children once. These are a
+            // second view of the same totals, never added to the exact groups.
             rootCategoryBreakdown: [...roots.values()]
               .sort((a, b) => a.categoryId.localeCompare(b.categoryId))
               .map((root) => ({

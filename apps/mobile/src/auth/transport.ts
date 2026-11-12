@@ -104,6 +104,7 @@ export function createTransport(
             path
           ) ||
           /^\/v1\/categories\/recent(?:\?[A-Za-z0-9=&_.%+-]+)?$/.test(path) ||
+          /^\/v1\/history\?[A-Za-z0-9=&_.%+-]+$/.test(path) ||
           /^\/v1\/(?:transactions|transfers)(?:\/[0-9a-f-]{36})?(?:\?[A-Za-z0-9=&_.%+-]+)?$/i.test(
             path
           ) ||

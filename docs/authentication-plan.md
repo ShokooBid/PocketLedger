@@ -7,9 +7,10 @@ login endpoints and mobile sign-in are not implemented in Issue #6.
 Implementation update (Issue #7, 2026-10-20): backend password/Google login,
 challenges, explicit linking, session checks/rotation/revocation and cleanup are
 implemented with the prerequisite Issue #8 foundation. Mobile work remains #11.
-See [the walkthrough](issue-7-implementation-walkthrough.md) for current routes,
-configuration, tests and manual provider setup. Earlier future-tense text records
-the accepted plan; this update describes the implemented backend boundary.
+See the [development guide](../DEVELOPMENT.md) for configuration and verification,
+and the [API source](../apps/api/src/openapi.ts) for current routes. Earlier
+future-tense text records the accepted plan; this update describes the implemented
+backend boundary.
 
 ## User experience
 

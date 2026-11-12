@@ -61,6 +61,15 @@ export default function SettingsScreen() {
         <AccountManagement
           source={accounts}
           changes={changes}
+          {...(session.status === "authenticated"
+            ? {
+                onOpenHistory: (accountId: string) =>
+                  router.push({
+                    pathname: "/transactions",
+                    params: { accountId }
+                  })
+              }
+            : {})}
           currency={preferences.defaultCurrency}
           defaultAccountId={preferences.defaultAccountId}
           onDefault={preferences.setDefaultAccount}

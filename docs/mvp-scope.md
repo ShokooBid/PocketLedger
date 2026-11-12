@@ -35,7 +35,8 @@ tracking and statement import are useful, understandable, and dependable.
 
 - List fixed default and personal categories/subcategories, with exactly two levels.
 - Defaults cannot be renamed, archived or otherwise edited by users. The user
-  supplies the actual catalog values before provisioning releases.
+  has approved the catalog. #96 initializes one shared immutable catalog instead
+  of copying it at signup; personal categories remain private.
 - Create, rename and archive personal categories; personal children can attach to
   either a default root or a personal root. Select either parent or child.
 - Prevent category deletion or archiving from silently corrupting past records;
@@ -45,9 +46,17 @@ tracking and statement import are useful, understandable, and dependable.
 
 - Add/manage user-named accounts such as BMO, CIBC and Cash in Settings. No bank
   connection is implied. Opening balance is optional and defaults to zero.
-- Persist CAD as the initial Settings currency and show that one currency on Add.
-  Saving the first transaction locks the currency; creating an account/opening
-  balance alone does not. Preserve existing account/history denominations.
+- Require explicit currency selection after sign-in, with CAD suggested locally.
+  The choice is permanent immediately; Settings displays it read-only. A missing
+  choice or no active accounts blocks main finance/transaction routes, including
+  deep links. Setup, Settings and sign-out remain available; repair retains drafts.
+  Account creation inherits the permanent choice. No first-posting lock exists.
+  #94 removes duplicated transaction currency and legacy finance backfill code;
+  #95 stores immutable request identity on each manual transaction, with retry
+  protection while the row exists. Hard deletion releases that identity; a late
+  retry may recreate it. #96 shares immutable defaults, permits personal children
+  under shared roots and enforces visible sibling-name conflicts. These four
+  foundation increments precede #72 and remaining redesign work.
 - Associate every new transaction with an owned compatible account; show tracked
   balances derived from opening balance and posted records, including transfers.
 - Support same-currency transfers between two different owned accounts atomically.
@@ -56,8 +65,10 @@ tracking and statement import are useful, understandable, and dependable.
 ### Manual transactions
 
 - Add, list, filter, edit, and delete manual income and expense transactions.
-- Record direction, integer minor-unit amount, ISO currency, transaction date,
-  account, category and one optional description/note. No merchant/payee/payer
+- Record direction, integer minor-unit amount, transaction date, account, category
+  and one optional description/note. Currency comes from immutable Account.currency
+  in responses, formatting and reports; transaction writes omit it. Reject
+  cross-currency reassignment; never convert or reinterpret the amount. No merchant/payee/payer
   fields in redesigned input; preserve legacy stored values during migration.
 - Make Add the post-login home with History, Overview and Settings destinations.
   Use a custom digits/decimal/backspace/confirm keypad with no arithmetic. Confirm
@@ -120,7 +131,7 @@ tracking and statement import are useful, understandable, and dependable.
 ## Definition of MVP done
 
 The manual redesign milestone (#65-#77) requires entry-first navigation, fixed/
-personal hierarchy, CAD/Settings lock, named accounts, correct same-currency
+personal hierarchy, permanent currency/account setup, named accounts, correct same-currency
 transfers, reporting, accessible recovery states and the contract/migration gate.
 Completing the documentation in #64 alone does not satisfy those runtime criteria.
 

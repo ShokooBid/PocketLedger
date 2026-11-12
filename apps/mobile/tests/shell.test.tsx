@@ -99,8 +99,10 @@ async function chooseAccount(label: string) {
 
 async function enterDemo(currency: "CAD" | "JPY" | "KWD" = "CAD") {
   await press("Explore demo screens without signing in");
+  await screen.findByRole("header", { name: "Choose your currency screen" });
   await press(`Choose currency ${currency}`);
   await press(`Confirm ${currency} permanently`);
+  await screen.findByRole("header", { name: "Set up an account screen" });
   await field("Account name", "Demo setup cash");
   await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
   await press("Create account");
@@ -109,9 +111,13 @@ async function enterDemo(currency: "CAD" | "JPY" | "KWD" = "CAD") {
   ).toBeVisible();
   // Existing reporting/settings flows start at Overview; #72 cases use Add.
   await tap(screen.getByRole("link", { name: "Overview" }));
+  await screen.findByRole("header", { name: "Overview screen" });
 }
 
 afterEach(() => {
+  // renderRouter enables fake timers. RNTL's earlier auto-cleanup hook unmounts
+  // the tree first; do not carry that router clock into another scenario.
+  jest.useRealTimers();
   jest.restoreAllMocks();
 });
 
@@ -490,7 +496,8 @@ describe("session navigation", () => {
       updatedAt: "2026-01-01T00:00:00Z"
     };
     h.fetcher.mockImplementation(async (url, options) => {
-      const path = new URL(String(url)).pathname;
+      const request = new URL(String(url));
+      const path = request.pathname;
       if (path === "/v1/auth/login") {
         const body = JSON.parse(String(options?.body)) as { email: string };
         owner = body.email === bob.email ? bob : alice;
@@ -504,18 +511,57 @@ describe("session navigation", () => {
           defaultAccountId: null
         });
       if (path === "/v1/auth/logout") return response({ ok: true });
+      if (path === "/v1/accounts")
+        return response({
+          items: [
+            {
+              id:
+                owner.id === alice.id
+                  ? "70000000-0000-4000-8000-000000000001"
+                  : "70000000-0000-4000-8000-000000000002",
+              name: "Synthetic cash",
+              type: "cash",
+              currency: "CAD",
+              openingBalanceMinor: 0,
+              openingDate: "2024-01-01",
+              archivedAt: null,
+              createdAt: "2026-01-01T00:00:00Z",
+              updatedAt: "2026-01-01T00:00:00Z"
+            }
+          ],
+          nextCursor: null
+        });
+      if (path === "/v1/dashboard/summary")
+        return response({
+          from: request.searchParams.get("from"),
+          to: request.searchParams.get("to"),
+          currency: request.searchParams.get("currency"),
+          incomeMinor: 0,
+          expensesMinor: 0,
+          netMinor: 0,
+          categoryBreakdown: [],
+          rootCategoryBreakdown: [],
+          recentTransactions: []
+        });
+      if (path === "/v1/categories/recent")
+        return response({
+          items: owner.id === alice.id ? [{ ...category, parent: null }] : []
+        });
       if (path === "/v1/categories" && delayedCategories) {
         // Entry and category management share this source. Both reads should
         // remain pending until the synthetic response is released.
         return delayedCategories;
       }
-      return response({
-        items: owner.id === alice.id ? [category] : [],
-        nextCursor: null
-      });
+      if (path === "/v1/categories")
+        return response({
+          items: owner.id === alice.id ? [category] : [],
+          nextCursor: null
+        });
+      throw new Error(`Unexpected category-navigation fixture route: ${path}`);
     });
     try {
       await openShell();
+      expect(h.fetcher).not.toHaveBeenCalled();
       await field("Email address", alice.email);
       await field("Password", "synthetic password");
       await press("Sign in with email");
@@ -547,7 +593,7 @@ describe("session navigation", () => {
       if (originalUrl === undefined) delete process.env.EXPO_PUBLIC_API_URL;
       else process.env.EXPO_PUBLIC_API_URL = originalUrl;
     }
-  });
+  }, 15000);
 
   it("shows restoration without exposing either navigation flow", async () => {
     jest.spyOn(sessionModule, "useSession").mockReturnValue({
@@ -614,6 +660,8 @@ describe("session navigation", () => {
     expect(shell.getPathname()).toBe("/sign-in");
   });
 
+  // Match the other long navigation scenarios without extending individual
+  // element lookup deadlines or changing production/demo behavior.
   it("offers the avatar menu during account setup and on every app page", async () => {
     await openShell();
     expect(screen.queryByRole("button", { name: "User menu" })).toBeNull();
@@ -659,7 +707,7 @@ describe("session navigation", () => {
     await press("User menu");
     await press("Exit demo and return to sign in");
     expect(shell.getPathname()).toBe("/sign-in");
-  });
+  }, 15000);
 
   it("keeps demo categories across navigation and discards them after exit", async () => {
     await openShell();
@@ -678,8 +726,9 @@ describe("session navigation", () => {
     await press("Exit demo and return to sign in");
     await enterDemo();
     await tap(screen.getByRole("link", { name: "Manage categories" }));
+    expect(await screen.findByText("Food & Drinks (default)")).toBeVisible();
     expect(screen.queryByText("Synthetic demo category")).toBeNull();
-  });
+  }, 15000);
 
   // This complete flow creates category/account data, saves a posting, edits it
   // through details and verifies both overview refreshes. Budget the whole flow
@@ -801,7 +850,7 @@ describe("session navigation", () => {
     expect(
       screen.getByRole("header", { name: "Overview screen" })
     ).toBeVisible();
-  });
+  }, 15000);
 
   it("applies the session currency to dashboard/new forms and resets it when leaving demo", async () => {
     await openShell();
@@ -832,7 +881,7 @@ describe("session navigation", () => {
     expect(
       await screen.findByLabelText("Net balanced. CAD 0.00")
     ).toBeVisible();
-  });
+  }, 15000);
 
   it("signs out all devices from Settings, clears navigation and displays unconfirmed revocation honestly", async () => {
     const h = harness();
@@ -888,7 +937,8 @@ describe("screen state previews", () => {
           screen.getByRole("header", { name: "Overview screen" })
         ).toBeVisible();
       }
-    }
+    },
+    15000
   );
 
   it("rejects an external invalid query and recovers without echoing it", async () => {

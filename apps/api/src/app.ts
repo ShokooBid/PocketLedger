@@ -30,6 +30,8 @@ import type { AccountService } from "./accounts/service.js";
 import { registerAccountRoutes } from "./accounts/routes.js";
 import { registerTransferRoutes } from "./transfers/routes.js";
 import type { TransferService } from "./transfers/service.js";
+import type { HistoryService } from "./history/service.js";
+import { registerHistoryRoutes } from "./history/routes.js";
 
 export async function buildApp(
   config: Config,
@@ -43,6 +45,7 @@ export async function buildApp(
     preferences?: PreferencesService;
     accounts?: AccountService;
     transfers?: TransferService;
+    history?: HistoryService;
   } = {}
 ) {
   const development = config.environment === "development";
@@ -232,5 +235,6 @@ export async function buildApp(
   if (options.preferences) registerPreferencesRoutes(app, options.preferences);
   if (options.accounts) registerAccountRoutes(app, options.accounts);
   if (options.transfers) registerTransferRoutes(app, options.transfers);
+  if (options.history) registerHistoryRoutes(app, options.history);
   return app;
 }
