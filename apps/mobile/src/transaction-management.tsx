@@ -23,6 +23,7 @@ export function TransactionManagement(
   } = props;
   const {
     rows,
+    highlightedId,
     choices,
     accountChoices,
     accountsReady,
@@ -410,6 +411,7 @@ export function TransactionManagement(
             <Body>
               {accountLabel(row.accountId)} · {categoryLabel(row.categoryId)}
             </Body>
+            {highlightedId === row.id && <Body>Saved record</Body>}
             {detailId && (
               <>
                 <Body>Created: {row.createdAt}</Body>
@@ -426,7 +428,7 @@ export function TransactionManagement(
             <Button
               label={`Edit ${row.note || `Transaction on ${row.date}`}`}
               disabled={disabled}
-              onPress={() => edit(row)}
+              onPress={() => (props.onEdit ? props.onEdit(row) : edit(row))}
             />
             <Button
               label={`Delete ${row.note || `Transaction on ${row.date}`}`}

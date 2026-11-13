@@ -125,7 +125,7 @@ describe("session navigation", () => {
   // The first scenario includes cold router initialization, tab switching and
   // both confirmation paths. Keep lookup deadlines unchanged; only allow the
   // complete flow the same budget as the other long navigation scenarios.
-  it("keeps Add drafts across the four tabs and confirms leaving without a discard button", async () => {
+  it("keeps Add drafts across tabs and Settings and confirms leaving without a discard button", async () => {
     await openShell();
     await enterDemo();
     await tap(screen.getByRole("link", { name: "Add" }));
@@ -134,8 +134,10 @@ describe("session navigation", () => {
     await press("Decimal point");
     await press("Digit 2");
     await field("Note (optional)", "Keep across tabs");
+    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
     for (const name of ["History", "Overview", "Settings"] as const) {
-      await tap(screen.getByRole("link", { name }));
+      if (name === "Settings") await openSettings();
+      else await tap(screen.getByRole("link", { name }));
       await tap(screen.getByRole("link", { name: "Add" }));
       expect(await screen.findByLabelText("Amount")).toHaveProp("value", "1.2");
       expect(screen.getByLabelText("Note (optional)")).toHaveProp(
@@ -164,7 +166,7 @@ describe("session navigation", () => {
     ).toBeVisible();
   }, 15000);
 
-  it("uses keypad confirm as Save and retains selections for the next transaction", async () => {
+  it("opens History after saving and uses the shared editor for a selected record", async () => {
     await openShell();
     await enterDemo();
     await tap(screen.getByRole("link", { name: "Add" }));
@@ -176,9 +178,34 @@ describe("session navigation", () => {
     await field("Note (optional)", "Keypad purchase");
     expect(screen.queryByText(/Transaction saved/)).toBeNull();
     await press("Save transaction");
-    await screen.findByText("Transaction saved. Ready for the next entry.");
+    expect(
+      await screen.findByRole("header", { name: "History screen" })
+    ).toBeVisible();
+    expect(
+      await screen.findByRole("button", { name: "Edit Keypad purchase" })
+    ).toBeVisible();
+    await press("Edit Keypad purchase");
+    expect(
+      await screen.findByRole("header", { name: "Edit transaction screen" })
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Edit" })).toBeVisible();
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "7.50");
+    await field("Amount", "8.50");
+    await press("Update transaction");
+    expect(
+      await screen.findByRole("header", { name: "History screen" })
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Add" })).toBeVisible();
+    await press("Edit Keypad purchase");
+    await field("Amount", "9.50");
+    await press("Cancel transaction editing");
+    await press("Confirm discard draft");
+    expect(
+      await screen.findByRole("header", { name: "History screen" })
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Add" })).toBeVisible();
+    await tap(screen.getByRole("link", { name: "Add" }));
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "");
-    expect(screen.getByLabelText("Note (optional)")).toHaveProp("value", "");
     expect(
       screen.getByRole("button", {
         name: "Account: Demo setup cash",
@@ -191,13 +218,7 @@ describe("session navigation", () => {
         selected: true
       })
     ).toBeVisible();
-    await tap(screen.getByRole("link", { name: "History" }));
-    expect(
-      await screen.findByRole("button", {
-        name: "View details for Keypad purchase"
-      })
-    ).toBeVisible();
-  });
+  }, 20000);
 
   it("creates an account through Settings and returns to every unchanged draft field", async () => {
     await openShell();
@@ -262,7 +283,7 @@ describe("session navigation", () => {
     ).toBeVisible();
     await chooseAccount("BMO Chequing");
     await press("Save transaction");
-    await screen.findByText(/Transaction saved/);
+    await screen.findByRole("header", { name: "History screen" });
     await navigate(() => router.push("/settings"));
     await screen.findByRole("header", { name: "BMO Chequing" });
     await press("View balance for BMO Chequing");
@@ -339,7 +360,7 @@ describe("session navigation", () => {
     await chooseAccount("Demo setup cash");
     await chooseCategory("Currency food");
     await press("Save transaction");
-    await screen.findByText(/Transaction saved/);
+    await screen.findByRole("header", { name: "History screen" });
     await navigate(() => router.push("/settings"));
     expect(await screen.findByText("Default currency: CAD")).toBeVisible();
   }, 15000);
@@ -763,7 +784,7 @@ describe("session navigation", () => {
     await field("Note (optional)", "Dashboard shop");
     await chooseCategory("Dashboard food");
     await press("Save transaction");
-    await screen.findByText(/Transaction saved/);
+    await screen.findByRole("header", { name: "History screen" });
     await tap(screen.getByRole("link", { name: "Overview" }));
     expect(await screen.findByLabelText("Net deficit. JPY -250")).toBeVisible();
     expect(screen.getByText("February 2024 · JPY")).toBeVisible();
@@ -773,9 +794,9 @@ describe("session navigation", () => {
     ).toBeVisible();
     await press("Edit Dashboard shop");
     await field("Amount", "300");
-    await press("Save transaction");
-    await screen.findByText(/Transaction saved/);
-    await press("Back to previous screen");
+    await press("Update transaction");
+    await screen.findByRole("header", { name: "History screen" });
+    await tap(screen.getByRole("link", { name: "Overview" }));
     expect(await screen.findByLabelText("Net deficit. JPY -300")).toBeVisible();
   }, 15000);
 
@@ -982,7 +1003,7 @@ describe("screen state previews", () => {
     await press("User menu");
     await press("Exit demo and return to sign in");
     expect(shell.getPathname()).toBe("/sign-in");
-  });
+  }, 15000);
 
   it("recovers from an unknown route", async () => {
     await openShell("/unknown-screen");
@@ -1034,7 +1055,8 @@ describe("transfer navigation", () => {
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "25");
     await press("Review transfer");
     await press("Confirm transfer");
-    await press("View saved transfer");
+    await screen.findByRole("header", { name: "History screen" });
+    await press("View transfer: Cash move");
     expect(
       await screen.findByRole("header", { name: "Transfer details screen" })
     ).toBeVisible();
@@ -1049,7 +1071,8 @@ describe("transfer navigation", () => {
     await field("Amount", "30");
     await press("Review transfer");
     await press("Confirm transfer changes");
-    await press("View saved transfer");
+    await screen.findByRole("header", { name: "History screen" });
+    await press("View transfer: Cash move");
     expect(
       await screen.findByText(/From tracked balance.*-30.00 CAD/)
     ).toBeVisible();

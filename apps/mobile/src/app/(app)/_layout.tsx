@@ -46,7 +46,8 @@ function AppScreens() {
           <Tabs.Screen name="overview" options={{ title: "Overview" }} />
           <Tabs.Screen name="settings" options={{ title: "Settings" }} />
           {/* This router requires every reachable tab route to be declared.
-              The custom bar shows only the four primary destinations. Marking
+              The custom bar shows the three primary destinations; Settings is
+              available from the avatar menu. Marking
               these supporting routes hidden would redirect away from them. */}
           <Tabs.Screen name="categories" />
           <Tabs.Screen name="import" />
@@ -61,15 +62,21 @@ function AppScreens() {
 
 function AppNavigation() {
   const pathname = usePathname();
+  const entry = useEntry();
   return (
     <SafeAreaView edges={["bottom", "left", "right"]} style={styles.navigation}>
       <View style={styles.links}>
         {(
           [
-            ["/", "Add", "+"],
+            [
+              "/",
+              entry.editingTransaction || entry.editingTransfer
+                ? "Edit"
+                : "Add",
+              "+"
+            ],
             ["/transactions", "History", "≡"],
-            ["/overview", "Overview", "◷"],
-            ["/settings", "Settings", "⚙"]
+            ["/overview", "Overview", "◷"]
           ] as const
         ).map(([href, label, icon]) => (
           <Link
@@ -101,22 +108,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-around",
-    padding: 6,
-    gap: 4
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 8
   },
   link: {
     flex: 1,
-    minWidth: 72,
-    minHeight: 52,
+    minWidth: 80,
+    minHeight: 56,
     textAlign: "center",
-    padding: 8,
-    borderRadius: 14,
+    padding: 7,
+    borderRadius: 18,
     color: theme.color.muted,
     fontSize: 14,
     fontWeight: "600"
   },
   active: {
     backgroundColor: theme.color.primarySoft,
-    color: theme.color.primary
+    color: theme.color.primary,
+    fontWeight: "700"
   }
 });

@@ -6,6 +6,7 @@ import { useCategories } from "../../../category-context";
 import { useTransactions, useAccounts } from "../../../transaction-context";
 import { useSession } from "../../../session";
 import { TransactionManagement } from "../../../transaction-management";
+import { useEntry } from "../../../entry-context";
 import { PreferencesReady, usePreferences } from "../../../preferences";
 
 export default function TransactionDetailRoute() {
@@ -21,6 +22,7 @@ function TransactionDetailScreen() {
   const source = useTransactions();
   const accounts = useAccounts();
   const categories = useCategories();
+  const entry = useEntry();
   const { session } = useSession();
   const {
     defaultCurrency,
@@ -69,6 +71,9 @@ function TransactionDetailScreen() {
             hasActiveAccounts
           }
           demo={session.status === "demo"}
+          onEdit={(row) =>
+            entry.editTransaction(row, () => router.navigate("/"))
+          }
         />
       ) : (
         <Body>

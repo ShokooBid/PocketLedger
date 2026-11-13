@@ -44,7 +44,9 @@ export function useTransactionManagement({
   defaultCurrency = "CAD",
   preferencesReady = true,
   active = true,
-  detailId
+  detailId,
+  focusId,
+  onFocusConsumed
 }: {
   source: TransactionSource;
   categories: CategorySource;
@@ -58,7 +60,10 @@ export function useTransactionManagement({
   onAccountSettings?: () => void;
   active?: boolean;
   detailId?: string;
+  focusId?: string;
+  onFocusConsumed?: () => void;
   onOpenDetail?: (id: string) => void;
+  onEdit?: (row: Transaction) => void;
   onAdd?: () => void;
 }) {
   const pendingCreate = useRef<TransactionCreate | null>(null);
@@ -69,6 +74,9 @@ export function useTransactionManagement({
   const accountLabel = (id: string) =>
     accountChoices.find((row) => row.id === id)?.name ?? "Account unavailable";
   const [rows, setRows] = useState<Transaction[]>([]);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const focusConsumed = useRef(onFocusConsumed);
+  focusConsumed.current = onFocusConsumed;
   const [choices, setChoices] = useState<Category[]>([]);
   function categoryLabel(
     id: string | undefined,
@@ -197,6 +205,32 @@ export function useTransactionManagement({
       mounted.current = false;
     };
   }, [read, categories]);
+  useEffect(() => {
+    if (!focusId || detailId || !active) return;
+    let current = true;
+    void source
+      .get(focusId)
+      .then((row) => {
+        if (!current) return;
+        revision.current++;
+        setRows([row]);
+        setAfter(null);
+        setApplied({});
+        setFilter({});
+        setHighlightedId(row.id);
+        setNotice("Saved record shown. Reload to browse all history.");
+        focusConsumed.current?.();
+      })
+      .catch(() => {
+        if (current)
+          setError(
+            "The saved record could not be loaded. Reload History and try again."
+          );
+      });
+    return () => {
+      current = false;
+    };
+  }, [focusId, detailId, active, source]);
 
   const refreshAccounts = useCallback(async () => {
     const version = ++accountRevision.current;
@@ -459,6 +493,7 @@ export function useTransactionManagement({
     busy || uncertain || !ready || !preferencesReady || !accountsReady;
   return {
     rows,
+    highlightedId,
     choices,
     accountChoices,
     accountsReady,

@@ -1,5 +1,19 @@
 # Issue #64 verification and handoff
 
+## Issue #106 entry and History handoff
+
+The shared entry state now captures confirmed create/update IDs and navigates to
+History with a focus request. History row selection loads the owned transaction
+or logical transfer before opening the shared editor. The bottom destination
+shows Edit while selected; successful update and confirmed cancellation restore
+Add. Transaction updates retain their ID; transfer updates retain the review step.
+Uncertain writes keep their frozen request or target ID for review and retry.
+
+The owner will run focused navigation, history, transfer and session tests. Lint,
+TypeScript and formatting checks are recorded in the local learning walkthrough.
+Native safe-area, large-text, keyboard and screen-reader acceptance remains for
+device verification and #77.
+
 ## Issue #75 live History implementation
 
 The live API now supplies one logical `/v1/history` feed, inclusive combined

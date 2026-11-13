@@ -107,6 +107,41 @@ async function fillEntry(entry: Awaited<ReturnType<typeof openEntry>>) {
   );
 }
 
+describe("shared transaction editing", () => {
+  it("updates the selected ID, then restores a pristine Add draft", async () => {
+    const entry = await openEntry();
+    await fillEntry(entry);
+    await act(async () => {
+      await entry.result.current.save();
+    });
+    const first = entry.result.current.saved;
+    expect(first).toMatchObject({ kind: "transaction" });
+    const id = first!.id;
+    const priorAdd = entry.result.current.draft;
+    const current = await source.get(id);
+    act(() => {
+      entry.result.current.consumeSaved();
+      entry.result.current.editTransaction(current, () => {});
+    });
+    expect(entry.result.current.editingTransaction?.id).toBe(id);
+    act(() => entry.result.current.change({ amount: "15.00" }));
+    const update = jest.spyOn(source, "update");
+    const create = jest.spyOn(source, "create");
+    await act(async () => {
+      await entry.result.current.save();
+    });
+    expect(update).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({ amountMinor: 1500 })
+    );
+    expect(create).not.toHaveBeenCalled();
+    expect((await source.get(id)).amountMinor).toBe(1500);
+    expect(entry.result.current.saved).toEqual({ id, kind: "transaction" });
+    expect(entry.result.current.editingTransaction).toBeNull();
+    expect(entry.result.current.draft).toEqual(priorAdd);
+  });
+});
+
 describe("entry keypad and external links", () => {
   it("rejects arithmetic, duplicate dots, excessive decimals and overflow without rounding", () => {
     expect(keypadAmount("", ".", "CAD")).toBe("0.");
@@ -365,7 +400,7 @@ describe("transfer entry coordination", () => {
       amount: "",
       note: ""
     });
-    expect(entry.result.current.savedTransfer).not.toBeNull();
+    expect(entry.result.current.saved).toMatchObject({ kind: "transfer" });
   });
   it("keeps original identity through a lost response, archive, reload and explicit retry", async () => {
     const entry = await openEntry(),
@@ -460,9 +495,9 @@ describe("transfer entry coordination", () => {
     expect(update.mock.calls[0]![0]).toBe(saved.id);
     expect(update.mock.calls[0]![1]).not.toHaveProperty("clientRequestId");
     expect(entry.result.current.uncertain).toBe(false);
-    expect(entry.result.current.savedTransfer).toMatchObject({
+    expect(entry.result.current.saved).toMatchObject({
       id: saved.id,
-      amountMinor: 3000
+      kind: "transfer"
     });
   });
   it("preserves an actionable draft when an account archives during confirmation and during setup repair", async () => {

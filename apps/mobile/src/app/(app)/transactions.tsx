@@ -18,7 +18,7 @@ import {
 } from "expo-router";
 import { parseAddLink } from "../../entry-data";
 import { PreferencesReady, usePreferences } from "../../preferences";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { HistoryScreen } from "../../history-screen";
 import { createApiHistorySource, historyFocus } from "../../history-data";
 import { z } from "zod";
@@ -51,6 +51,15 @@ function TransactionsScreen() {
   } = usePreferences();
   const router = useRouter();
   const [active, setActive] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [selectionBusy, setSelectionBusy] = useState(false);
+  const selection = useRef(0);
+  useEffect(
+    () => () => {
+      selection.current++;
+    },
+    []
+  );
   useFocusEffect(
     useCallback(() => {
       setActive(true);
@@ -106,34 +115,71 @@ function TransactionsScreen() {
             />
           </>
         ) : (
-          <HistoryScreen
-            source={history}
-            accounts={accounts}
-            categories={categories}
-            changes={changes}
-            active={active}
-            ready={
-              currencyState.status === "ready" &&
-              !currencyState.saving &&
-              hasActiveAccounts
-            }
-            writeBlocked={entry.busy || entry.uncertain}
-            {...(focus?.success ? { focus: focus.data } : {})}
-            {...(account?.success ? { initialAccountId: account.data } : {})}
-            onFocusConsumed={() =>
-              router.setParams({ focusId: undefined, focusKind: undefined })
-            }
-            onAccountConsumed={() => router.setParams({ accountId: undefined })}
-            onSelect={(row) =>
-              router.push({
-                pathname:
-                  row.kind === "transfer"
-                    ? "/transfers/[id]"
-                    : "/transactions/[id]",
-                params: { id: row.id }
-              })
-            }
-          />
+          <>
+            {selectionError && (
+              <StateNotice
+                kind="error"
+                title="Could not open record"
+                message={selectionError}
+              />
+            )}
+            {selectionBusy && (
+              <StateNotice
+                kind="loading"
+                title="Opening record"
+                message="Loading its current values."
+              />
+            )}
+            <HistoryScreen
+              source={history}
+              accounts={accounts}
+              categories={categories}
+              changes={changes}
+              active={active}
+              ready={
+                currencyState.status === "ready" &&
+                !currencyState.saving &&
+                hasActiveAccounts
+              }
+              writeBlocked={entry.busy || entry.uncertain || selectionBusy}
+              {...(focus?.success ? { focus: focus.data } : {})}
+              {...(account?.success ? { initialAccountId: account.data } : {})}
+              onFocusConsumed={() =>
+                router.setParams({ focusId: undefined, focusKind: undefined })
+              }
+              onAccountConsumed={() =>
+                router.setParams({ accountId: undefined })
+              }
+              onSelect={(row) => {
+                if (selectionBusy || entry.busy || entry.uncertain) return;
+                const request = ++selection.current;
+                setSelectionError(null);
+                setSelectionBusy(true);
+                void (async () => {
+                  try {
+                    if (row.kind === "transfer") {
+                      const current = await transfers.get(row.id);
+                      if (request === selection.current)
+                        entry.editTransfer(current, () => router.navigate("/"));
+                    } else {
+                      const current = await source.get(row.id);
+                      if (request === selection.current)
+                        entry.editTransaction(current, () =>
+                          router.navigate("/")
+                        );
+                    }
+                  } catch {
+                    if (request === selection.current)
+                      setSelectionError(
+                        "The record could not be loaded. Refresh History and try again."
+                      );
+                  } finally {
+                    if (request === selection.current) setSelectionBusy(false);
+                  }
+                })();
+              }}
+            />
+          </>
         )}
       </Screen>
     );
@@ -155,12 +201,25 @@ function TransactionsScreen() {
         source={source}
         categories={categories}
         demo={session.status === "demo"}
+        {...(focus?.success && focus.data.kind === "transaction"
+          ? { focusId: focus.data.id }
+          : {})}
+        onFocusConsumed={() =>
+          router.setParams({ focusId: undefined, focusKind: undefined })
+        }
+        onEdit={(row) => entry.editTransaction(row, () => router.navigate("/"))}
         onOpenDetail={(id) =>
           router.push({ pathname: "/transactions/[id]", params: { id } })
         }
       />
       <TransferManagement
         source={transfers}
+        {...(focus?.success && focus.data.kind === "transfer"
+          ? { focusId: focus.data.id }
+          : {})}
+        onFocusConsumed={() =>
+          router.setParams({ focusId: undefined, focusKind: undefined })
+        }
         accounts={accounts}
         active={active}
         writeBlocked={entry.busy || entry.uncertain}

@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+  type StyleProp,
+  type ViewStyle
+} from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { Body, Button, Field, Screen, StateNotice } from "./ui";
 import { theme } from "./theme";
@@ -29,6 +38,7 @@ export function HistoryScreen(
   }
 ) {
   const state = useHistory(props);
+  const { fontScale } = useWindowDimensions();
   const { filter, setFilter, page, busy } = state;
   const [picker, setPicker] = useState<
     "account" | "category" | "type" | "from" | "to" | "month" | null
@@ -75,64 +85,116 @@ export function HistoryScreen(
         importantForAccessibility={picker ? "no-hide-descendants" : "auto"}
         style={styles.section}
       >
-        <View style={styles.controls}>
-          <Button
+        <View style={styles.monthBar}>
+          <HistoryPill
             label="Previous month"
+            text="‹"
             disabled={disabled || !previous}
             onPress={() => previous && state.selectMonth(previous)}
+            style={styles.arrow}
           />
-          <Button
+          <HistoryPill
             label={exactMonth ? monthLabel(anchor) : "Choose month"}
+            text={`${monthLabel(anchor).slice(0, 3)} ${anchor.slice(0, 4)} ⌄`}
             disabled={disabled}
             onPress={() => {
               setMonthInput(anchor);
               open("month");
             }}
+            style={styles.monthChoice}
           />
-          <Button
+          <HistoryPill
+            label="Choose month calendar"
+            text="▦"
+            disabled={disabled}
+            onPress={() => {
+              setMonthInput(anchor);
+              open("month");
+            }}
+            style={styles.calendarShortcut}
+          />
+          <HistoryPill
             label="Next month"
+            text="›"
             disabled={disabled || !next}
             onPress={() => next && state.selectMonth(next)}
+            style={styles.arrow}
           />
         </View>
-        <View style={styles.controls}>
-          <Button
+        <View style={[styles.dateBar, fontScale > 1.3 && styles.dateBarWrap]}>
+          <HistoryPill
             label={`From: ${filter.from ?? "Any date"}`}
+            text={exactMonth ? "From date" : (filter.from ?? "From date")}
             disabled={disabled}
             onPress={() => open("from")}
+            style={styles.dateChoice}
           />
-          <Button
+          <Text style={styles.dateDivider}>–</Text>
+          <HistoryPill
             label={`To: ${filter.to ?? "Any date"}`}
+            text={exactMonth ? "To date" : (filter.to ?? "To date")}
             disabled={disabled}
             onPress={() => open("to")}
+            style={styles.dateChoice}
+          />
+          <HistoryPill
+            label="Apply filters"
+            text="Apply"
+            disabled={disabled}
+            onPress={state.apply}
+            primary
+            style={styles.apply}
           />
         </View>
-        <View style={styles.controls}>
-          <Button
+        <View
+          style={[styles.filterBar, fontScale > 1.3 && styles.filterBarWrap]}
+        >
+          <HistoryPill
             label={`Account: ${account?.name ?? (filter.accountId ? "Unavailable" : "All")}${account?.archivedAt ? " (archived)" : ""}`}
+            text={`⌂  ${account?.name ?? "Account"}  ⌄`}
             disabled={disabled}
             onPress={() => open("account")}
+            style={[
+              styles.filterChip,
+              fontScale > 1.3 && styles.filterChipWide
+            ]}
           />
-          <Button
+          <HistoryPill
             label={`Type: ${filter.type ?? "All"}`}
+            text={`⇄  ${filter.type ?? "Type"}  ⌄`}
             disabled={disabled}
             onPress={() => open("type")}
+            style={[
+              styles.filterChip,
+              fontScale > 1.3 && styles.filterChipWide
+            ]}
           />
-          <Button
+          <HistoryPill
             label={`Category: ${category ? categoryPath(category, state.categoryChoices) : filter.categoryId ? "Unavailable" : "All"}`}
+            text={`◇  ${category?.name ?? "Category"}  ⌄`}
             disabled={disabled}
             onPress={() => open("category")}
+            style={[
+              styles.filterChip,
+              fontScale > 1.3 && styles.filterChipWide
+            ]}
           />
         </View>
         {category && !category.parentId && (
-          <Button
+          <HistoryPill
             label={
               filter.includeSubcategories
                 ? "Category scope: Parent and subcategories"
                 : "Category scope: Exact category"
             }
+            text={
+              filter.includeSubcategories
+                ? "Include subcategories"
+                : "Exact category"
+            }
             selected={!!filter.includeSubcategories}
             disabled={disabled}
+            style={styles.scopeChip}
             onPress={() =>
               setFilter({
                 ...filter,
@@ -147,42 +209,22 @@ export function HistoryScreen(
             is applied.
           </Body>
         )}
-        <View style={styles.controls}>
-          <Button
-            label="Apply filters"
-            variant="primary"
-            disabled={disabled}
-            onPress={state.apply}
-          />
-          <Button
+        <View style={styles.actions}>
+          <HistoryPill
             label="Clear filters"
+            text="Clear"
             disabled={disabled}
             onPress={state.clear}
+            style={styles.textAction}
           />
-          <Button
+          <HistoryPill
             label="Refresh history"
+            text="Refresh"
             disabled={disabled}
             onPress={state.refresh}
+            style={styles.textAction}
           />
         </View>
-        {page && (
-          <Body>
-            Showing {page.applied.from ?? "all dates"}
-            {page.applied.to ? ` to ${page.applied.to}` : ""} ·{" "}
-            {page.applied.type ?? "all types"} ·{" "}
-            {state.accountChoices.find(
-              (row) => row.id === page.applied.accountId
-            )?.name ?? "all accounts"}{" "}
-            ·{" "}
-            {state.categoryChoices.find(
-              (row) => row.id === page.applied.categoryId
-            )?.name ?? "all categories"}
-            {page.applied.includeSubcategories
-              ? " including subcategories"
-              : ""}
-            . Net excludes transfers.
-          </Body>
-        )}
         {page?.adjustments.length ? (
           <Text accessibilityLiveRegion="polite" style={styles.notice}>
             {page.adjustments.join(" ")}
@@ -229,15 +271,24 @@ export function HistoryScreen(
               <Text accessibilityRole="header" style={styles.date}>
                 {historyDateLabel(date)}
               </Text>
-              {page?.days
-                .filter((day) => day.date === date)
-                .map((day) => (
-                  <Text key={day.currency} style={styles.dayTotal}>
-                    {day.count}{" "}
-                    {day.count === 1 ? "transaction" : "transactions"} · Net{" "}
-                    {signedMoney(day.netMinor, day.currency)}
-                  </Text>
-                ))}
+              <View style={styles.daySummary}>
+                {page?.days
+                  .filter((day) => day.date === date)
+                  .map((day) => (
+                    <Text
+                      key={day.currency}
+                      style={[
+                        styles.dayTotal,
+                        day.netMinor < 0 && styles.expense,
+                        day.netMinor > 0 && styles.income
+                      ]}
+                    >
+                      {day.count}{" "}
+                      {day.count === 1 ? "transaction" : "transactions"} · Net{" "}
+                      {signedMoney(day.netMinor, day.currency)}
+                    </Text>
+                  ))}
+              </View>
             </View>
             {page?.items
               .filter((row) => row.date === date)
@@ -403,6 +454,46 @@ export function HistoryScreen(
     </>
   );
 }
+function HistoryPill({
+  label,
+  text,
+  disabled,
+  onPress,
+  style,
+  primary = false,
+  selected = false
+}: {
+  label: string;
+  text: string;
+  disabled: boolean;
+  onPress: () => void;
+  style?: StyleProp<ViewStyle>;
+  primary?: boolean;
+  selected?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled, selected }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.pill,
+        style,
+        primary && styles.primaryPill,
+        (pressed || disabled) && styles.pressed
+      ]}
+    >
+      <Text
+        numberOfLines={1}
+        style={[styles.pillText, primary && styles.primaryPillText]}
+      >
+        {text}
+      </Text>
+    </Pressable>
+  );
+}
 function HistoryRecord({
   row,
   highlighted,
@@ -423,7 +514,7 @@ function HistoryRecord({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${highlighted ? "Saved record. " : ""}${description}. ${typeLabel}. ${accounts}. ${category ?? ""}. ${amount}. ${historyDateLabel(row.date)}`}
-      accessibilityHint="Open transaction details"
+      accessibilityHint="Open this record in the editor"
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
@@ -450,25 +541,25 @@ function HistoryRecord({
         <CategoryIcon iconKey={row.iconKey ?? undefined} size={44} />
       )}
       <View style={styles.rowText}>
-        <Text style={styles.description}>{description}</Text>
-        <Text style={styles.secondary}>
+        <Text numberOfLines={1} style={styles.description}>
+          {description}
+        </Text>
+        <Text numberOfLines={1} style={styles.secondary}>
           {accounts}
           {category ? ` · ${category}` : ""}
         </Text>
-        {transfer && (
-          <Text style={styles.secondary}>{typeLabel} · excluded from net</Text>
-        )}
-        <Text
-          style={[
-            styles.amount,
-            row.type === "expense" && styles.expense,
-            row.type === "income" && styles.income
-          ]}
-        >
-          {amount}
-        </Text>
         {highlighted && <Text style={styles.notice}>Saved record</Text>}
       </View>
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.amount,
+          row.type === "expense" && styles.expense,
+          row.type === "income" && styles.income
+        ]}
+      >
+        {amount}
+      </Text>
     </Pressable>
   );
 }
@@ -544,7 +635,63 @@ function HistoryCalendar({
   );
 }
 const styles = StyleSheet.create({
-  section: { gap: 12 },
+  section: { gap: 10, marginHorizontal: -8 },
+  monthBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 6
+  },
+  dateBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    padding: 6,
+    borderRadius: 16,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.color.softBorder
+  },
+  dateBarWrap: { flexWrap: "wrap" },
+  filterBar: { flexDirection: "row", gap: 6 },
+  filterBarWrap: { flexWrap: "wrap" },
+  actions: { flexDirection: "row", justifyContent: "flex-end", gap: 14 },
+  pill: {
+    minHeight: 42,
+    borderRadius: theme.pillRadius,
+    backgroundColor: theme.color.primarySoft,
+    borderWidth: 1,
+    borderColor: theme.color.softBorder,
+    paddingHorizontal: 11,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  pillText: { fontSize: 13, color: theme.color.primary, fontWeight: "600" },
+  primaryPill: {
+    backgroundColor: theme.color.primary,
+    borderColor: theme.color.primary
+  },
+  primaryPillText: { color: theme.color.onPrimary },
+  arrow: {
+    minWidth: 36,
+    paddingHorizontal: 0,
+    backgroundColor: theme.color.surface,
+    borderWidth: 0
+  },
+  monthChoice: { flex: 1, maxWidth: 160 },
+  calendarShortcut: { minWidth: 38, paddingHorizontal: 0 },
+  dateChoice: { flex: 1, minWidth: 76, backgroundColor: theme.color.surface },
+  dateDivider: { color: theme.color.muted, fontSize: 18 },
+  apply: { minWidth: 60, paddingHorizontal: 8, borderRadius: 12 },
+  filterChip: { flex: 1, minWidth: 0, paddingHorizontal: 6 },
+  filterChipWide: { minWidth: 130 },
+  scopeChip: { alignSelf: "flex-start" },
+  textAction: {
+    minHeight: 34,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    paddingHorizontal: 4
+  },
   controls: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -552,32 +699,45 @@ const styles = StyleSheet.create({
     alignItems: "center"
   },
   group: {
-    borderRadius: 18,
+    borderRadius: 17,
     borderWidth: 1,
     borderColor: theme.color.softBorder,
     overflow: "hidden"
   },
   groupHeader: {
-    padding: 12,
-    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 6,
     backgroundColor: theme.color.primarySoft
   },
-  date: { fontSize: 16, fontWeight: "700", color: theme.color.text },
-  dayTotal: { color: theme.color.muted, fontSize: 15 },
+  date: { fontSize: 14, fontWeight: "700", color: theme.color.text },
+  daySummary: { alignItems: "flex-end", flexShrink: 1 },
+  dayTotal: { color: theme.color.muted, fontSize: 12, fontWeight: "600" },
   row: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-    padding: 14,
-    minHeight: 72,
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 64,
     borderTopWidth: 1,
     borderTopColor: theme.color.softBorder,
     backgroundColor: theme.color.surface
   },
-  rowText: { flex: 1, gap: 4 },
-  description: { color: theme.color.text, fontWeight: "700", fontSize: 17 },
-  secondary: { fontSize: 15, color: theme.color.muted },
-  amount: { fontSize: 18, fontWeight: "700", color: theme.color.text },
+  rowText: { flex: 1, gap: 2, minWidth: 0 },
+  description: { color: theme.color.text, fontWeight: "700", fontSize: 15 },
+  secondary: { fontSize: 12, color: theme.color.muted },
+  amount: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: theme.color.text,
+    flexShrink: 1,
+    textAlign: "right"
+  },
   expense: { color: theme.color.error },
   income: { color: "#176441" },
   highlighted: {

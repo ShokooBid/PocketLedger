@@ -14,6 +14,8 @@ export type TransferManagementProps = {
   accounts: AccountSource;
   active?: boolean;
   detailId?: string;
+  focusId?: string;
+  onFocusConsumed?: () => void;
   onOpenDetail?: (id: string) => void;
   onEdit: (row: Transfer) => void;
   onReconciled?: () => void;
@@ -27,11 +29,16 @@ export function useTransferManagement({
   accounts,
   active = true,
   detailId,
+  focusId,
+  onFocusConsumed,
   onReconciled,
   writeBlocked = false
 }: TransferManagementProps) {
   const [rows, setRows] = useState<Transfer[]>([]),
     [choices, setChoices] = useState<Account[]>([]);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const focusConsumed = useRef(onFocusConsumed);
+  focusConsumed.current = onFocusConsumed;
   const [balances, setBalances] = useState<
     Record<string, { balanceMinor: number; asOf: string }>
   >({});
@@ -58,6 +65,30 @@ export function useTransferManagement({
       version.current++;
     };
   }, []);
+  useEffect(() => {
+    if (!focusId || detailId || !active) return;
+    let current = true;
+    void source
+      .get(focusId)
+      .then((row) => {
+        if (!current) return;
+        version.current++;
+        setRows([row]);
+        setAfter(null);
+        setHighlightedId(row.id);
+        setNotice("Saved transfer shown. Reload to browse all transfers.");
+        focusConsumed.current?.();
+      })
+      .catch(() => {
+        if (current)
+          setError(
+            "The saved transfer could not be loaded. Reload History and try again."
+          );
+      });
+    return () => {
+      current = false;
+    };
+  }, [focusId, detailId, active, source]);
   const load = useCallback(
     async (more = false) => {
       if (lock.current) return;
@@ -239,6 +270,7 @@ export function useTransferManagement({
   }
   return {
     rows,
+    highlightedId,
     choices,
     balances,
     balanceError,
