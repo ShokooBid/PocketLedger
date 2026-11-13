@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   AppState,
   BackHandler,
-  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -21,18 +20,14 @@ import {
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { useEntry } from "./entry-context";
-import {
-  keypadAmount,
-  localDate,
-  parseAddLink,
-  type EntryField
-} from "./entry-data";
-import { calendarDate, currencyExponents } from "./transaction-data";
+import { keypadAmount, parseAddLink, type EntryField } from "./entry-data";
+import { currencyExponents } from "./transaction-data";
 import { CategoryIcon } from "./category-icon";
 import { AccountPicker, CategoryPicker } from "./finance-picker";
 import { useAccounts } from "./transaction-context";
 import { useCategories } from "./category-context";
-import { Body, Button, Field, Screen, StateNotice } from "./ui";
+import { Body, Button, Screen, StateNotice } from "./ui";
+import { SingleDateField } from "./date-picker";
 import { theme } from "./theme";
 
 export function TransactionEntry() {
@@ -55,7 +50,7 @@ export function TransactionEntry() {
     Math.ceil(28 * fontScale + 12)
   );
   const [picker, setPicker] = useState<
-    "account" | "category" | "toAccount" | "date" | null
+    "account" | "category" | "toAccount" | null
   >(null);
   const amountRef = useRef<ComponentRef<typeof TextInput>>(null),
     noteRef = useRef<ComponentRef<typeof TextInput>>(null);
@@ -168,7 +163,8 @@ export function TransactionEntry() {
     field: "accountId" | "categoryId" | "toAccountId" | "date",
     label: string,
     value: string,
-    action: () => void
+    action: () => void,
+    expanded?: boolean
   ) {
     const ref =
       field === "accountId"
@@ -187,6 +183,7 @@ export function TransactionEntry() {
           accessibilityHint={value}
           accessibilityState={{
             selected: !!entry.draft[field],
+            ...(expanded === undefined ? {} : { expanded }),
             disabled: entry.disabled
           }}
           disabled={entry.disabled}
@@ -406,9 +403,20 @@ export function TransactionEntry() {
                 () => setPicker("category")
               )}
         </View>
-        {selection("date", "Choose transaction date", entry.draft.date, () =>
-          setPicker("date")
-        )}
+        <SingleDateField
+          value={entry.draft.date}
+          disabled={entry.disabled}
+          onChange={(date) => entry.change({ date })}
+          renderTrigger={(toggle, expanded) =>
+            selection(
+              "date",
+              "Choose transaction date",
+              entry.draft.date,
+              toggle,
+              expanded
+            )
+          }
+        />
         <View style={styles.note}>
           <TextInput
             ref={noteRef}
@@ -658,99 +666,7 @@ export function TransactionEntry() {
           }}
         />
       )}
-      {picker === "date" && (
-        <DatePicker
-          value={entry.draft.date}
-          onClose={() => setPicker(null)}
-          onSelect={(next) => {
-            entry.change({ date: next });
-            setPicker(null);
-          }}
-        />
-      )}
     </Screen>
-  );
-}
-
-// Calendar uses local date strings; no UTC conversion of an accounting date.
-function DatePicker({
-  value,
-  onClose,
-  onSelect
-}: {
-  value: string;
-  onClose: () => void;
-  onSelect: (date: string) => void;
-}) {
-  const initial = calendarDate.safeParse(value).success ? value : localDate();
-  const [month, setMonth] = useState(initial.slice(0, 7)),
-    [typed, setTyped] = useState(value);
-  const [year, number] = month.split("-").map(Number) as [number, number];
-  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const days =
-    number === 2 ? (leap ? 29 : 28) : [4, 6, 9, 11].includes(number) ? 30 : 31;
-  function move(delta: number) {
-    const index = year * 12 + number - 1 + delta;
-    if (index < 12 || index >= 120000) return;
-    setMonth(
-      `${String(Math.floor(index / 12)).padStart(4, "0")}-${String((index % 12) + 1).padStart(2, "0")}`
-    );
-  }
-  return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
-      <Screen title="Choose transaction date">
-        <Button label="Cancel date selection" onPress={onClose} />
-        <View style={[styles.keyRow, styles.calendarNavigation]}>
-          <Button
-            label="Previous month"
-            disabled={month === "0001-01"}
-            onPress={() => move(-1)}
-          />
-          <Text accessibilityRole="header" style={styles.selectionValue}>
-            {month}
-          </Text>
-          <Button
-            label="Next month"
-            disabled={month === "9999-12"}
-            onPress={() => move(1)}
-          />
-        </View>
-        <View style={styles.calendar}>
-          {Array.from({ length: days }, (_, i) => {
-            const day = `${month}-${String(i + 1).padStart(2, "0")}`;
-            return (
-              <Pressable
-                key={day}
-                accessibilityRole="button"
-                accessibilityLabel={`Choose ${day}`}
-                accessibilityState={{ selected: day === value }}
-                onPress={() => onSelect(day)}
-                style={[styles.day, day === value && styles.selected]}
-              >
-                <Text
-                  style={
-                    day === value ? styles.selectedText : styles.selectionValue
-                  }
-                >
-                  {i + 1}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        <Button label="Use today" onPress={() => onSelect(localDate())} />
-        <Field
-          label="Transaction date (YYYY-MM-DD)"
-          value={typed}
-          onChangeText={setTyped}
-        />
-        <Button
-          label="Use entered date"
-          disabled={!calendarDate.safeParse(typed).success}
-          onPress={() => onSelect(typed)}
-        />
-      </Screen>
-    </Modal>
   );
 }
 
@@ -861,16 +777,5 @@ const styles = StyleSheet.create({
   },
   error: { color: theme.color.error, fontSize: 16 },
   message: { color: theme.color.primary, fontSize: 14, lineHeight: 18 },
-  recovery: { gap: 8 },
-  calendar: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  calendarNavigation: { flexWrap: "wrap", justifyContent: "space-between" },
-  day: {
-    width: "13%",
-    minWidth: 48,
-    minHeight: 48,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 12,
-    backgroundColor: theme.color.primarySoft
-  }
+  recovery: { gap: 8 }
 });

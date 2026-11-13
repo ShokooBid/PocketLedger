@@ -21,6 +21,7 @@ import {
 } from "../src/transaction-data";
 import { createDemoCategorySource } from "../src/category-data";
 import { ClientFailure } from "../src/auth/transport";
+import { chooseDateRange } from "./date-picker-fixtures";
 
 const row = (n: number, date = "2026-10-01"): Transaction => ({
   id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
@@ -146,8 +147,7 @@ describe("transaction history and details", () => {
     const { source, categories } = await fixture();
     const list = jest.fn(source.list);
     await open({ ...source, list }, categories);
-    await field("From date filter (YYYY-MM-DD)", "2026-10-01");
-    await field("To date filter (YYYY-MM-DD)", "2026-10-01");
+    await chooseDateRange("2026-10-01", "2026-10-01");
     await press("Filter: expense");
     await press("Filter category: Food");
     await press("Apply filters");
@@ -166,10 +166,11 @@ describe("transaction history and details", () => {
     await press("Save transaction");
     expect(names()).toEqual(["Edit Synthetic 1"]);
     expect(screen.getByText(/no longer matches/)).toBeVisible();
-    expect(screen.getByLabelText("From date filter (YYYY-MM-DD)")).toHaveProp(
-      "value",
-      "2026-10-01"
-    );
+    expect(
+      screen.getByRole("button", {
+        name: "Date range: 2026-10-01 – 2026-10-01"
+      })
+    ).toBeVisible();
     await press("Clear filters");
     expect(names()).toEqual([
       "Edit Synthetic 2",
@@ -177,10 +178,9 @@ describe("transaction history and details", () => {
       "Edit Synthetic 1"
     ]);
     expect(list).toHaveBeenLastCalledWith({}, undefined);
-    expect(screen.getByLabelText("From date filter (YYYY-MM-DD)")).toHaveProp(
-      "value",
-      ""
-    );
+    expect(
+      screen.getByRole("button", { name: "Date range: All dates" })
+    ).toBeVisible();
   });
   it("retains rows while loading more, locks duplicate loads, and retries failed pages at the same cursor", async () => {
     const { source, categories } = await fixture(0);

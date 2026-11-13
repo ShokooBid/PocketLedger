@@ -90,7 +90,6 @@ async function openCategory(source: CategorySource, selectedId = "") {
       selectedId={selectedId}
       onSelect={onSelect}
       onClose={onClose}
-      demo
     />
   );
   await screen.findByLabelText("Search categories");
@@ -98,6 +97,55 @@ async function openCategory(source: CategorySource, selectedId = "") {
 }
 
 describe("category picker", () => {
+  it("shows only four active recent categories in recency order and selects a shortcut", async () => {
+    const f = fixture();
+    const children = Array.from({ length: 7 }, (_, index) =>
+      category(`recent-${index}`, `Recent ${index}`, "root-a")
+    );
+    const archived = {
+      ...category("archived-recent", "Archived recent", "root-a"),
+      archivedAt: "2026-11-04T00:00:00Z"
+    };
+    f.setRows([...f.getRows(), ...children, archived]);
+    const { onSelect } = await openCategory({
+      ...f.source,
+      recent: async () => [
+        category("missing", "Missing"),
+        archived,
+        ...children
+      ]
+    });
+    expect(
+      screen
+        .getAllByRole("button", { name: /^Recent category:/ })
+        .map((button) => button.props.accessibilityLabel)
+    ).toEqual([
+      "Recent category: Root A / Recent 0",
+      "Recent category: Root A / Recent 1",
+      "Recent category: Root A / Recent 2",
+      "Recent category: Root A / Recent 3"
+    ]);
+    expect(screen.getByText("Recent 0")).toBeVisible();
+    expect(screen.queryByText("Recent category: Root A / Recent 0")).toBeNull();
+    await press("Recent category: Root A / Recent 2");
+    expect(onSelect).toHaveBeenCalledWith("recent-2", expect.any(Array));
+  });
+
+  it("shows the parent name once in its detail view and keeps full accessible child paths", async () => {
+    const { source } = fixture();
+    await openCategory(source);
+    await press("Category: Root A");
+    expect(screen.getAllByText("Root A")).toHaveLength(1);
+    expect(screen.getByText("Same")).toBeVisible();
+    expect(screen.queryByText(/Root A \/ Same/)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Category: Root A / Same" })
+    ).toBeVisible();
+    expect(screen.getByText("Subcategories")).toBeVisible();
+    await press("Back to all categories");
+    expect(screen.getByLabelText("Search categories")).toBeVisible();
+  });
+
   it("keeps long parent and child labels in the full accessible path", async () => {
     const f = fixture();
     const root = "A".repeat(100),
@@ -285,7 +333,6 @@ describe("category picker", () => {
         selectedId=""
         onClose={() => {}}
         onSelect={() => {}}
-        demo
       />
     );
     await screen.findByText("Category selection needs attention");
@@ -480,10 +527,9 @@ it("preserves every other draft field through picker cancellation, creation and 
   await press("Choose account");
   await press("Account: Test CAD");
   expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
-  expect(screen.getByLabelText("Transaction date (YYYY-MM-DD)")).toHaveProp(
-    "value",
-    "2026-11-01"
-  );
+  expect(
+    screen.getByRole("button", { name: "Choose transaction date" })
+  ).toHaveProp("accessibilityHint", "2026-11-01");
   expect(screen.getByLabelText("Note (optional)")).toHaveProp(
     "value",
     "Keep my draft"

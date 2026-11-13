@@ -1,9 +1,11 @@
 import { View } from "react-native";
+import { useState } from "react";
 import { CategoryIcon } from "./category-icon";
 import { Body, Button, Field, StateNotice } from "./ui";
 import { amountText, currencyExponents } from "./transaction-data";
 import { AccountPicker, CategoryPicker } from "./finance-picker";
 import { theme } from "./theme";
+import { RangeDatePicker, SingleDateField } from "./date-picker";
 import {
   useTransactionManagement,
   newDraft
@@ -11,6 +13,7 @@ import {
 export function TransactionManagement(
   props: Parameters<typeof useTransactionManagement>[0]
 ) {
+  const [dateRangeOpen, setDateRangeOpen] = useState(false);
   const {
     demo = false,
     defaultCurrency = "CAD",
@@ -162,18 +165,31 @@ export function TransactionManagement(
                 ? `Active filters: ${applied.from ?? "any date"}${applied.to ? ` to ${applied.to}` : ""}, ${applied.direction ?? "all directions"}, ${categoryLabel(applied.categoryId, "all categories")}.`
                 : "Showing all transactions."}
             </Body>
-            <Field
-              label="From date filter (YYYY-MM-DD)"
-              value={filter.from ?? ""}
-              editable={!busy}
-              onChangeText={(from) => setFilter({ ...filter, from })}
+            <Button
+              label={`Date range: ${filter.from && filter.to ? `${filter.from} – ${filter.to}` : "All dates"}`}
+              disabled={busy || uncertain}
+              onPress={() => setDateRangeOpen((open) => !open)}
             />
-            <Field
-              label="To date filter (YYYY-MM-DD)"
-              value={filter.to ?? ""}
-              editable={!busy}
-              onChangeText={(to) => setFilter({ ...filter, to })}
-            />
+            {dateRangeOpen && (
+              <RangeDatePicker
+                from={filter.from}
+                to={filter.to}
+                disabled={busy || uncertain}
+                onClose={() => setDateRangeOpen(false)}
+                onChange={(range) => {
+                  const next = { ...filter };
+                  if (range.from && range.to) {
+                    next.from = range.from;
+                    next.to = range.to;
+                  } else {
+                    delete next.from;
+                    delete next.to;
+                  }
+                  setFilter(next);
+                  void load(next);
+                }}
+              />
+            )}
             {([undefined, "income", "expense"] as const).map((direction) => (
               <Button
                 key={direction ?? "all"}
@@ -289,11 +305,10 @@ export function TransactionManagement(
               {currencyExponents[draft.currency]} decimal places allowed. Use a
               period as decimal separator.
             </Body>
-            <Field
-              label="Transaction date (YYYY-MM-DD)"
+            <SingleDateField
               value={draft.date}
-              editable={!busy && !uncertain}
-              onChangeText={(date) => setDraft({ ...draft, date })}
+              disabled={busy || uncertain}
+              onChange={(date) => setDraft({ ...draft, date })}
             />
             {accountsReady &&
               !accountChoices.some(
@@ -470,7 +485,6 @@ export function TransactionManagement(
         <CategoryPicker
           source={props.categories}
           selectedId={draft.categoryId}
-          demo={demo}
           onClose={() => setPicker(null)}
           onSelect={selectCategory}
         />

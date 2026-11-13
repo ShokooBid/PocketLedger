@@ -21,8 +21,10 @@ import {
   type HistoryFocus
 } from "../src/history-data";
 import { useHistory, type HistoryProps } from "../src/use-history";
-import { deferred, response } from "./auth-fixtures";
+import { accounts, deferred, response } from "./auth-fixtures";
 import { HistoryScreen } from "../src/history-screen";
+import type { Category, CategorySource } from "../src/category-data";
+import { currentMonth } from "../src/dashboard-data";
 
 const id = (n: number) =>
   `30000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -192,7 +194,305 @@ function props(source: HistorySource): HistoryProps {
     ready: true
   };
 }
+async function press(name: string | RegExp) {
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name })).toBeEnabled()
+  );
+  await act(async () => fireEvent.press(screen.getByRole("button", { name })));
+}
+
+describe("History filter selection", () => {
+  it("selects a range inline, applies only a complete range and preserves the other filters", async () => {
+    const list = jest
+      .fn<HistorySource["list"]>()
+      .mockImplementation(async (filter) => page([], { applied: filter }));
+    const config = props({ list });
+    render(
+      <HistoryScreen
+        {...config}
+        initialAccountId={id(10)}
+        onSelect={() => {}}
+      />
+    );
+    await press("Type: All");
+    await press("expense");
+    expect(screen.queryByRole("button", { name: "Choose month" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Apply filters" })).toBeNull();
+    await press(/^Date range:/);
+    await press("2");
+    expect(list).toHaveBeenCalledTimes(2);
+    await press("Cancel date selection");
+    expect(list).toHaveBeenCalledTimes(2);
+    await press(/^Date range:/);
+    await press("2");
+    await press("5");
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+    expect(list.mock.calls[2]?.[0]).toMatchObject({
+      from: `${currentMonth()}-02`,
+      to: `${currentMonth()}-05`,
+      accountId: id(10),
+      type: "expense"
+    });
+    expect(
+      screen.queryByRole("button", { name: "Cancel date selection" })
+    ).toBeNull();
+    await press(/^Date range:/);
+    await press("All dates");
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(4));
+    expect(list.mock.calls[3]?.[0]).toEqual({
+      accountId: id(10),
+      type: "expense"
+    });
+    await press("Date range: All dates");
+    await press("10");
+    await press("Use selected day");
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(5));
+    expect(list.mock.calls[4]?.[0]).toMatchObject({
+      from: `${currentMonth()}-10`,
+      to: `${currentMonth()}-10`
+    });
+  }, 15000);
+
+  const categories: Category[] = [
+    { id: id(20), name: "Food", isDefault: true, archivedAt: null },
+    {
+      id: id(21),
+      name: "Groceries",
+      parentId: id(20),
+      isDefault: true,
+      archivedAt: null
+    },
+    {
+      id: id(22),
+      name: "Old food",
+      isDefault: false,
+      archivedAt: "2026-10-01T00:00:00Z"
+    },
+    {
+      id: id(23),
+      name: "Old groceries",
+      parentId: id(22),
+      isDefault: false,
+      archivedAt: "2026-10-01T00:00:00Z"
+    }
+  ];
+
+  it("uses inline dropdowns and immediately applies account, type and category selections together", async () => {
+    const list = jest
+      .fn<HistorySource["list"]>()
+      .mockImplementation(async (filter) => page([], { applied: filter }));
+    const create = jest.fn<CategorySource["create"]>();
+    const createChild = jest.fn<NonNullable<CategorySource["createChild"]>>();
+    const categorySource = {
+      list: async () => categories,
+      recent: async () => [categories[1]!],
+      create,
+      createChild
+    };
+    const config = props({ list });
+    config.categories = categorySource;
+    config.accounts = {
+      list: async () => [
+        {
+          id: id(10),
+          name: "Cash",
+          currency: "CAD",
+          type: "cash",
+          openingDate: "2024-01-01",
+          openingBalanceMinor: 0,
+          archivedAt: null,
+          createdAt: "2024-01-01T00:00:00Z",
+          updatedAt: "2024-01-01T00:00:00Z"
+        }
+      ]
+    };
+    render(<HistoryScreen {...config} onSelect={() => {}} />);
+    await press("Account: All");
+    expect(
+      screen.getByRole("button", { name: "Account: All", expanded: true })
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Category: All" })).toBeVisible();
+    await press("Account: All");
+    expect(screen.queryByRole("button", { name: "Cash · CAD" })).toBeNull();
+    expect(list).toHaveBeenCalledTimes(1);
+    await press("Account: All");
+    await press("Cash · CAD");
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    expect(list.mock.calls[1]?.[0]).toMatchObject({ accountId: id(10) });
+    expect(screen.queryByRole("button", { name: "All accounts" })).toBeNull();
+    await press("Type: All");
+    expect(
+      screen.getByRole("button", { name: "Type: All", expanded: true })
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Account: Cash" })).toBeVisible();
+    await press("expense");
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+    expect(list.mock.calls[2]?.[0]).toMatchObject({
+      accountId: id(10),
+      type: "expense"
+    });
+    expect(screen.queryByRole("button", { name: "All types" })).toBeNull();
+    await press("Category: All");
+    expect(await screen.findByLabelText("Search categories")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Recent category: Food / Groceries" })
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Add personal category" })
+    ).toBeNull();
+    await press("Category: Food");
+    expect(screen.getAllByText("Food")).toHaveLength(1);
+    expect(
+      screen.queryByRole("button", { name: "Add subcategory under Food" })
+    ).toBeNull();
+    await press("Category: Food / Groceries");
+    expect(
+      screen.getByRole("button", { name: "Category: Food / Groceries" })
+    ).toBeVisible();
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(4));
+    expect(list.mock.calls[3]?.[0]).toMatchObject({
+      accountId: id(10),
+      type: "expense",
+      categoryId: id(21),
+      includeSubcategories: false
+    });
+
+    await press("Category: Food / Groceries");
+    await screen.findByLabelText("Search categories");
+    await press("Cancel filter selection");
+    expect(
+      screen.getByRole("button", { name: "Category: Food / Groceries" })
+    ).toBeVisible();
+    expect(list).toHaveBeenCalledTimes(4);
+    await press("Category: Food / Groceries");
+    await screen.findByLabelText("Search categories");
+    await press("All categories");
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(5));
+    expect(list.mock.calls[4]?.[0]).toMatchObject({
+      accountId: id(10),
+      type: "expense"
+    });
+    expect(list.mock.calls[4]?.[0]).not.toHaveProperty("categoryId");
+    expect(list.mock.calls[4]?.[0]).not.toHaveProperty("includeSubcategories");
+    await press("Account: Cash");
+    await press("All accounts");
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(6));
+    expect(list.mock.calls[5]?.[0]).not.toHaveProperty("accountId");
+    expect(list.mock.calls[5]?.[0]).toMatchObject({ type: "expense" });
+    await press("Type: expense");
+    await press("All types");
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(7));
+    expect(list.mock.calls[6]?.[0]).toEqual(list.mock.calls[0]?.[0]);
+    expect(create).not.toHaveBeenCalled();
+    expect(createChild).not.toHaveBeenCalled();
+  }, 15000);
+
+  it("searches a longer account dropdown, includes archived accounts and switches or dismisses menus without filtering", async () => {
+    const list = jest
+      .fn<HistorySource["list"]>()
+      .mockImplementation(async (filter) => page([], { applied: filter }));
+    const baseAccount = (await accounts.list())[0]!;
+    const accountRows = Array.from({ length: 8 }, (_, index) => ({
+      ...baseAccount,
+      id: id(10 + index),
+      name: index === 7 ? "Old savings" : `Cash ${index}`,
+      archivedAt: index === 7 ? "2026-10-01T00:00:00Z" : null
+    }));
+    const config = props({ list });
+    config.accounts = { list: async () => accountRows };
+    render(<HistoryScreen {...config} onSelect={() => {}} />);
+    await press("Account: All");
+    await act(async () =>
+      fireEvent.changeText(
+        screen.getByLabelText("Search account choices"),
+        "savings"
+      )
+    );
+    expect(screen.queryByRole("button", { name: /^Cash 0/ })).toBeNull();
+    await press(`Old savings · ${baseAccount.currency} (archived)`);
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    expect(list.mock.calls[1]?.[0]).toMatchObject({ accountId: id(17) });
+    await press("Account: Old savings (archived)");
+    expect(screen.getByLabelText("Search account choices")).toHaveProp(
+      "value",
+      ""
+    );
+    await press("Type: All");
+    expect(screen.queryByLabelText("Search account choices")).toBeNull();
+    expect(screen.getByRole("button", { name: "expense" })).toBeVisible();
+    await press("Type: All");
+    expect(screen.queryByRole("button", { name: "expense" })).toBeNull();
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps archived parent/child filters, parent scope and full-path search available", async () => {
+    const list = jest
+      .fn<HistorySource["list"]>()
+      .mockImplementation(async (filter) => page([], { applied: filter }));
+    const config = props({ list });
+    config.categories = { list: async () => categories };
+    render(<HistoryScreen {...config} onSelect={() => {}} />);
+    await press("Category: All");
+    await screen.findByLabelText("Search categories");
+    expect(screen.queryByText("Recent categories unavailable")).toBeNull();
+    await press("Category: Old food (archived)");
+    await press("Use this category: Old food");
+    await press("Category scope: Exact category");
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+    expect(list.mock.calls[2]?.[0]).toMatchObject({
+      categoryId: id(22),
+      includeSubcategories: true
+    });
+
+    await press("Category: Old food");
+    await screen.findByLabelText("Search categories");
+    await act(async () =>
+      fireEvent.changeText(
+        screen.getByLabelText("Search categories"),
+        "Old food / Old groceries"
+      )
+    );
+    await press("Category: Old food / Old groceries (archived)");
+    expect(
+      screen.queryByRole("button", { name: /Category scope:/ })
+    ).toBeNull();
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(4));
+    expect(list.mock.calls[3]?.[0]).toMatchObject({
+      categoryId: id(23),
+      includeSubcategories: false
+    });
+  });
+});
+
 describe("History request coordination", () => {
+  it("keeps a newly selected filter when an older refresh finishes later", async () => {
+    const oldRefresh = deferred<HistoryPage>();
+    const list = jest
+      .fn<HistorySource["list"]>()
+      .mockResolvedValueOnce(page([row(1)]))
+      .mockReturnValueOnce(oldRefresh.promise)
+      .mockImplementation(async (filter) =>
+        page([row(2)], { applied: filter })
+      );
+    const config = props({ list });
+    const hook = renderHook(() => useHistory(config));
+    await waitFor(() =>
+      expect(hook.result.current.page?.items[0]?.id).toBe(id(1))
+    );
+    act(() => hook.result.current.refresh());
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    await act(async () =>
+      hook.result.current.updateFilters({ type: "expense" })
+    );
+    await waitFor(() =>
+      expect(hook.result.current.page?.applied.type).toBe("expense")
+    );
+    await act(async () => oldRefresh.resolve(page([row(1)])));
+    expect(hook.result.current.filter.type).toBe("expense");
+    expect(hook.result.current.page?.items[0]?.id).toBe(id(2));
+    expect(hook.result.current.busy).toBe(false);
+  });
+
   it("consumes account links and reapplies the same account when opened again", async () => {
     const list = jest
       .fn<HistorySource["list"]>()

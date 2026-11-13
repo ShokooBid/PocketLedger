@@ -23,13 +23,23 @@ export function disposableDatabase(
     url.search
   )
     throw new Error("Tests require a loopback PostgreSQL URL without options.");
+  // Local Docker PostgreSQL may listen only on IPv4. Avoid localhost resolving
+  // to an unavailable IPv6 listener in the Prisma migration subprocess.
+  if (url.hostname === "localhost") url.hostname = "127.0.0.1";
+  const adminUrl = url.toString();
   const name = "pocketledger_test_" + randomUUID().replaceAll("-", "");
   url.searchParams.set("schema", name);
   url.searchParams.set("options", "-c search_path=" + name);
-  const db = createDatabaseClient(url.toString());
+  url.searchParams.set("connect_timeout", "30");
+  // Cold local containers and concurrent lock tests can exceed Prisma's
+  // two-second acquisition budget. Keep these allowances in the test harness.
+  const db = createDatabaseClient(url.toString(), {
+    maxWait: 30_000,
+    timeout: 30_000
+  });
   const admin = new pg.Client({
-    connectionString: base,
-    connectionTimeoutMillis: 5000
+    connectionString: adminUrl,
+    connectionTimeoutMillis: 30_000
   });
   let created = false,
     connected = false;
