@@ -4,9 +4,14 @@ import {
   CategoryFailure,
   categoryFailureMessage,
   type Category,
+  type CategoryReadSource,
   type CategorySource
 } from "./category-data";
-import { orderedCategories, selectableCategory } from "./category-hierarchy";
+import {
+  categoryPath,
+  orderedCategories,
+  selectableCategory
+} from "./category-hierarchy";
 import type { Currency } from "./transaction-data";
 import { ClientFailure } from "./auth/transport";
 
@@ -50,9 +55,13 @@ function usePickerTask(message: (error: unknown) => string) {
   return { busy, error, run };
 }
 
+export type CategoryPickerSource = CategoryReadSource &
+  Partial<Pick<CategorySource, "create" | "createChild">>;
+
 export function useCategoryPicker(
-  source: CategorySource,
-  onSelect: (id: string, rows: Category[]) => void
+  source: CategoryPickerSource,
+  onSelect: (id: string, rows: Category[]) => void,
+  mode: "entry" | "filter" = "entry"
 ) {
   const task = usePickerTask(categoryFailureMessage);
   const [rows, setRows] = useState<Category[] | null>(null);
@@ -71,7 +80,7 @@ export function useCategoryPicker(
       task.run(async (current) => {
         const [all, used] = await Promise.allSettled([
           source.list(),
-          source.recent()
+          source.recent?.() ?? Promise.resolve([])
         ]);
         if (!current()) return;
         if (all.status === "rejected") throw all.reason;
@@ -85,31 +94,35 @@ export function useCategoryPicker(
   useEffect(() => {
     void reload();
   }, [reload]);
-  const active = orderedCategories(rows ?? []).filter((row) =>
-    selectableCategory(row, rows ?? [])
+  const active = orderedCategories(rows ?? []).filter(
+    (row) => mode === "filter" || selectableCategory(row, rows ?? [])
   );
   const root = active.find((row) => row.id === rootId);
   const search = query.trim().toLocaleLowerCase();
   const matches = active.filter((row) =>
-    row.name.toLocaleLowerCase().includes(search)
+    (mode === "filter" ? categoryPath(row, rows ?? []) : row.name)
+      .toLocaleLowerCase()
+      .includes(search)
   );
-  const recentRows = recent.flatMap((used) => {
-    const row = active.find((row) => row.id === used.id);
-    return row ? [row] : [];
-  });
+  const recentRows = recent
+    .flatMap((used) => {
+      const row = active.find((row) => row.id === used.id);
+      return row ? [row] : [];
+    })
+    .slice(0, 4);
   function select(id: string) {
     return task.run(async (current) => {
       const fresh = await source.list();
       if (!current()) return;
       setRows(fresh);
       const row = fresh.find((row) => row.id === id);
-      if (!row || !selectableCategory(row, fresh))
+      if (!row || (mode === "entry" && !selectableCategory(row, fresh)))
         throw new CategoryFailure("unavailable");
       onSelect(row.id, fresh);
     });
   }
   function create() {
-    if (!editor || needsReload || createdId) return;
+    if (mode === "filter" || !editor || needsReload || createdId) return;
     const input = editor;
     return task.run(async (current) => {
       let id: string;
@@ -117,7 +130,10 @@ export function useCategoryPicker(
         if (input.parentId) {
           if (!source.createChild) throw new CategoryFailure("invalid-parent");
           id = await source.createChild(input.name, input.parentId);
-        } else id = await source.create(input.name);
+        } else {
+          if (!source.create) throw new CategoryFailure("read-only");
+          id = await source.create(input.name);
+        }
       } catch (error) {
         if (
           current() &&

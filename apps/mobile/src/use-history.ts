@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AccountSource, Account } from "./account-data";
-import type { CategorySource, Category } from "./category-data";
+import type { CategoryReadSource, Category } from "./category-data";
 import { currentMonth, monthRange } from "./dashboard-data";
 import {
   historyFailureMessage,
@@ -16,7 +16,7 @@ import {
 export type HistoryProps = {
   source: HistorySource;
   accounts: Pick<AccountSource, "list">;
-  categories: Pick<CategorySource, "list">;
+  categories: CategoryReadSource;
   changes: { subscribe(listener: () => void): () => void };
   active: boolean;
   ready: boolean;
@@ -182,24 +182,36 @@ export function useHistory({
       lock.current = false;
     };
   }, [active, ready, load, reload]);
+  function updateFilters(selection: Partial<HistoryFilters>) {
+    const next = { ...filter, ...selection };
+    for (const key of Object.keys(next) as (keyof HistoryFilters)[]) {
+      if (next[key] === undefined) delete next[key];
+    }
+    // A selection supersedes any refresh already in flight (for example while
+    // the category picker was open). Only this filter's response may commit.
+    sequence.current++;
+    lock.current = false;
+    retry.current = null;
+    setBusy(false);
+    setFilter(next);
+    void load(next);
+  }
   return {
     filter,
-    setFilter,
     page,
     accountChoices,
     categoryChoices,
+    updateFilters,
+    selectCategory: (id: string, rows: Category[]) => {
+      setCategoryChoices(rows);
+      updateFilters({
+        categoryId: id,
+        includeSubcategories: false
+      });
+    },
     busy,
     error,
     stale,
-    apply: () => {
-      if (!validHistoryFilters(filter)) {
-        setError(
-          "Enter both real dates as YYYY-MM-DD, in order and no more than 366 days apart."
-        );
-        return;
-      }
-      void load(filter);
-    },
     clear: () => {
       focusRef.current = undefined;
       consumed.current?.();
@@ -207,8 +219,6 @@ export function useHistory({
       accountConsumed.current?.();
       void load({});
     },
-    selectMonth: (month: string) =>
-      void load({ ...filter, ...monthRange(month) }),
     refresh: () => {
       const attempt = retry.current;
       if (attempt)

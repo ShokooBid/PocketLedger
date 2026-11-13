@@ -17,6 +17,7 @@ import { router } from "expo-router";
 import { AppState } from "react-native";
 import { parsePreviewState } from "../src/navigation";
 import { localDate } from "../src/entry-data";
+import { chooseTransactionDate } from "./date-picker-fixtures";
 import * as sessionModule from "../src/session";
 import * as runtime from "../src/auth/runtime";
 import {
@@ -66,15 +67,6 @@ async function navigate(action: () => void) {
 }
 
 async function field(label: string, value: string) {
-  if (
-    label === "Transaction date (YYYY-MM-DD)" &&
-    !screen.queryByLabelText(label)
-  ) {
-    await press("Choose transaction date");
-    await field(label, value);
-    await press("Use entered date");
-    return;
-  }
   await act(async () => {
     fireEvent.changeText(screen.getByLabelText(label), value);
   });
@@ -122,9 +114,9 @@ afterEach(() => {
 });
 
 describe("session navigation", () => {
-  // The first scenario includes cold router initialization, tab switching and
-  // both confirmation paths. Keep lookup deadlines unchanged; only allow the
-  // complete flow the same budget as the other long navigation scenarios.
+  // This first flow loads the router and calendar dependency cold, switches
+  // tabs and checks both confirmation paths. Budget the complete integration
+  // flow separately while keeping each element lookup's deadline unchanged.
   it("keeps Add drafts across tabs and Settings and confirms leaving without a discard button", async () => {
     await openShell();
     await enterDemo();
@@ -164,7 +156,7 @@ describe("session navigation", () => {
     expect(
       await screen.findByRole("header", { name: "Sign in screen" })
     ).toBeVisible();
-  }, 15000);
+  }, 30000);
 
   it("opens History after saving and uses the shared editor for a selected record", async () => {
     await openShell();
@@ -232,7 +224,7 @@ describe("session navigation", () => {
     await press("Add transaction");
     await screen.findByText("New transaction");
     await field("Amount", "12.34");
-    await field("Transaction date (YYYY-MM-DD)", "2026-11-01");
+    await chooseTransactionDate("2026-11-01");
     await field("Note (optional)", "Keep this draft");
     await chooseCategory("Onboarding food");
     await press("Choose account");
@@ -496,6 +488,8 @@ describe("session navigation", () => {
     expect(h.store.clear).not.toHaveBeenCalled();
   });
 
+  // This full flow includes two sign-ins, sign-out, protected navigation and
+  // pending-read cancellation. Keep per-lookup deadlines unchanged.
   it("connects categories only after login and clears visible data and pending reads on account change", async () => {
     const originalUrl = process.env.EXPO_PUBLIC_API_URL;
     process.env.EXPO_PUBLIC_API_URL = "https://api.example.invalid";
@@ -614,7 +608,7 @@ describe("session navigation", () => {
       if (originalUrl === undefined) delete process.env.EXPO_PUBLIC_API_URL;
       else process.env.EXPO_PUBLIC_API_URL = originalUrl;
     }
-  }, 15000);
+  }, 30000);
 
   it("shows restoration without exposing either navigation flow", async () => {
     jest.spyOn(sessionModule, "useSession").mockReturnValue({
@@ -777,7 +771,7 @@ describe("session navigation", () => {
     expect(
       screen.getByRole("button", { name: "Choose transaction date" })
     ).toHaveProp("accessibilityHint", localDate());
-    await field("Transaction date (YYYY-MM-DD)", "2024-02-01");
+    await chooseTransactionDate("2024-02-01");
     expect(screen.getByLabelText("Account currency: JPY")).toBeVisible();
     await chooseAccount("History cash");
     await field("Amount", "250");

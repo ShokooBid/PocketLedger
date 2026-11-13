@@ -23,6 +23,7 @@ import {
 } from "../src/category-data";
 import { ClientFailure } from "../src/auth/transport";
 import type { AccountSource } from "../src/account-data";
+import { chooseTransactionDate } from "./date-picker-fixtures";
 
 it.each([
   ["CAD", "12.34", 1234],
@@ -185,7 +186,7 @@ async function setup(wrap?: (source: TransactionSource) => TransactionSource) {
 async function fill() {
   await press("Add transaction");
   await field("Amount", "1.01");
-  await field("Transaction date (YYYY-MM-DD)", "2024-02-29");
+  await chooseTransactionDate("2024-02-29");
   await field("Note (optional)", "Retained note");
   await chooseCategory("Food");
 }
@@ -228,10 +229,9 @@ it("refreshes choices on return, keeps every draft field and only prefills an ex
     ).toBeVisible()
   );
   expect(screen.getByLabelText("Amount")).toHaveProp("value", "1.01");
-  expect(screen.getByLabelText("Transaction date (YYYY-MM-DD)")).toHaveProp(
-    "value",
-    "2024-02-29"
-  );
+  expect(
+    screen.getByRole("button", { name: "Choose transaction date" })
+  ).toHaveProp("accessibilityHint", "2024-02-29");
   expect(screen.getByLabelText("Note (optional)")).toHaveProp(
     "value",
     "Keep these values"

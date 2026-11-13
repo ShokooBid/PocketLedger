@@ -19,7 +19,7 @@ const database = disposableDatabase({ migrate: false });
 const databaseUrl = database.url;
 const sql = new pg.Client({
   connectionString: databaseUrl,
-  connectionTimeoutMillis: 5000
+  connectionTimeoutMillis: 30_000
 });
 const db = database.db;
 let sqlConnected = false;

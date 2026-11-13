@@ -23,6 +23,8 @@ export interface CategorySource {
   rename(id: string, name: string): Promise<void>;
   archive(id: string): Promise<void>;
 }
+export type CategoryReadSource = Pick<CategorySource, "list"> &
+  Partial<Pick<CategorySource, "recent">>;
 export class CategoryFailure extends Error {
   constructor(
     public code:

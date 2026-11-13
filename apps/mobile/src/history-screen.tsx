@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
-  Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -10,18 +10,12 @@ import {
   type ViewStyle
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import { Body, Button, Field, Screen, StateNotice } from "./ui";
+import { Body, Button, Field, StateNotice } from "./ui";
 import { theme } from "./theme";
 import { CategoryIcon } from "./category-icon";
-import { categoryPath, orderedCategories } from "./category-hierarchy";
-import {
-  adjacentMonth,
-  currentMonth,
-  monthLabel,
-  monthRange,
-  monthSchema
-} from "./dashboard-data";
-import { calendarDate } from "./transaction-data";
+import { categoryPath } from "./category-hierarchy";
+import { CategoryPicker } from "./finance-picker";
+import { RangeDatePicker } from "./date-picker";
 import {
   historyDateLabel,
   historyKey,
@@ -39,24 +33,11 @@ export function HistoryScreen(
 ) {
   const state = useHistory(props);
   const { fontScale } = useWindowDimensions();
-  const { filter, setFilter, page, busy } = state;
+  const { filter, page, busy } = state;
   const [picker, setPicker] = useState<
-    "account" | "category" | "type" | "from" | "to" | "month" | null
+    "account" | "category" | "type" | "range" | null
   >(null);
-  const [search, setSearch] = useState("");
-  const [monthInput, setMonthInput] = useState(currentMonth());
-  const selectedMonth = filter.from?.slice(0, 7) ?? monthInput;
-  const exactMonth =
-    filter.from &&
-    filter.to &&
-    monthSchema.safeParse(selectedMonth).success &&
-    filter.from === monthRange(selectedMonth).from &&
-    filter.to === monthRange(selectedMonth).to;
-  const anchor = monthSchema.safeParse(selectedMonth).success
-    ? selectedMonth
-    : currentMonth();
-  const previous = adjacentMonth(anchor, -1),
-    next = adjacentMonth(anchor, 1);
+  const [accountSearch, setAccountSearch] = useState("");
   const category = state.categoryChoices.find(
     (row) => row.id === filter.categoryId
   );
@@ -65,87 +46,46 @@ export function HistoryScreen(
   );
   const dates = [...new Set(page?.items.map((row) => row.date) ?? [])];
   const disabled = busy || !props.ready || !props.active;
+  const dropdown = picker === "account" || picker === "type";
+  const modalOpen = picker === "category";
   function open(value: typeof picker) {
-    setSearch("");
-    setPicker(value);
+    setAccountSearch("");
+    setPicker((current) => (current === value ? null : value));
   }
   function clearCategory() {
-    setFilter((current) => {
-      const result = { ...current };
-      delete result.categoryId;
-      delete result.includeSubcategories;
-      return result;
+    state.updateFilters({
+      categoryId: undefined,
+      includeSubcategories: undefined
     });
     setPicker(null);
   }
   return (
     <>
       <View
-        accessibilityElementsHidden={picker !== null}
-        importantForAccessibility={picker ? "no-hide-descendants" : "auto"}
+        accessibilityElementsHidden={modalOpen}
+        importantForAccessibility={modalOpen ? "no-hide-descendants" : "auto"}
         style={styles.section}
       >
-        <View style={styles.monthBar}>
-          <HistoryPill
-            label="Previous month"
-            text="‹"
-            disabled={disabled || !previous}
-            onPress={() => previous && state.selectMonth(previous)}
-            style={styles.arrow}
-          />
-          <HistoryPill
-            label={exactMonth ? monthLabel(anchor) : "Choose month"}
-            text={`${monthLabel(anchor).slice(0, 3)} ${anchor.slice(0, 4)} ⌄`}
+        <HistoryPill
+          label={`Date range: ${filter.from && filter.to ? `${filter.from} – ${filter.to}` : "All dates"}`}
+          text={
+            filter.from && filter.to
+              ? `${filter.from} – ${filter.to}  ⌄`
+              : "All dates  ⌄"
+          }
+          expanded={picker === "range"}
+          disabled={disabled}
+          onPress={() => open("range")}
+        />
+        {picker === "range" && (
+          <RangeDatePicker
+            from={filter.from}
+            to={filter.to}
             disabled={disabled}
-            onPress={() => {
-              setMonthInput(anchor);
-              open("month");
-            }}
-            style={styles.monthChoice}
+            onChange={state.updateFilters}
+            onClose={() => setPicker(null)}
           />
-          <HistoryPill
-            label="Choose month calendar"
-            text="▦"
-            disabled={disabled}
-            onPress={() => {
-              setMonthInput(anchor);
-              open("month");
-            }}
-            style={styles.calendarShortcut}
-          />
-          <HistoryPill
-            label="Next month"
-            text="›"
-            disabled={disabled || !next}
-            onPress={() => next && state.selectMonth(next)}
-            style={styles.arrow}
-          />
-        </View>
-        <View style={[styles.dateBar, fontScale > 1.3 && styles.dateBarWrap]}>
-          <HistoryPill
-            label={`From: ${filter.from ?? "Any date"}`}
-            text={exactMonth ? "From date" : (filter.from ?? "From date")}
-            disabled={disabled}
-            onPress={() => open("from")}
-            style={styles.dateChoice}
-          />
-          <Text style={styles.dateDivider}>–</Text>
-          <HistoryPill
-            label={`To: ${filter.to ?? "Any date"}`}
-            text={exactMonth ? "To date" : (filter.to ?? "To date")}
-            disabled={disabled}
-            onPress={() => open("to")}
-            style={styles.dateChoice}
-          />
-          <HistoryPill
-            label="Apply filters"
-            text="Apply"
-            disabled={disabled}
-            onPress={state.apply}
-            primary
-            style={styles.apply}
-          />
-        </View>
+        )}
         <View
           style={[styles.filterBar, fontScale > 1.3 && styles.filterBarWrap]}
         >
@@ -154,6 +94,7 @@ export function HistoryScreen(
             text={`⌂  ${account?.name ?? "Account"}  ⌄`}
             disabled={disabled}
             onPress={() => open("account")}
+            expanded={picker === "account"}
             style={[
               styles.filterChip,
               fontScale > 1.3 && styles.filterChipWide
@@ -164,6 +105,7 @@ export function HistoryScreen(
             text={`⇄  ${filter.type ?? "Type"}  ⌄`}
             disabled={disabled}
             onPress={() => open("type")}
+            expanded={picker === "type"}
             style={[
               styles.filterChip,
               fontScale > 1.3 && styles.filterChipWide
@@ -180,6 +122,77 @@ export function HistoryScreen(
             ]}
           />
         </View>
+        {dropdown && (
+          <View
+            style={[styles.dropdown, picker === "type" && styles.typeDropdown]}
+            onAccessibilityEscape={() => setPicker(null)}
+          >
+            {picker === "account" && state.accountChoices.length > 6 && (
+              <Field
+                label="Search account choices"
+                value={accountSearch}
+                onChangeText={setAccountSearch}
+              />
+            )}
+            <ScrollView
+              accessibilityLabel={
+                picker === "account"
+                  ? "Account filter options"
+                  : "Type filter options"
+              }
+              style={styles.dropdownList}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+            >
+              {picker === "account" ? (
+                <>
+                  <HistoryOption
+                    label="All accounts"
+                    selected={!filter.accountId}
+                    disabled={disabled}
+                    onPress={() => {
+                      setPicker(null);
+                      state.updateFilters({ accountId: undefined });
+                    }}
+                  />
+                  {state.accountChoices
+                    .filter((row) =>
+                      row.name
+                        .toLocaleLowerCase()
+                        .includes(accountSearch.toLocaleLowerCase())
+                    )
+                    .map((row) => (
+                      <HistoryOption
+                        key={row.id}
+                        label={`${row.name} · ${row.currency}${row.archivedAt ? " (archived)" : ""}`}
+                        selected={row.id === filter.accountId}
+                        disabled={disabled}
+                        onPress={() => {
+                          setPicker(null);
+                          state.updateFilters({ accountId: row.id });
+                        }}
+                      />
+                    ))}
+                </>
+              ) : (
+                ([undefined, "income", "expense", "transfer"] as const).map(
+                  (type) => (
+                    <HistoryOption
+                      key={type ?? "all"}
+                      label={type ?? "All types"}
+                      selected={filter.type === type}
+                      disabled={disabled}
+                      onPress={() => {
+                        setPicker(null);
+                        state.updateFilters({ type });
+                      }}
+                    />
+                  )
+                )
+              )}
+            </ScrollView>
+          </View>
+        )}
         {category && !category.parentId && (
           <HistoryPill
             label={
@@ -196,8 +209,7 @@ export function HistoryScreen(
             disabled={disabled}
             style={styles.scopeChip}
             onPress={() =>
-              setFilter({
-                ...filter,
+              state.updateFilters({
                 includeSubcategories: !filter.includeSubcategories
               })
             }
@@ -316,139 +328,17 @@ export function HistoryScreen(
           <Body>End of matching history.</Body>
         ) : null}
       </View>
-      {(picker === "account" ||
-        picker === "category" ||
-        picker === "type" ||
-        picker === "month") && (
-        <Modal
-          visible
-          animationType="slide"
-          onRequestClose={() => setPicker(null)}
-        >
-          <Screen title={`Choose ${picker}`} showUserMenu={false}>
-            <Button
-              label="Cancel filter selection"
-              onPress={() => setPicker(null)}
-            />
-            {(picker === "account" || picker === "category") && (
-              <Field
-                label={`Search ${picker} choices`}
-                value={search}
-                onChangeText={setSearch}
-              />
-            )}
-            {picker === "account" && (
-              <>
-                <Button
-                  label="All accounts"
-                  selected={!filter.accountId}
-                  onPress={() => {
-                    setFilter((current) => {
-                      const result = { ...current };
-                      delete result.accountId;
-                      return result;
-                    });
-                    setPicker(null);
-                  }}
-                />
-                {state.accountChoices
-                  .filter((row) =>
-                    row.name
-                      .toLocaleLowerCase()
-                      .includes(search.toLocaleLowerCase())
-                  )
-                  .map((row) => (
-                    <Button
-                      key={row.id}
-                      label={`${row.name} · ${row.currency}${row.archivedAt ? " (archived)" : ""}`}
-                      selected={row.id === filter.accountId}
-                      onPress={() => {
-                        setFilter({ ...filter, accountId: row.id });
-                        setPicker(null);
-                      }}
-                    />
-                  ))}
-              </>
-            )}
-            {picker === "category" && (
-              <>
-                <Button
-                  label="All categories"
-                  selected={!filter.categoryId}
-                  onPress={clearCategory}
-                />
-                {orderedCategories(state.categoryChoices)
-                  .filter((row) =>
-                    categoryPath(row, state.categoryChoices)
-                      .toLocaleLowerCase()
-                      .includes(search.toLocaleLowerCase())
-                  )
-                  .map((row) => (
-                    <Button
-                      key={row.id}
-                      leading={<CategoryIcon iconKey={row.iconKey} />}
-                      label={`${categoryPath(row, state.categoryChoices)}${row.archivedAt ? " (archived)" : ""}`}
-                      selected={row.id === filter.categoryId}
-                      onPress={() => {
-                        setFilter({
-                          ...filter,
-                          categoryId: row.id,
-                          includeSubcategories: false
-                        });
-                        setPicker(null);
-                      }}
-                    />
-                  ))}
-              </>
-            )}
-            {picker === "type" &&
-              ([undefined, "income", "expense", "transfer"] as const).map(
-                (type) => (
-                  <Button
-                    key={type ?? "all"}
-                    label={type ?? "All types"}
-                    selected={filter.type === type}
-                    onPress={() => {
-                      setFilter((current) => {
-                        const result = { ...current };
-                        if (type) result.type = type;
-                        else delete result.type;
-                        return result;
-                      });
-                      setPicker(null);
-                    }}
-                  />
-                )
-              )}
-            {picker === "month" && (
-              <>
-                <Field
-                  label="Month (YYYY-MM)"
-                  value={monthInput}
-                  onChangeText={setMonthInput}
-                />
-                <Button
-                  label="Show selected month"
-                  disabled={!monthSchema.safeParse(monthInput).success}
-                  onPress={() => {
-                    state.selectMonth(monthInput);
-                    setPicker(null);
-                  }}
-                />
-              </>
-            )}
-          </Screen>
-        </Modal>
-      )}
-      {(picker === "from" || picker === "to") && (
-        <HistoryCalendar
-          title={picker === "from" ? "From date" : "To date"}
-          value={filter[picker] ?? monthRange(currentMonth()).from}
-          onClose={() => setPicker(null)}
-          onSelect={(date) => {
-            setFilter({ ...filter, [picker]: date });
+      {picker === "category" && (
+        <CategoryPicker
+          source={props.categories}
+          mode="filter"
+          selectedId={filter.categoryId ?? ""}
+          onSelect={(id, rows) => {
+            state.selectCategory(id, rows);
             setPicker(null);
           }}
+          onClear={clearCategory}
+          onClose={() => setPicker(null)}
         />
       )}
     </>
@@ -460,37 +350,70 @@ function HistoryPill({
   disabled,
   onPress,
   style,
-  primary = false,
-  selected = false
+  selected = false,
+  expanded
 }: {
   label: string;
   text: string;
   disabled: boolean;
   onPress: () => void;
   style?: StyleProp<ViewStyle>;
-  primary?: boolean;
   selected?: boolean;
+  expanded?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled, selected }}
+      accessibilityState={{
+        disabled,
+        selected,
+        ...(expanded === undefined ? {} : { expanded })
+      }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
         styles.pill,
         style,
-        primary && styles.primaryPill,
         (pressed || disabled) && styles.pressed
       ]}
     >
-      <Text
-        numberOfLines={1}
-        style={[styles.pillText, primary && styles.primaryPillText]}
-      >
+      <Text numberOfLines={1} style={styles.pillText}>
         {text}
       </Text>
+    </Pressable>
+  );
+}
+function HistoryOption({
+  label,
+  selected,
+  disabled,
+  onPress
+}: {
+  label: string;
+  selected: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected, disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.dropdownOption,
+        selected && styles.selectedOption,
+        (pressed || disabled) && styles.pressed
+      ]}
+    >
+      <Text style={styles.optionText}>{label}</Text>
+      {selected && (
+        <Text accessible={false} style={styles.optionCheck}>
+          ✓
+        </Text>
+      )}
     </Pressable>
   );
 }
@@ -563,98 +486,35 @@ function HistoryRecord({
     </Pressable>
   );
 }
-function HistoryCalendar({
-  title,
-  value,
-  onClose,
-  onSelect
-}: {
-  title: string;
-  value: string;
-  onClose: () => void;
-  onSelect: (date: string) => void;
-}) {
-  const [month, setMonth] = useState(
-    calendarDate.safeParse(value).success ? value.slice(0, 7) : currentMonth()
-  );
-  const [typed, setTyped] = useState(value);
-  const range = monthRange(month),
-    previous = adjacentMonth(month, -1),
-    next = adjacentMonth(month, 1);
-  return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
-      <Screen title={`Choose ${title.toLowerCase()}`} showUserMenu={false}>
-        <Button label="Cancel date selection" onPress={onClose} />
-        <View style={styles.controls}>
-          <Button
-            label="Previous month"
-            disabled={!previous}
-            onPress={() => previous && setMonth(previous)}
-          />
-          <Text accessibilityRole="header" style={styles.date}>
-            {monthLabel(month)}
-          </Text>
-          <Button
-            label="Next month"
-            disabled={!next}
-            onPress={() => next && setMonth(next)}
-          />
-        </View>
-        <View style={styles.calendar}>
-          {Array.from({ length: Number(range.to.slice(8)) }, (_, index) => {
-            const date = `${month}-${String(index + 1).padStart(2, "0")}`;
-            return (
-              <Pressable
-                key={date}
-                accessibilityRole="button"
-                accessibilityLabel={`Choose ${date}`}
-                accessibilityState={{ selected: date === value }}
-                onPress={() => onSelect(date)}
-                style={[
-                  styles.calendarDay,
-                  date === value && styles.highlighted
-                ]}
-              >
-                <Text style={styles.date}>{index + 1}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        <Field
-          label={`${title} (YYYY-MM-DD)`}
-          value={typed}
-          onChangeText={setTyped}
-        />
-        <Button
-          label="Use entered date"
-          disabled={!calendarDate.safeParse(typed).success}
-          onPress={() => onSelect(typed)}
-        />
-      </Screen>
-    </Modal>
-  );
-}
 const styles = StyleSheet.create({
   section: { gap: 10, marginHorizontal: -8 },
-  monthBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 6
-  },
-  dateBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    padding: 6,
-    borderRadius: 16,
-    backgroundColor: theme.color.surface,
-    borderWidth: 1,
-    borderColor: theme.color.softBorder
-  },
-  dateBarWrap: { flexWrap: "wrap" },
   filterBar: { flexDirection: "row", gap: 6 },
   filterBarWrap: { flexWrap: "wrap" },
+  dropdown: {
+    width: "100%",
+    maxWidth: 320,
+    alignSelf: "flex-start",
+    padding: 6,
+    borderWidth: 1,
+    borderColor: theme.color.softBorder,
+    borderRadius: 16,
+    backgroundColor: theme.color.surface,
+    gap: 6
+  },
+  typeDropdown: { maxWidth: 200, alignSelf: "center" },
+  dropdownList: { maxHeight: 240 },
+  dropdownOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    minHeight: theme.touchTarget,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10
+  },
+  selectedOption: { backgroundColor: theme.color.primarySoft },
+  optionText: { flex: 1, color: theme.color.text, fontSize: 14 },
+  optionCheck: { color: theme.color.primary, fontSize: 16 },
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: 14 },
   pill: {
     minHeight: 42,
@@ -667,22 +527,6 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   pillText: { fontSize: 13, color: theme.color.primary, fontWeight: "600" },
-  primaryPill: {
-    backgroundColor: theme.color.primary,
-    borderColor: theme.color.primary
-  },
-  primaryPillText: { color: theme.color.onPrimary },
-  arrow: {
-    minWidth: 36,
-    paddingHorizontal: 0,
-    backgroundColor: theme.color.surface,
-    borderWidth: 0
-  },
-  monthChoice: { flex: 1, maxWidth: 160 },
-  calendarShortcut: { minWidth: 38, paddingHorizontal: 0 },
-  dateChoice: { flex: 1, minWidth: 76, backgroundColor: theme.color.surface },
-  dateDivider: { color: theme.color.muted, fontSize: 18 },
-  apply: { minWidth: 60, paddingHorizontal: 8, borderRadius: 12 },
   filterChip: { flex: 1, minWidth: 0, paddingHorizontal: 6 },
   filterChipWide: { minWidth: 130 },
   scopeChip: { alignSelf: "flex-start" },
@@ -691,12 +535,6 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     backgroundColor: "transparent",
     paddingHorizontal: 4
-  },
-  controls: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    alignItems: "center"
   },
   group: {
     borderRadius: 17,
@@ -753,15 +591,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: theme.color.primarySoft,
-    borderRadius: 12
-  },
-  calendar: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  calendarDay: {
-    minWidth: 48,
-    minHeight: 48,
-    padding: 10,
-    alignItems: "center",
-    justifyContent: "center",
     borderRadius: 12
   }
 });
