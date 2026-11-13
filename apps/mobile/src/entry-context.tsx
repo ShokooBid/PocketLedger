@@ -32,6 +32,8 @@ import {
   uncertainWrite,
   amountText,
   transactionFailureMessage,
+  type Transaction,
+  type TransactionInput,
   type TransactionCreate
 } from "./transaction-data";
 import {
@@ -45,6 +47,7 @@ import { ClientFailure } from "./auth/transport";
 
 type PendingWrite =
   | { kind: "transaction"; input: TransactionCreate }
+  | { kind: "transaction-edit"; id: string; input: TransactionInput }
   | { kind: "transfer"; input: TransferCreate }
   | { kind: "transfer-edit"; id: string; input: TransferInput };
 type TransferReview = {
@@ -76,8 +79,14 @@ function useEntryState() {
   const [readError, setReadError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [confirmation, setConfirmation] = useState<TransferReview | null>(null),
-    [editingTransfer, setEditingTransfer] = useState<Transfer | null>(null),
-    [savedTransfer, setSavedTransfer] = useState<Transfer | null>(null);
+    [editingTransaction, setEditingTransaction] = useState<Transaction | null>(
+      null
+    ),
+    [editingTransfer, setEditingTransfer] = useState<Transfer | null>(null);
+  const [saved, setSaved] = useState<{
+    id: string;
+    kind: "transaction" | "transfer";
+  } | null>(null);
   const ready =
     accountsReady && (draft.direction === "transfer" || categoriesReady);
   const pending = useRef<PendingWrite | null>(null),
@@ -86,6 +95,11 @@ function useEntryState() {
     revision = useRef(0);
   const initialized = useRef(false),
     dateEdited = useRef(false);
+  const addDraftBeforeEdit = useRef<{
+    draft: EntryDraft;
+    initialized: boolean;
+    dateEdited: boolean;
+  } | null>(null);
   const [leaving, setLeaving] = useState<{ action: () => void } | null>(null);
   const activeAccounts = accounts.filter(
     (row) => !row.archivedAt && row.currency === preferences.selectedCurrency
@@ -207,37 +221,42 @@ function useEntryState() {
   }, [dirty]);
   function change(patch: Partial<EntryDraft>) {
     if (locked.current || pending.current || confirmation) return;
-    if (editingTransfer && patch.direction && patch.direction !== "transfer")
+    if (
+      (editingTransfer || editingTransaction) &&
+      patch.direction &&
+      patch.direction !== draft.direction
+    )
       return;
     if (patch.date !== undefined) dateEdited.current = true;
     setDirty(true);
     setErrors({});
     setMessage(null);
-    setSavedTransfer(null);
     setDraft((previous) => ({ ...previous, ...patch }));
   }
+  function resetDraft() {
+    const previousAdd = addDraftBeforeEdit.current;
+    addDraftBeforeEdit.current = null;
+    initialized.current = previousAdd?.initialized ?? false;
+    dateEdited.current = previousAdd?.dateEdited ?? false;
+    pending.current = null;
+    setConfirmation(null);
+    setEditingTransaction(null);
+    setEditingTransfer(null);
+    setUncertain(false);
+    setReviewed(false);
+    setErrors({});
+    setMessage(null);
+    setDirty(false);
+    setDraft(
+      previousAdd?.draft ??
+        freshEntry(
+          preferences.defaultCurrency,
+          preferences.defaultAccountId ?? ""
+        )
+    );
+  }
   function requestDiscard(action?: () => void) {
-    const proceed =
-      action ??
-      (() => {
-        initialized.current = false;
-        dateEdited.current = false;
-        pending.current = null;
-        setConfirmation(null);
-        setEditingTransfer(null);
-        setSavedTransfer(null);
-        setUncertain(false);
-        setReviewed(false);
-        setErrors({});
-        setMessage(null);
-        setDirty(false);
-        setDraft(
-          freshEntry(
-            preferences.defaultCurrency,
-            preferences.defaultAccountId ?? ""
-          )
-        );
-      });
+    const proceed = action ?? resetDraft;
     if (dirty || pending.current || locked.current)
       setLeaving({ action: proceed });
     else proceed();
@@ -250,7 +269,19 @@ function useEntryState() {
       // A successful read establishes connectivity, not proof that a create failed.
       // Only replaying the frozen identity can safely resolve the original create.
       if (pending.current.kind === "transaction") await source.list({});
-      else if (pending.current.kind === "transfer-edit") {
+      else if (pending.current.kind === "transaction-edit") {
+        const row = await source.get(pending.current.id),
+          input = pending.current.input;
+        if (
+          Object.entries(input).every(
+            ([key, value]) => row[key as keyof Transaction] === value
+          )
+        ) {
+          finishSave(row, "transaction");
+          changes.invalidate();
+          return;
+        }
+      } else if (pending.current.kind === "transfer-edit") {
         const row = await transfers.get(pending.current.id),
           input = pending.current.input;
         if (
@@ -258,7 +289,7 @@ function useEntryState() {
             ([key, value]) => row[key as keyof Transfer] === value
           )
         ) {
-          finishSave(row);
+          finishSave(row, "transfer");
           changes.invalidate();
           return;
         }
@@ -271,16 +302,20 @@ function useEntryState() {
       }
     } catch (failure) {
       if (
-        pending.current?.kind === "transfer-edit" &&
+        (pending.current?.kind === "transfer-edit" ||
+          pending.current?.kind === "transaction-edit") &&
         failure instanceof ClientFailure &&
         failure.kind === "unavailable"
       ) {
+        const unavailableKind = pending.current.kind;
         pending.current = null;
         if (mounted.current) {
           setUncertain(false);
           setReviewed(false);
           setMessage(
-            "This transfer is no longer available. Your values are kept. Cancel transfer editing and review History before starting a new transfer."
+            unavailableKind === "transfer-edit"
+              ? "This transfer is no longer available. Your values are kept. Cancel transfer editing and review History before starting a new transfer."
+              : "This transaction is no longer available. Your values are kept. Cancel transaction editing and review History before starting a new transaction."
           );
           changes.invalidate();
           void reload();
@@ -296,21 +331,34 @@ function useEntryState() {
       if (mounted.current) setBusy(false);
     }
   }
-  function finishSave(row?: Transfer) {
+  function finishSave(
+    row: Transaction | Transfer,
+    kind: "transaction" | "transfer"
+  ) {
     if (!mounted.current) return;
     pending.current = null;
     setConfirmation(null);
+    setEditingTransaction(null);
     setEditingTransfer(null);
-    setSavedTransfer(row ?? null);
     setUncertain(false);
     setReviewed(false);
     setErrors({});
     setDirty(false);
-    setDraft((previous) => ({ ...previous, amount: "", note: "" }));
+    const previousAdd = addDraftBeforeEdit.current;
+    addDraftBeforeEdit.current = null;
+    if (previousAdd) {
+      initialized.current = previousAdd.initialized;
+      dateEdited.current = previousAdd.dateEdited;
+    }
+    setDraft(
+      previousAdd?.draft ??
+        ((previous) => ({ ...previous, amount: "", note: "" }))
+    );
+    setSaved({ id: row.id, kind });
     setMessage(
-      row
-        ? "Transfer saved. Both account balances updated."
-        : "Transaction saved. Ready for the next entry."
+      kind === "transfer"
+        ? "Transfer saved. Opening History."
+        : "Transaction saved. Opening History."
     );
     void reload();
   }
@@ -359,28 +407,37 @@ function useEntryState() {
               input: Object.freeze({ ...input, clientRequestId: randomUUID() })
             };
         setConfirmation(null);
-      } else
-        pending.current = {
-          kind: "transaction",
-          input: Object.freeze({
-            ...entryInput(draft, selected),
-            clientRequestId: randomUUID()
-          })
-        };
+      } else {
+        const input = entryInput(draft, selected);
+        pending.current = editingTransaction
+          ? {
+              kind: "transaction-edit",
+              id: editingTransaction.id,
+              input: Object.freeze(input)
+            }
+          : {
+              kind: "transaction",
+              input: Object.freeze({ ...input, clientRequestId: randomUUID() })
+            };
+      }
     }
     locked.current = true;
     setBusy(true);
     setMessage(null);
     try {
       const write = pending.current!;
-      if (write.kind === "transaction") {
-        await source.create(write.input);
-        finishSave();
+      if (write.kind === "transaction" || write.kind === "transaction-edit") {
+        const row =
+          write.kind === "transaction"
+            ? await source.create(write.input)
+            : await source.update(write.id, write.input);
+        finishSave(row, "transaction");
       } else
         finishSave(
           write.kind === "transfer"
             ? await transfers.create(write.input)
-            : await transfers.update(write.id, write.input)
+            : await transfers.update(write.id, write.input),
+          "transfer"
         );
     } catch (failure) {
       if (!mounted.current) return;
@@ -409,7 +466,11 @@ function useEntryState() {
       if (!locked.current) setConfirmation(null);
     },
     editingTransfer,
-    savedTransfer,
+    editingTransaction,
+    saved,
+    consumeSaved() {
+      setSaved(null);
+    },
     account,
     accounts,
     categories,
@@ -432,6 +493,12 @@ function useEntryState() {
     save,
     review,
     requestDiscard,
+    cancelEditing(action: () => void) {
+      requestDiscard(() => {
+        resetDraft();
+        action();
+      });
+    },
     leaving,
     setLeaving,
     selectAccount(id: string, rows: Account[], side: "from" | "to" = "from") {
@@ -485,10 +552,17 @@ function useEntryState() {
         return;
       }
       requestDiscard(() => {
+        addDraftBeforeEdit.current = dirty
+          ? null
+          : {
+              draft,
+              initialized: initialized.current,
+              dateEdited: dateEdited.current
+            };
         dateEdited.current = true;
         initialized.current = true;
         setEditingTransfer(row);
-        setSavedTransfer(null);
+        setEditingTransaction(null);
         setConfirmation(null);
         setErrors({});
         setMessage(null);
@@ -500,6 +574,42 @@ function useEntryState() {
           accountId: row.fromAccountId,
           toAccountId: row.toAccountId,
           categoryId: "",
+          date: row.date,
+          note: row.note ?? ""
+        });
+        action();
+      });
+    },
+    editTransaction(row: Transaction, action: () => void) {
+      if (locked.current || pending.current) {
+        setMessage(
+          "Resolve the current save before editing another transaction."
+        );
+        return;
+      }
+      requestDiscard(() => {
+        addDraftBeforeEdit.current = dirty
+          ? null
+          : {
+              draft,
+              initialized: initialized.current,
+              dateEdited: dateEdited.current
+            };
+        dateEdited.current = true;
+        initialized.current = true;
+        setEditingTransaction(row);
+        setEditingTransfer(null);
+        setConfirmation(null);
+        setErrors({});
+        setMessage(null);
+        setDirty(true);
+        setDraft({
+          direction: row.direction,
+          amount: amountText(row.amountMinor, row.currency),
+          currency: row.currency,
+          accountId: row.accountId,
+          toAccountId: "",
+          categoryId: row.categoryId,
           date: row.date,
           note: row.note ?? ""
         });

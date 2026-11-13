@@ -6,7 +6,8 @@ names shown in examples do not define the final default catalog.
 
 ## Navigation and layout
 
-Four persistent destinations: **Add**, **History**, **Overview**, **Settings**.
+The bottom bar has **Add**, **History** and **Overview**. Settings is reached from
+the avatar menu on every application screen.
 After login/demo entry, require permanent currency selection and at least one
 active account before opening finance screens. CAD is preselected locally; only
 explicit confirmation saves it. A ready authenticated deep link may open its
@@ -166,6 +167,12 @@ account balances, History and Overview.
 
 ## History and Overview
 
+History uses a compact month selector with adjacent arrows, a single From/To/Apply
+date bar, and account/type/category filter chips. Date headers place the full-day
+count and net beside the date. Rows place the category icon and account/category
+detail on the left and the signed amount on the right. Clear and Refresh stay
+available as secondary actions without dominating the first screenful.
+
 Issue #75 implements the live History screen with a current-month default,
 previous/next/selected month controls and inclusive custom From/To calendar dates.
 Account, type (income/expense/transfer) and exact/subtree category filters combine
@@ -184,12 +191,13 @@ archived accounts. Existing readiness still requires at least one active account
 Older/newer cursor pages merge into one section per date. Failed reads preserve
 loaded context with a stale-data notice and an explicit retry. Confirmed finance
 changes invalidate cursors; returning to History reloads current labels/totals.
-The #106 handoff is `/transactions?focusId=<id>&focusKind=transaction|transfer`:
-History can reveal/highlight an owned saved record through bounded reads, explain
-only the necessary filter adjustments and load nearby newer/older pages. #106
-owns automatic post-save navigation, shared editor selection and Add/Edit labels;
-until then rows open their existing transaction/transfer details. Demo presentation
-and data sources are intentionally unchanged at the owner's request.
+After a confirmed create or update, entry opens History with the saved resource ID.
+The History focus request reveals and highlights an owned record through bounded
+reads, explains only necessary filter adjustments, and keeps newer/older paging.
+Selecting a History row loads its current values into the shared entry editor.
+The bottom destination reads Edit until successful update or confirmed cancellation;
+then it reads Add again. A failed or uncertain write keeps the draft and retry
+identity in the editor. Demo data remains isolated in memory.
 
 Overview shows period income, expenses, net and root/child category breakdowns.
 Transfers affect account balances, never income/expenses/net. Opening balances

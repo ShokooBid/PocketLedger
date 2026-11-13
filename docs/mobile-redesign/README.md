@@ -24,10 +24,10 @@ future work.
 
 Issue [#75](https://github.com/ShokooBid/PocketLedger/issues/75) adds live filtered,
 date-grouped History, category icons, logical transfer pagination, full-day totals
-and parent/exact Overview breakdowns. Implement
-[#106](https://github.com/ShokooBid/PocketLedger/issues/106) next for automatic
-post-save navigation and shared-editor Add/Edit state; finish
-[#77](https://github.com/ShokooBid/PocketLedger/issues/77) after that and #76.
+and parent/exact Overview breakdowns. The current
+[#106](https://github.com/ShokooBid/PocketLedger/issues/106) branch connects
+confirmed saves and row selection to the shared Add/Edit editor. Finish
+[#77](https://github.com/ShokooBid/PocketLedger/issues/77) after #106 and #76.
 The #75 increment leaves demo implementations unchanged and has no schema/migration
 changes. Tests are supplied for the owner to run; static checks are recorded in
 [verification](verification.md#issue-75-live-history-implementation).

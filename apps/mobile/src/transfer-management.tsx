@@ -55,6 +55,7 @@ export function TransferManagement(props: TransferManagementProps) {
       )}
       {state.rows.map((row) => (
         <View key={row.id} style={{ gap: theme.space.sm }}>
+          {state.highlightedId === row.id && <Body>Saved record</Body>}
           {summary(row)}
           {props.detailId ? (
             <>

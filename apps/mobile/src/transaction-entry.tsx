@@ -63,6 +63,15 @@ export function TransactionEntry() {
     categoryRef = useRef<ComponentRef<typeof View>>(null),
     dateRef = useRef<ComponentRef<typeof View>>(null);
   const { reload } = entry;
+  useEffect(() => {
+    if (!entry.saved) return;
+    const saved = entry.saved;
+    entry.consumeSaved();
+    router.navigate({
+      pathname: "/transactions",
+      params: { focusId: saved.id, focusKind: saved.kind }
+    });
+  }, [entry.saved, router]);
   useFocusEffect(
     useCallback(() => {
       if (entry.financeReady) void reload();
@@ -217,7 +226,13 @@ export function TransactionEntry() {
   }
   return (
     <Screen
-      title={entry.editingTransfer ? "Edit transfer" : "New transaction"}
+      title={
+        entry.editingTransfer
+          ? "Edit transfer"
+          : entry.editingTransaction
+            ? "Edit transaction"
+            : "New transaction"
+      }
       appearance="entry"
       onViewportLayout={setViewport}
     >
@@ -246,9 +261,16 @@ export function TransactionEntry() {
               }
               accessibilityState={{
                 selected: entry.draft.direction === direction,
-                disabled: entry.modeDisabled || !!entry.editingTransfer
+                disabled:
+                  entry.modeDisabled ||
+                  !!entry.editingTransfer ||
+                  !!entry.editingTransaction
               }}
-              disabled={entry.modeDisabled || !!entry.editingTransfer}
+              disabled={
+                entry.modeDisabled ||
+                !!entry.editingTransfer ||
+                !!entry.editingTransaction
+              }
               onPress={() => entry.change({ direction })}
               style={[
                 styles.segmentButton,
@@ -415,21 +437,16 @@ export function TransactionEntry() {
             (transfer && entry.activeAccounts.length < 2)) && (
             <Button label="Add an account in Settings" onPress={settings} />
           )}
-        {entry.editingTransfer && (
+        {(entry.editingTransfer || entry.editingTransaction) && (
           <Button
-            label="Cancel transfer editing"
+            label={
+              transfer
+                ? "Cancel transfer editing"
+                : "Cancel transaction editing"
+            }
             disabled={entry.busy || entry.uncertain}
-            onPress={() => entry.requestDiscard()}
-          />
-        )}
-        {entry.savedTransfer && (
-          <Button
-            label="View saved transfer"
             onPress={() =>
-              router.push({
-                pathname: "/transfers/[id]",
-                params: { id: entry.savedTransfer!.id }
-              })
+              entry.cancelEditing(() => router.navigate("/transactions"))
             }
           />
         )}
@@ -553,7 +570,9 @@ export function TransactionEntry() {
                   ? "Saving transaction…"
                   : transfer
                     ? "Review transfer"
-                    : "Save transaction"
+                    : entry.editingTransaction
+                      ? "Update transaction"
+                      : "Save transaction"
               }
               accessibilityHint={
                 transfer
