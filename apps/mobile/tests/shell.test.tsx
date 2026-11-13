@@ -125,7 +125,7 @@ describe("session navigation", () => {
   // The first scenario includes cold router initialization, tab switching and
   // both confirmation paths. Keep lookup deadlines unchanged; only allow the
   // complete flow the same budget as the other long navigation scenarios.
-  it("keeps Add drafts across the four tabs and confirms leaving without a discard button", async () => {
+  it("keeps Add drafts across tabs and Settings and confirms leaving without a discard button", async () => {
     await openShell();
     await enterDemo();
     await tap(screen.getByRole("link", { name: "Add" }));
@@ -134,8 +134,10 @@ describe("session navigation", () => {
     await press("Decimal point");
     await press("Digit 2");
     await field("Note (optional)", "Keep across tabs");
+    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
     for (const name of ["History", "Overview", "Settings"] as const) {
-      await tap(screen.getByRole("link", { name }));
+      if (name === "Settings") await openSettings();
+      else await tap(screen.getByRole("link", { name }));
       await tap(screen.getByRole("link", { name: "Add" }));
       expect(await screen.findByLabelText("Amount")).toHaveProp("value", "1.2");
       expect(screen.getByLabelText("Note (optional)")).toHaveProp(
