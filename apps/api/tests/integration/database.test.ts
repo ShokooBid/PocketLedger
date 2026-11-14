@@ -413,7 +413,28 @@ describe("initial migration and database ownership", () => {
   });
 
   it("runs the explicit seed command twice without duplicating or overwriting records", async () => {
-    await prisma("db", "seed");
+    // A slow local write must not expire the seed's atomic transaction. Exercise
+    // the real CLI rather than changing the application's transaction defaults.
+    await sql.query(`
+      CREATE FUNCTION delay_synthetic_seed() RETURNS trigger AS $seed$
+      BEGIN
+        IF NEW.id = '00000000-0000-4000-8000-000000000001'::uuid THEN
+          PERFORM pg_sleep(6);
+        END IF;
+        RETURN NEW;
+      END;
+      $seed$ LANGUAGE plpgsql;
+      CREATE TRIGGER delay_synthetic_seed BEFORE INSERT ON "User"
+        FOR EACH ROW EXECUTE FUNCTION delay_synthetic_seed();
+    `);
+    try {
+      await prisma("db", "seed");
+    } finally {
+      await sql.query(`
+        DROP TRIGGER delay_synthetic_seed ON "User";
+        DROP FUNCTION delay_synthetic_seed();
+      `);
+    }
     const seedId = "00000000-0000-4000-8000-000000000005";
     const seedIdentity = await db.transaction.findUniqueOrThrow({
       where: { id: seedId }

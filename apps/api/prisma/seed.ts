@@ -11,7 +11,12 @@ if (
   );
 }
 
-const db = createDatabaseClient(process.env.DATABASE_URL ?? "");
+// Explicit local/CI seeding must tolerate cold database queries while keeping
+// all fixtures atomic. Application clients retain their own transaction limits.
+const db = createDatabaseClient(process.env.DATABASE_URL ?? "", {
+  maxWait: 30_000,
+  timeout: 30_000
+});
 const userId = "00000000-0000-4000-8000-000000000001";
 const foodId = "00000000-0000-4000-8000-000000000002";
 const incomeId = "00000000-0000-4000-8000-000000000003";
