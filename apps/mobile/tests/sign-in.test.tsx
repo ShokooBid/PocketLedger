@@ -63,7 +63,7 @@ async function credentials(password = "synthetic password") {
 describe("sign-in presentation and controls", () => {
   it("keeps the brand and accessible fields, and toggles password visibility", async () => {
     open();
-    expect(screen.getByText("PocketLedger")).toBeVisible();
+    expect(screen.getByText("PocketFinance")).toBeVisible();
     expect(
       screen.getByRole("header", { name: "Sign in screen" })
     ).toBeVisible();

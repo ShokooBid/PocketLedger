@@ -1,4 +1,4 @@
-# PocketLedger SVG Icon Pack
+# PocketFinance SVG Icon Pack
 
 80 scalable SVGs: 10 main categories + 70 subcategories.
 
@@ -10,7 +10,7 @@ For Expo/React Native: use `react-native-svg` with `react-native-svg-transformer
 
 All icons have a 64x64 viewBox, soft circular gradient background, and colored outline glyphs. See `manifest.json` for filename/category mappings.
 
-## PocketLedger integration
+## PocketFinance integration
 
 `Category.iconKey` stores a stable semantic key, such as `food-drinks-groceries`.
 The app bundles SVG XML through `src/category-icon-assets.ts`, generated from this

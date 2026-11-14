@@ -11,7 +11,7 @@ module.exports = function withGoogleUrlHandler(config) {
       throw new Error(
         "Google URL handling requires the Expo Swift AppDelegate."
       );
-    if (delegate.contents.includes("// PocketLedger Google URL handler"))
+    if (delegate.contents.includes("// PocketFinance Google URL handler"))
       return result;
     const signature = /(\bopen url: URL,[\s\S]*?\) -> Bool \{)/;
     if (!signature.test(delegate.contents))
@@ -22,7 +22,7 @@ module.exports = function withGoogleUrlHandler(config) {
       "import GoogleSignIn\n" +
       delegate.contents.replace(
         signature,
-        "$1\n    // PocketLedger Google URL handler\n    if GIDSignIn.sharedInstance.handle(url) { return true }"
+        "$1\n    // PocketFinance Google URL handler\n    if GIDSignIn.sharedInstance.handle(url) { return true }"
       );
     return result;
   });

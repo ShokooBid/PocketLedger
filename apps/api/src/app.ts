@@ -206,7 +206,7 @@ export async function buildApp(
   });
   await app.register(swagger, {
     openapi: {
-      info: { title: "PocketLedger API", version: "0.1.0" },
+      info: { title: "PocketFinance API", version: "0.1.0" },
       components: {
         securitySchemes: {
           bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" }

@@ -98,7 +98,7 @@ The root command explicitly loads `.env`. Use `npm run start:api` to run without
 watch mode, or build and start the compiled API:
 
 ```sh
-npm run build --workspace=@pocketledger/api
+npm run build --workspace=@pocketfinance/api
 node --env-file=.env apps/api/dist/index.js
 ```
 
@@ -142,7 +142,7 @@ in Expo/Metro or the device's JavaScript console; the backend cannot log those.
 Generate the implemented API contract without database or Google credentials:
 
 ```sh
-npm run openapi --workspace=@pocketledger/api
+npm run openapi --workspace=@pocketfinance/api
 ```
 
 The output is `apps/api/dist/openapi.json`. All finance routes use `/v1` for
@@ -191,7 +191,7 @@ OAuth consent screen with a test account and the relevant clients:
 
 - Web OAuth client: set `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` in mobile configuration
   and include that ID in the API's `GOOGLE_CLIENT_IDS`.
-- Android OAuth client: register `com.shokoobid.pocketledger` and the development
+- Android OAuth client: register `com.shokoobid.pocketfinance` and the development
   build's SHA-1 signing fingerprint.
 - iOS OAuth client: register the same bundle identifier and set
   `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`.
@@ -202,6 +202,24 @@ Client IDs are public; client secrets and signing keys stay out of the app. Rebu
 after configuring native clients. Verify sign-in, cancellation, session restore,
 and logout on a device; mocked provider tests do not establish device acceptance.
 
+### Existing installations after a rename
+
+New installations use the PocketFinance names in `.env.example`. For an existing
+database, keep `POSTGRES_USER`, `POSTGRES_DB`, and `DATABASE_URL` matched to its
+actual role and database. Set `POSTGRES_VOLUME_NAME` to the existing Docker volume
+before starting Compose under the new project name. Stop the previous project's
+database container first if it still owns the same port. Do not delete the volume
+or reinitialize the database to change branding; application records and migration
+history belong to that existing database.
+
+Native builds now use `com.shokoobid.pocketfinance` and the `pocketfinance` URL
+scheme. Configure matching Android and iOS Google OAuth clients, update the public
+client IDs and API presenter allowlist, and rebuild the app. The new native app
+identity has its own secure storage, so sign in again after installing it. Updating
+the API token issuer or audience also requires a new access token; refreshing or
+signing in obtains one. Existing server-side account and transaction data stays
+in the same database.
+
 ## Verification
 
 After installing dependencies and generating Prisma Client:
@@ -211,12 +229,12 @@ npm run format:check
 npm run lint
 npm run typecheck
 npm run test
-npm run build --workspace=@pocketledger/api
+npm run build --workspace=@pocketfinance/api
 ```
 
 API unit tests use Vitest; mobile tests use Jest with Expo and React Native Testing
 Library. Both workspaces require real tests. For focused checks, append
-`--workspace=@pocketledger/api` or `--workspace=@pocketledger/mobile` to the
+`--workspace=@pocketfinance/api` or `--workspace=@pocketfinance/mobile` to the
 workspace-level `test` or `typecheck` command.
 
 The mobile test script explicitly sets `NODE_ENV=test` before loading Jest/Expo
@@ -236,7 +254,7 @@ npm run test:integration:local
 
 This runs both API and mobile integration suites. The runner passes `DATABASE_URL`
 to the child process as `TEST_DATABASE_URL`. Each suite creates a random
-`pocketledger_test_*` schema, deploys migrations from zero, and drops only its own
+`pocketfinance_test_*` schema, deploys migrations from zero, and drops only its own
 schema afterward. Application rows and schemas are preserved. The PostgreSQL role
 must be able to create schemas; there is no need to migrate the application schema
 first.

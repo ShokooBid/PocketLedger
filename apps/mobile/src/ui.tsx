@@ -128,7 +128,7 @@ export function Screen({
           />
         )}
         {appearance === "welcome" && (
-          <Text style={styles.brand}>POCKETLEDGER</Text>
+          <Text style={styles.brand}>POCKETFINANCE</Text>
         )}
         <View
           style={[

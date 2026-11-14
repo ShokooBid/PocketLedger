@@ -12,7 +12,7 @@ statement-import increments have separate acceptance/release gates.
 ## Product goal
 
 Enable one person to safely track their own spending and income without handing
-their banking credentials to PocketLedger. The MVP should prove that manual
+their banking credentials to PocketFinance. The MVP should prove that manual
 tracking and statement import are useful, understandable, and dependable.
 
 ## In scope for the MVP
@@ -22,14 +22,14 @@ tracking and statement import are useful, understandable, and dependable.
 - Register, sign in, refresh a session, sign out, and view basic account/privacy
   information.
 - Support email/password and Google sign-in, with persistent mobile sessions
-  across app restarts. Google-only accounts do not require a PocketLedger password.
+  across app restarts. Google-only accounts do not require a PocketFinance password.
 - Allow explicitly linking Google to an existing account after proving both
   identities. Do not automatically merge accounts with matching email addresses.
 - Restore sessions from secure storage, rotate refresh tokens, and revoke the
   current session on logout. Expired/revoked sessions require sign-in again.
 - Isolate each user's records. A user can only create, read, update, archive, or
   delete their own data.
-- Explain that PocketLedger does not connect to a bank in the MVP.
+- Explain that PocketFinance does not connect to a bank in the MVP.
 
 ### Categories
 

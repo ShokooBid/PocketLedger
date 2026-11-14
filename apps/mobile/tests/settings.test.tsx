@@ -31,7 +31,7 @@ async function password() {
   await press("Link Google");
   await act(async () => {
     fireEvent.changeText(
-      screen.getByLabelText("Current PocketLedger password"),
+      screen.getByLabelText("Current PocketFinance password"),
       "synthetic password"
     );
   });
@@ -69,7 +69,7 @@ describe("settings account controls", () => {
     render(<Settings {...props} />);
     await password();
     await press("Verify password and choose Google account");
-    expect(screen.getByLabelText("Current PocketLedger password")).toHaveProp(
+    expect(screen.getByLabelText("Current PocketFinance password")).toHaveProp(
       "value",
       ""
     );

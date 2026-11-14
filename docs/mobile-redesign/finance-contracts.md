@@ -1,6 +1,6 @@
 # Finance contracts and compatibility
 
-Issue [#64](https://github.com/ShokooBid/PocketLedger/issues/64). This is the
+Issue [#64](https://github.com/ShokooBid/PocketFinance/issues/64). This is the
 engineering specification for follow-up implementation, not an assertion that
 these endpoints or migrations exist. Read the [decisions](README.md) and
 [UX specification](ux.md) first. #93 requires explicit permanent currency choice

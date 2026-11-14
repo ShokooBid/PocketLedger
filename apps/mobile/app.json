@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "PocketLedger",
-    "slug": "pocketledger",
+    "name": "PocketFinance",
+    "slug": "pocketfinance",
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "scheme": "pocketledger",
+    "scheme": "pocketfinance",
     "plugins": ["expo-router"],
     "experiments": {
       "typedRoutes": true

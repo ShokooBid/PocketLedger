@@ -2,14 +2,14 @@
 
 ## Supported development version
 
-PocketLedger is pre-release software. Security fixes currently target the latest
+PocketFinance is pre-release software. Security fixes currently target the latest
 code on `main`; no published release or older version has a support commitment.
 Use synthetic data while the MVP security controls are being implemented.
 
 ## Report a vulnerability privately
 
 Email the maintainer at [shk.bidmeshki@gmail.com](mailto:shk.bidmeshki@gmail.com).
-Use a subject such as `PocketLedger security report`.
+Use a subject such as `PocketFinance security report`.
 
 Do not open a GitHub issue or PR containing exploit details, credentials, real
 financial records, or personal information. Even in this private repository,

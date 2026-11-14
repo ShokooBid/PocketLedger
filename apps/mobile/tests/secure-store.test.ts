@@ -21,14 +21,14 @@ describe("platform credential storage", () => {
       .mockResolvedValueOnce(JSON.stringify(stored()));
     await credentialStore.write(stored());
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
-      "pocketledger.session.v1",
+      "pocketfinance.session.v1",
       JSON.stringify(stored()),
       { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY }
     );
     expect(await credentialStore.read()).toEqual(stored());
     await credentialStore.clear();
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(
-      "pocketledger.session.v1",
+      "pocketfinance.session.v1",
       expect.any(Object)
     );
   });

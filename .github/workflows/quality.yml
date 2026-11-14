@@ -24,13 +24,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: pocketledger_ci
+          POSTGRES_USER: pocketfinance_ci
           POSTGRES_PASSWORD: disposable_ci_password
-          POSTGRES_DB: pocketledger_test
+          POSTGRES_DB: pocketfinance_test
         ports:
           - 5432/tcp
         options: >-
-          --health-cmd "pg_isready -U pocketledger_ci -d pocketledger_test"
+          --health-cmd "pg_isready -U pocketfinance_ci -d pocketfinance_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -56,8 +56,8 @@ jobs:
       - name: Validate schema and generate Prisma Client
         id: prisma
         run: |
-          npm run db:validate --workspace=@pocketledger/api
-          npm run db:generate --workspace=@pocketledger/api
+          npm run db:validate --workspace=@pocketfinance/api
+          npm run db:generate --workspace=@pocketfinance/api
 
       - name: Check formatting
         id: format
@@ -79,20 +79,20 @@ jobs:
         id: integration
         run: npm run test:integration
         env:
-          TEST_DATABASE_URL: postgresql://pocketledger_ci:disposable_ci_password@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/pocketledger_test
+          TEST_DATABASE_URL: postgresql://pocketfinance_ci:disposable_ci_password@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/pocketfinance_test
 
       - name: Build API
         id: api_build
-        run: npm run build --workspace=@pocketledger/api
+        run: npm run build --workspace=@pocketfinance/api
 
       - name: Generate OpenAPI from route schemas
         id: openapi
-        run: npm run openapi --workspace=@pocketledger/api
+        run: npm run openapi --workspace=@pocketfinance/api
 
       - name: Upload generated public API contract
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: pocketledger-openapi
+          name: pocketfinance-openapi
           path: apps/api/dist/openapi.json
           if-no-files-found: error
           retention-days: 7

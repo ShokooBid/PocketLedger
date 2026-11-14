@@ -1,10 +1,10 @@
-﻿# PocketLedger
+﻿# PocketFinance
 
 A personal-finance mobile app for tracking income, expenses, and monthly spending
 across financial accounts. Built with React Native, Expo, TypeScript, and a
 Fastify/PostgreSQL API.
 
-PocketLedger focuses on accurate money handling, explicit data ownership, and
+PocketFinance focuses on accurate money handling, explicit data ownership, and
 secure mobile sessions. An isolated demo lets you explore the app without an
 account or a running backend.
 
@@ -32,7 +32,7 @@ From the repository root:
 
 ```sh
 npm ci
-npm run dev --workspace=@pocketledger/mobile -- --web
+npm run dev --workspace=@pocketfinance/mobile -- --web
 ```
 
 Choose **Explore demo screens without signing in** on the sign-in screen. No database, environment file, or
@@ -40,7 +40,7 @@ credentials are required. Demo changes are temporary and make no API requests;
 web supports demo mode only.
 
 For an SDK-compatible Expo Go demo, run
-`npm run dev --workspace=@pocketledger/mobile -- --go`.
+`npm run dev --workspace=@pocketfinance/mobile -- --go`.
 For the API, PostgreSQL, and native authentication setup, see
 [DEVELOPMENT.md](DEVELOPMENT.md).
 

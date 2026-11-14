@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { accessToken, verifyAccess } from "../src/auth/crypto.js";
 import { testConfig } from "./fixtures.js";
 
-describe("PocketLedger access proof", () => {
+describe("PocketFinance access proof", () => {
   const config = testConfig();
   const now = new Date();
   const userId = randomUUID();

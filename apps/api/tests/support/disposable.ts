@@ -27,7 +27,7 @@ export function disposableDatabase(
   // to an unavailable IPv6 listener in the Prisma migration subprocess.
   if (url.hostname === "localhost") url.hostname = "127.0.0.1";
   const adminUrl = url.toString();
-  const name = "pocketledger_test_" + randomUUID().replaceAll("-", "");
+  const name = "pocketfinance_test_" + randomUUID().replaceAll("-", "");
   url.searchParams.set("schema", name);
   url.searchParams.set("options", "-c search_path=" + name);
   url.searchParams.set("connect_timeout", "30");
