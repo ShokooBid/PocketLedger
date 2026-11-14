@@ -28,8 +28,8 @@ export class ClientFailure extends Error {
 export function failureMessage(error: unknown): string {
   const kind = error instanceof ClientFailure ? error.kind : "server";
   const messages: Record<FailureKind, string> = {
-    network: "Cannot reach PocketLedger. Check your connection and try again.",
-    server: "PocketLedger is temporarily unavailable. Try again later.",
+    network: "Cannot reach PocketFinance. Check your connection and try again.",
+    server: "PocketFinance is temporarily unavailable. Try again later.",
     invalid: "Sign-in could not be verified. Please sign in again.",
     validation:
       "Check your email and password. New passwords need 12–128 characters.",
@@ -38,7 +38,7 @@ export function failureMessage(error: unknown): string {
     unavailable: "This item is unavailable. Reload the list.",
     "rate-limit": "Too many attempts. Please wait before trying again.",
     protocol:
-      "PocketLedger returned an unexpected response. Please try again later.",
+      "PocketFinance returned an unexpected response. Please try again later.",
     configuration:
       "Sign-in is unavailable in this build. You can still explore the demo.",
     storage: "Secure storage is unavailable. Retry before continuing.",

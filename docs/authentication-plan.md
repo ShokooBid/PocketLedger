@@ -15,7 +15,7 @@ backend boundary.
 ## User experience
 
 The sign-in screen offers email/password and Continue with Google. Both lead to
-the same PocketLedger account model and session mechanism. Closing/reopening the
+the same PocketFinance account model and session mechanism. Closing/reopening the
 app normally restores the session without another login. Logout, revocation,
 session expiry, or missing secure credentials require authentication again.
 Google cancellation leaves the sign-in screen usable; provider failure does not
@@ -27,9 +27,9 @@ account merging, and unlinking login methods remain separate work.
 | Model | Meaning and invariant |
 | --- | --- |
 | `User` | Stable owner of finance data. `passwordHash` is nullable for Google-only users. `emailVerifiedAt` records contact verification when established; `disabledAt` blocks access in the future service. |
-| `AuthIdentity` | A Google `sub` linked to one user. `(provider, providerSubject)` is unique globally; `(userId, provider)` permits one Google account per PocketLedger user. No Google passwords or provider access/refresh tokens are stored. |
+| `AuthIdentity` | A Google `sub` linked to one user. `(provider, providerSubject)` is unique globally; `(userId, provider)` permits one Google account per PocketFinance user. No Google passwords or provider access/refresh tokens are stored. |
 | `Session` | One device login and refresh-token family. `expiresAt`, `revokedAt`, and `lastUsedAt` support expiry, inactivity, logout, and reuse revocation. |
-| `RefreshToken` | One issued PocketLedger refresh token, stored only as a unique SHA-256 hex hash. `consumedAt` preserves rotation history; ownership comes through `sessionId`. |
+| `RefreshToken` | One issued PocketFinance refresh token, stored only as a unique SHA-256 hex hash. `consumedAt` preserves rotation history; ownership comes through `sessionId`. |
 
 Password hashes use a slow adaptive password algorithm (planned Argon2id).
 Refresh tokens instead have at least 256 bits of cryptographically random entropy,
@@ -77,13 +77,13 @@ authorization, or at-least-one-login-method rules.
 4. For a new subject with no existing email collision, create the user and identity
    atomically. Require a usable verified email claim for this MVP onboarding;
    never use that claim alone to authorize access to an existing account.
-5. If the email matches an existing PocketLedger account, do not create a session
+5. If the email matches an existing PocketFinance account, do not create a session
    for it or silently merge data. Return generic guidance to sign in with an
    existing method, then explicitly link Google in Settings after recent
    reauthentication and fresh Google proof. A subject already owned by another
    user cannot be reassigned. Handle uniqueness races without leaking account data.
-6. Successful login issues PocketLedger access/refresh credentials. Google ID
-   tokens are not PocketLedger API bearer tokens. Request only identity scopes,
+6. Successful login issues PocketFinance access/refresh credentials. Google ID
+   tokens are not PocketFinance API bearer tokens. Request only identity scopes,
    not Gmail, Drive, banking, or financial-record access.
 
 For Google-only users, an email/password attempt fails generically. Adding a
@@ -102,7 +102,7 @@ server-configurable; refresh never extends the absolute session lifetime. Token
 expiry must not exceed session expiry. `lastUsedAt ?? createdAt` supplies the
 inactivity anchor. These defaults are now implemented as server configuration.
 
-Access-token claims include PocketLedger user ID and session ID, issuer, audience,
+Access-token claims include PocketFinance user ID and session ID, issuer, audience,
 issued time and expiry. Protected routes validate them and check session ownership,
 revocation, expiry/inactivity and user disabled state. That lookup makes logout
 and disabling effective immediately rather than waiting for a JWT to expire.
@@ -159,15 +159,15 @@ qualifying alternative before submission; this task does not implement Apple.
 
 | Issue | Updated responsibility |
 | --- | --- |
-| [#6](https://github.com/ShokooBid/PocketLedger/issues/6) | Schema, additive migration, disabled synthetic seeds, fresh/upgrade database tests. |
+| [#6](https://github.com/ShokooBid/PocketFinance/issues/6) | Schema, additive migration, disabled synthetic seeds, fresh/upgrade database tests. |
 | #8 | Fastify, validated contracts, redaction, configuration foundation before auth routes. |
-| [#7](https://github.com/ShokooBid/PocketLedger/issues/7) | Password and Google backend login, challenge verification, explicit linking, session issuance/rotation/replay detection/revocation. Depends on #6 and #8. |
-| [#9](https://github.com/ShokooBid/PocketLedger/issues/9) | Authentication/loading navigation placeholders for both methods. |
-| [#11](https://github.com/ShokooBid/PocketLedger/issues/11) | Native Google development build, forms/provider flow, secure session restore, single-flight refresh, bounded retries. |
-| [#16](https://github.com/ShokooBid/PocketLedger/issues/16) | Show linked method state, explicit Google linking, current/all-device logout, accurate privacy statements. |
-| [#20](https://github.com/ShokooBid/PocketLedger/issues/20) | API tests for proofs, linking collisions, rotation races, expiry/revocation and cross-user sessions. |
-| [#21](https://github.com/ShokooBid/PocketLedger/issues/21) | Mobile tests for both methods, cancellation, app restart, offline/invalid sessions and concurrent 401 responses. |
-| [#22](https://github.com/ShokooBid/PocketLedger/issues/22) | Physical-device and iOS login-policy review; no claim of production readiness from schema tests. |
+| [#7](https://github.com/ShokooBid/PocketFinance/issues/7) | Password and Google backend login, challenge verification, explicit linking, session issuance/rotation/replay detection/revocation. Depends on #6 and #8. |
+| [#9](https://github.com/ShokooBid/PocketFinance/issues/9) | Authentication/loading navigation placeholders for both methods. |
+| [#11](https://github.com/ShokooBid/PocketFinance/issues/11) | Native Google development build, forms/provider flow, secure session restore, single-flight refresh, bounded retries. |
+| [#16](https://github.com/ShokooBid/PocketFinance/issues/16) | Show linked method state, explicit Google linking, current/all-device logout, accurate privacy statements. |
+| [#20](https://github.com/ShokooBid/PocketFinance/issues/20) | API tests for proofs, linking collisions, rotation races, expiry/revocation and cross-user sessions. |
+| [#21](https://github.com/ShokooBid/PocketFinance/issues/21) | Mobile tests for both methods, cancellation, app restart, offline/invalid sessions and concurrent 401 responses. |
+| [#22](https://github.com/ShokooBid/PocketFinance/issues/22) | Physical-device and iOS login-policy review; no claim of production readiness from schema tests. |
 
 Schema tests use only synthetic subjects and token hashes; CI never contacts Google
 or needs real credentials. Provider verification is tested with local signed

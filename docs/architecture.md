@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for the first PocketLedger MVP. These decisions establish constraints for
+Accepted for the first PocketFinance MVP. These decisions establish constraints for
 subsequent implementation issues; implementation may add detail but must not
 silently change a decision in this document.
 
@@ -13,7 +13,7 @@ implementation target; #64 itself changes no routes, Prisma models or screens.
 
 ## System shape
 
-PocketLedger is a client-server application with a single primary data owner per
+PocketFinance is a client-server application with a single primary data owner per
 account:
 
 ```text
@@ -163,7 +163,7 @@ Expo mobile app  ── HTTPS/JSON ──>  Fastify REST API  ──>  PostgreSQ
 ## Authentication and sessions
 
 - The MVP supports both first-party email/password and Google sign-in. This
-  decision was expanded on 2026-10-19. Both methods establish PocketLedger-owned
+  decision was expanded on 2026-10-19. Both methods establish PocketFinance-owned
   sessions and resolve to the same stable user ID; finance ownership is unchanged.
 - Passwords use a modern adaptive hash (planned: Argon2id). A Google-only user
   has a null password hash. Null, malformed, or disabled credentials fail closed.

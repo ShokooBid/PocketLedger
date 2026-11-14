@@ -37,7 +37,7 @@ export async function googleProof(nonce: string): Promise<string | null> {
         throw new ClientFailure("provider");
       return result.data.idToken;
     } finally {
-      // PocketLedger owns persistence; discard the temporary provider session.
+      // PocketFinance owns persistence; discard the temporary provider session.
       await google.signOut().catch(() => {});
     }
   } catch (error) {

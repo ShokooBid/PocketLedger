@@ -7,10 +7,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     process.env.EAS_BUILD_PROFILE !== "production";
   return {
     ...config,
-    name: "PocketLedger",
-    slug: "pocketledger",
-    android: { ...config.android, package: "com.shokoobid.pocketledger" },
-    ios: { ...config.ios, bundleIdentifier: "com.shokoobid.pocketledger" },
+    name: "PocketFinance",
+    slug: "pocketfinance",
+    android: { ...config.android, package: "com.shokoobid.pocketfinance" },
+    ios: { ...config.ios, bundleIdentifier: "com.shokoobid.pocketfinance" },
     plugins: [
       ...(config.plugins ?? []),
       "expo-secure-store",

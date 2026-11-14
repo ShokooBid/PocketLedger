@@ -49,7 +49,7 @@ describe("sign-in methods", () => {
       });
     }
   );
-  it("exchanges nonce-bound Google proof for PocketLedger credentials", async () => {
+  it("exchanges nonce-bound Google proof for PocketFinance credentials", async () => {
     const h = harness(null);
     await h.controller.restore();
     const nonce = "n".repeat(43);

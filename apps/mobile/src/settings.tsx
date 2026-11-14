@@ -135,7 +135,7 @@ export function Settings({
                     merge accounts. Your user ID and ledger stay the same.
                   </Body>
                   <Field
-                    label="Current PocketLedger password"
+                    label="Current PocketFinance password"
                     value={password}
                     secureTextEntry
                     autoCapitalize="none"
@@ -211,7 +211,7 @@ export function Settings({
           {confirmAll && (
             <>
               <Body>
-                This revokes all PocketLedger sessions for this account,
+                This revokes all PocketFinance sessions for this account,
                 including this device. It does not delete your account or
                 ledger.
               </Body>
@@ -244,7 +244,7 @@ export function DeletionInstructions() {
       <Body>Request account deletion</Body>
       <Body>
         Contact the maintainer manually from your account email. Subject:
-        PocketLedger account deletion request. Support must verify account
+        PocketFinance account deletion request. Support must verify account
         ownership before processing. Do not include passwords, tokens or
         transaction attachments.
       </Body>
@@ -267,19 +267,19 @@ export function PrivacyInformation() {
   return (
     <>
       <Body>
-        PocketLedger is a pre-release learning MVP. Use synthetic records while
+        PocketFinance is a pre-release learning MVP. Use synthetic records while
         release safeguards are being verified.
       </Body>
       <Body>
         Account identity, categories and transactions are stored on the
-        PocketLedger server. Passwords are stored as adaptive hashes; the server
-        stores only hashes of refresh tokens. A signed-in native device stores
-        usable session credentials in platform secure storage. Finance responses
-        stay in app memory; this app does not persist a dashboard or ledger
-        cache.
+        PocketFinance server. Passwords are stored as adaptive hashes; the
+        server stores only hashes of refresh tokens. A signed-in native device
+        stores usable session credentials in platform secure storage. Finance
+        responses stay in app memory; this app does not persist a dashboard or
+        ledger cache.
       </Body>
       <Body>
-        Google is used for identity proof only. PocketLedger does not request
+        Google is used for identity proof only. PocketFinance does not request
         banking or financial-data access from Google. It does not connect to
         banks. It contains no AI finance processing, advertising SDK or app
         analytics integration.

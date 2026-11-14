@@ -8,7 +8,7 @@ export default function NotFoundScreen() {
       <StateNotice
         kind="error"
         title="This page is unavailable"
-        message="Return to the start to continue exploring PocketLedger."
+        message="Return to the start to continue exploring PocketFinance."
       />
       <NavigationLink
         href={session.status === "authenticated" ? "/" : "/sign-in"}

@@ -1,6 +1,6 @@
 # Mobile redesign: decisions and implementation contract
 
-Issue: [#64](https://github.com/ShokooBid/PocketLedger/issues/64).
+Issue: [#64](https://github.com/ShokooBid/PocketFinance/issues/64).
 Decision date: 2026-10-30. Status: product questions answered; specification ready
 for implementation review. These documents specify future behavior, not features
 already shipped.
@@ -10,10 +10,10 @@ together. Follow-up issues implement the screens, services and migrations; #64
 does not change runtime behavior, schema or generated OpenAPI.
 
 The implementation increments are tracked in
-[#65](https://github.com/ShokooBid/PocketLedger/issues/65),
-[#66](https://github.com/ShokooBid/PocketLedger/issues/66),
-[#67](https://github.com/ShokooBid/PocketLedger/issues/67), and
-[#69](https://github.com/ShokooBid/PocketLedger/issues/69).
+[#65](https://github.com/ShokooBid/PocketFinance/issues/65),
+[#66](https://github.com/ShokooBid/PocketFinance/issues/66),
+[#67](https://github.com/ShokooBid/PocketFinance/issues/67), and
+[#69](https://github.com/ShokooBid/PocketFinance/issues/69).
 The #69 cleanup supersedes the earlier rollout/version instructions: current
 finance uses one `/v1` contract without feature flags. The linked GitHub issues
 preserve the implementation history. Settings accounts and account-linked entry are wired
@@ -22,19 +22,19 @@ future work.
 
 ## Live History implementation (2026-11-10)
 
-Issue [#75](https://github.com/ShokooBid/PocketLedger/issues/75) adds live filtered,
+Issue [#75](https://github.com/ShokooBid/PocketFinance/issues/75) adds live filtered,
 date-grouped History, category icons, logical transfer pagination, full-day totals
 and parent/exact Overview breakdowns. The current
-[#106](https://github.com/ShokooBid/PocketLedger/issues/106) branch connects
+[#106](https://github.com/ShokooBid/PocketFinance/issues/106) branch connects
 confirmed saves and row selection to the shared Add/Edit editor. Finish
-[#77](https://github.com/ShokooBid/PocketLedger/issues/77) after #106 and #76.
+[#77](https://github.com/ShokooBid/PocketFinance/issues/77) after #106 and #76.
 The #75 increment leaves demo implementations unchanged and has no schema/migration
 changes. Tests are supplied for the owner to run; static checks are recorded in
 [verification](verification.md#issue-75-live-history-implementation).
 
 ## Finance foundation revision (2026-11-06)
 
-Issue [#93](https://github.com/ShokooBid/PocketLedger/issues/93) implements explicit,
+Issue [#93](https://github.com/ShokooBid/PocketFinance/issues/93) implements explicit,
 permanent currency selection followed by required active-account setup. CAD is
 preselected in the form but is not saved until confirmed. Settings is read-only
 for currency, and all transaction routes are blocked when no active account
@@ -68,7 +68,7 @@ from synthetic seeds and signup, and rejects drift rather than rewriting it.
 Per-user provisioning/backfill commands are removed. Demo uses the same default
 IDs with isolated personal data. All four foundation increments are implemented;
 #72 navigation/keypad is now implemented locally; see
-[#72](https://github.com/ShokooBid/PocketLedger/issues/72) for its scope.
+[#72](https://github.com/ShokooBid/PocketFinance/issues/72) for its scope.
 Later reporting/transfers remain separate work.
 The linked GitHub issues and verification record preserve historical behavior.
 
@@ -111,24 +111,24 @@ flow exists. Demo uses the same setup rules in isolated session memory.
 
 ## Implementation boundaries
 
-| Responsibility                                                       | Follow-up issue                                                                                                                                                                    |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Permanent currency choice and active-account setup                   | [#93](https://github.com/ShokooBid/PocketLedger/issues/93), superseding the currency behavior in [#65](https://github.com/ShokooBid/PocketLedger/issues/65)                        |
-| Account-derived transaction currency and retired finance backfills   | [#94](https://github.com/ShokooBid/PocketLedger/issues/94)                                                                                                                         |
-| Inline transaction request storage and lifetime-only retries         | [#95](https://github.com/ShokooBid/PocketLedger/issues/95)                                                                                                                         |
-| Shared immutable default catalog                                     | [#96](https://github.com/ShokooBid/PocketLedger/issues/96)                                                                                                                         |
-| Hierarchy, immutable defaults and personal-category operations       | [#66](https://github.com/ShokooBid/PocketLedger/issues/66)                                                                                                                         |
-| Approved catalog (per-user provisioning superseded by #96)           | [#67](https://github.com/ShokooBid/PocketLedger/issues/67)                                                                                                                         |
-| Accounts and optional opening balance                                | [#68](https://github.com/ShokooBid/PocketLedger/issues/68)                                                                                                                         |
-| Transaction account links, merchant-free contract and migration gate | [#69](https://github.com/ShokooBid/PocketLedger/issues/69)                                                                                                                         |
-| Account management in Settings                                       | [#70](https://github.com/ShokooBid/PocketLedger/issues/70)                                                                                                                         |
-| Category/account pickers                                             | [#71](https://github.com/ShokooBid/PocketLedger/issues/71)                                                                                                                         |
-| Entry home, custom keypad and navigation                             | [#72](https://github.com/ShokooBid/PocketLedger/issues/72)                                                                                                                         |
-| Atomic transfers and transfer UI                                     | [#73](https://github.com/ShokooBid/PocketLedger/issues/73), [#74](https://github.com/ShokooBid/PocketLedger/issues/74)                                                             |
-| Logical history, account filters and category rollups                | [#75](https://github.com/ShokooBid/PocketLedger/issues/75)                                                                                                                         |
-| Inert AI entry points                                                | [#76](https://github.com/ShokooBid/PocketLedger/issues/76)                                                                                                                         |
-| End-to-end/device acceptance                                         | [#77](https://github.com/ShokooBid/PocketLedger/issues/77)                                                                                                                         |
-| Later account-bound review, CSV and PDF processing                   | [#78](https://github.com/ShokooBid/PocketLedger/issues/78), [#79](https://github.com/ShokooBid/PocketLedger/issues/79), [#80](https://github.com/ShokooBid/PocketLedger/issues/80) |
+| Responsibility                                                       | Follow-up issue                                                                                                                                                                       |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Permanent currency choice and active-account setup                   | [#93](https://github.com/ShokooBid/PocketFinance/issues/93), superseding the currency behavior in [#65](https://github.com/ShokooBid/PocketFinance/issues/65)                         |
+| Account-derived transaction currency and retired finance backfills   | [#94](https://github.com/ShokooBid/PocketFinance/issues/94)                                                                                                                           |
+| Inline transaction request storage and lifetime-only retries         | [#95](https://github.com/ShokooBid/PocketFinance/issues/95)                                                                                                                           |
+| Shared immutable default catalog                                     | [#96](https://github.com/ShokooBid/PocketFinance/issues/96)                                                                                                                           |
+| Hierarchy, immutable defaults and personal-category operations       | [#66](https://github.com/ShokooBid/PocketFinance/issues/66)                                                                                                                           |
+| Approved catalog (per-user provisioning superseded by #96)           | [#67](https://github.com/ShokooBid/PocketFinance/issues/67)                                                                                                                           |
+| Accounts and optional opening balance                                | [#68](https://github.com/ShokooBid/PocketFinance/issues/68)                                                                                                                           |
+| Transaction account links, merchant-free contract and migration gate | [#69](https://github.com/ShokooBid/PocketFinance/issues/69)                                                                                                                           |
+| Account management in Settings                                       | [#70](https://github.com/ShokooBid/PocketFinance/issues/70)                                                                                                                           |
+| Category/account pickers                                             | [#71](https://github.com/ShokooBid/PocketFinance/issues/71)                                                                                                                           |
+| Entry home, custom keypad and navigation                             | [#72](https://github.com/ShokooBid/PocketFinance/issues/72)                                                                                                                           |
+| Atomic transfers and transfer UI                                     | [#73](https://github.com/ShokooBid/PocketFinance/issues/73), [#74](https://github.com/ShokooBid/PocketFinance/issues/74)                                                              |
+| Logical history, account filters and category rollups                | [#75](https://github.com/ShokooBid/PocketFinance/issues/75)                                                                                                                           |
+| Inert AI entry points                                                | [#76](https://github.com/ShokooBid/PocketFinance/issues/76)                                                                                                                           |
+| End-to-end/device acceptance                                         | [#77](https://github.com/ShokooBid/PocketFinance/issues/77)                                                                                                                           |
+| Later account-bound review, CSV and PDF processing                   | [#78](https://github.com/ShokooBid/PocketFinance/issues/78), [#79](https://github.com/ShokooBid/PocketFinance/issues/79), [#80](https://github.com/ShokooBid/PocketFinance/issues/80) |
 
 Earlier issue bodies and the local planning document may still mention optional
 merchant fields, editable default copies or a native keyboard. Those are

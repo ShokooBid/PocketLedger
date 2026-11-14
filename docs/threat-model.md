@@ -2,7 +2,7 @@
 
 ## Scope and assumptions
 
-This is the PocketLedger threat model, amended on 2026-10-30 for
+This is the PocketFinance threat model, amended on 2026-10-30 for
 [Issue #64](mobile-redesign/README.md). It covers the Expo mobile app, Fastify API,
 PostgreSQL, fixed/personal categories, named financial accounts, same-currency
 transfers, logs and deployment. Account-bound CSV/PDF processing is a later

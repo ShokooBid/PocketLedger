@@ -51,7 +51,7 @@ without a currency field. Read/display currency comes from the account, includin
 archived history. Reject different-currency reassignment without changing amounts.
 Draft currency remains a recovery snapshot; a mismatch requires explicit review.
 The custom keypad and entry-home layout are implemented locally in
-[#72](https://github.com/ShokooBid/PocketLedger/issues/72). Runtime/device acceptance
+[#72](https://github.com/ShokooBid/PocketFinance/issues/72). Runtime/device acceptance
 remains pending.
 
 Show compact Type with AI / Voice / Scan receipt shortcuts as Coming soon. They

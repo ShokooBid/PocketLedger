@@ -17,8 +17,8 @@ const environmentSchema = z.object({
         Buffer.from(value, "base64url").length >= 32
       );
     }),
-  ACCESS_TOKEN_ISSUER: z.string().min(1).default("pocketledger-api"),
-  ACCESS_TOKEN_AUDIENCE: z.string().min(1).default("pocketledger-mobile"),
+  ACCESS_TOKEN_ISSUER: z.string().min(1).default("pocketfinance-api"),
+  ACCESS_TOKEN_AUDIENCE: z.string().min(1).default("pocketfinance-mobile"),
   ACCESS_TTL_SECONDS: seconds.default(900),
   SESSION_TTL_SECONDS: seconds.default(2_592_000),
   SESSION_IDLE_SECONDS: seconds.default(604_800),

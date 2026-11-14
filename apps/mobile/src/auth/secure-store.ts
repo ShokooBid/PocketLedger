@@ -3,7 +3,7 @@ import { Platform } from "react-native";
 import { storedSessionSchema, type CredentialStore } from "./contracts";
 import { ClientFailure } from "./transport";
 
-const key = "pocketledger.session.v1";
+const key = "pocketfinance.session.v1";
 const options: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY
 };

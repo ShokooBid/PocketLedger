@@ -1,6 +1,6 @@
-# Contributing to PocketLedger
+# Contributing to PocketFinance
 
-PocketLedger is a learning project. Keep each change small enough to understand,
+PocketFinance is a learning project. Keep each change small enough to understand,
 run locally, and review against its issue's acceptance criteria.
 
 ## Development baseline
@@ -17,7 +17,7 @@ Install the lockfile's dependencies from the repository root:
 
 ```powershell
 npm ci
-npm run db:generate --workspace=@pocketledger/api
+npm run db:generate --workspace=@pocketfinance/api
 ```
 
 `npm ci` replaces an existing `node_modules` directory and requires manifests
@@ -91,7 +91,7 @@ npm run lint
 npm run typecheck
 npm run test
 npm run test:integration
-npm run build --workspace=@pocketledger/api
+npm run build --workspace=@pocketfinance/api
 git diff --check
 ```
 
@@ -136,7 +136,7 @@ persist its credentials, and actions are pinned to reviewed full commit SHAs.
 The `quality-check-summary` artifact is retained for seven days.
 Its allowlisted `checks.json` contains step outcomes and a test-coverage caveat;
 it does not contain test stdout, raw logs, financial records, environment values,
-database dumps, or the workspace. A separate `pocketledger-openapi` artifact
+database dumps, or the workspace. A separate `pocketfinance-openapi` artifact
 contains only the generated public route contract. Keep test logs synthetic and free of secrets,
 because Actions still displays command output. Database integration coverage does
 not imply native/mobile flow coverage. API auth is covered with synthetic identities

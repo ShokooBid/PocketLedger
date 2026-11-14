@@ -92,7 +92,7 @@ export default function SignInScreen() {
             </View>
             <View style={[styles.brand, { paddingTop: insets.top + 12 }]}>
               <WalletMark />
-              <Text style={styles.brandName}>PocketLedger</Text>
+              <Text style={styles.brandName}>PocketFinance</Text>
             </View>
           </View>
           <View style={[styles.content, compact && styles.compactContent]}>
